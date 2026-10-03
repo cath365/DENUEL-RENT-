@@ -11,7 +11,7 @@ export default async function LandPage({ searchParams }: { searchParams?: { q?: 
   const properties = await prisma.property.findMany({
     where: {
       status: 'APPROVED', propertyType: 'LAND', price: { gte: min, ...(max ? { lte: max } : {}) },
-      ...(q ? { OR: [{ city: { contains: q, mode: 'insensitive' } }, { area: { contains: q, mode: 'insensitive' } }, { title: { contains: q, mode: 'insensitive' } }] } : {})
+      ...(q ? { OR: [{ city: { contains: q } }, { area: { contains: q } }, { title: { contains: q } }] } : {})
     },
     include: { images: { orderBy: { sortOrder: 'asc' } }, owner: { select: { id: true, name: true, phone: true } } },
     orderBy: [{ isFeatured: 'desc' }, { createdAt: 'desc' }], take: 60
