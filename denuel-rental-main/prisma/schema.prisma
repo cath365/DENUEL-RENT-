@@ -1,0 +1,1773 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  USER
+  LANDLORD
+  AGENT
+  ADMIN
+  DRIVER
+  SERVICE_PROVIDER
+}
+
+enum ListingStatus {
+  DRAFT
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum WaterSource {
+  MUNICIPAL
+  BOREHOLE
+  WELL
+  TANK
+  OTHER
+}
+
+enum PowerBackup {
+  NONE
+  SOLAR
+  INVERTER
+  GENERATOR
+  OTHER
+}
+
+enum VehicleType {
+  MOTORBIKE
+  CAR
+  VAN
+  TRUCK_SMALL
+  TRUCK_MEDIUM
+  TRUCK_LARGE
+}
+
+enum TripStatus {
+  REQUESTED
+  SEARCHING
+  DRIVER_ASSIGNED
+  DRIVER_ARRIVING
+  IN_PROGRESS
+  COMPLETED
+  CANCELED
+  EXPIRED
+}
+
+enum BookingStatus {
+  PENDING
+  CONFIRMED
+  CANCELED
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  EXPIRED
+}
+
+enum ApplicationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum PlanTier {
+  FREE
+  BASIC
+  PREMIUM
+  ENTERPRISE
+}
+
+enum PaymentStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REFUNDED
+}
+
+enum PaymentMethod {
+  AIRTEL_MONEY
+  MTN_MOMO
+  VISA
+  MASTERCARD
+  BANK_TRANSFER
+}
+
+enum MessageCategory {
+  ADS_INQUIRY
+  FEATURE_REQUEST
+  TECHNICAL_SUPPORT
+  BILLING
+  GENERAL
+  COMPLAINT
+}
+
+enum VerificationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  EXPIRED
+}
+
+enum DocumentType {
+  NATIONAL_ID
+  PASSPORT
+  BUSINESS_LICENSE
+  PROOF_OF_ADDRESS
+  PROPERTY_TITLE
+  TAX_CLEARANCE
+  NRC
+  CERTIFICATE
+  LICENSE
+  INSURANCE
+  QUALIFICATION
+  REFERENCE
+  PORTFOLIO
+  ID_PHOTO
+  BACKGROUND_CHECK
+  OTHER
+}
+
+enum TransactionType {
+  SUBSCRIPTION
+  LISTING_FEE
+  FEATURED_LISTING
+  BOOST_LISTING
+  INQUIRY_UNLOCK
+  COMMISSION
+  SERVICE_BOOKING
+  ADVERTISEMENT
+  TRIP_PAYMENT
+  PLATFORM_COMMISSION
+}
+
+enum PropertyBoostType {
+  FEATURED
+  URGENT
+  HOMEPAGE
+  TOP_DAILY
+}
+
+model User {
+  id        String    @id @default(cuid())
+  name      String?
+  email     String    @unique
+  phone     String?
+  password  String
+  role      UserRole  @default(USER)
+  profileImage String?
+  isSuspended Boolean @default(false)
+  notifyEmail Boolean @default(true)
+  notifyWhatsApp Boolean @default(false)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  // Anti-Scam Verification Fields
+  isPhoneVerified    Boolean @default(false)
+  isEmailVerified    Boolean @default(false)
+  isIdVerified       Boolean @default(false)
+  isBusinessVerified Boolean @default(false)
+  trustScore         Float   @default(0.0) // 0-100
+  verificationNotes  String? @db.Text
+  verifiedAt         DateTime?
+  nrcNumber          String? // National Registration Card
+  businessLicense    String? // Business license number
+  companyName        String?
+
+  properties     Property[]
+  favorites      Favorite[]
+  messagesSent   Message[] @relation("sentMessages")
+  messagesReceived Message[] @relation("receivedMessages")
+  savedSearches  SavedSearch[]
+  listingReports ListingReport[]
+  payments       Payment[]
+  inquiries      PropertyInquiry[]
+  userSubscription UserSubscription?
+  transactions   Transaction[]
+  notifications  Notification[]
+  applications   Application[]
+  refreshTokens  RefreshToken[]
+  bookings       Booking[]
+  transportRequests TransportRequest[]
+  ratings        Rating[]
+  driverProfile  DriverProfile?
+  
+  // Zillow-style relations
+  agentProfile        AgentProfile?
+  agentReviews        AgentReview[]
+  mortgageCalculations MortgageCalculation[]
+  propertyComparisons PropertyComparison[]
+  propertyNotes       PropertyNote[]
+  recentlyViewed      RecentlyViewed[]
+  priceAlerts         PriceAlert[]
+  marketReports       MarketReport[]
+  serviceProvider     ServiceProvider?
+  serviceReviews      ServiceReview[]
+  serviceBookings     ServiceBooking[]
+  landlordScreenings  TenantScreening[] @relation("LandlordScreenings")
+  applicantScreenings TenantScreening[] @relation("ApplicantScreenings")
+  leaseTemplates      LeaseTemplate[]
+  landlordLeases      LeaseAgreement[] @relation("LandlordLeases")
+  tenantLeases        LeaseAgreement[] @relation("TenantLeases")
+  rentPayments        RentPayment[]
+  maintenanceRequests MaintenanceRequest[]
+  landlordMaintenance MaintenanceRequest[] @relation("LandlordMaintenance")
+  landlordExpenses    LandlordExpense[]
+  propertyBoards      PropertyBoard[]
+  boardMemberships    PropertyBoardMember[]
+  boardItemsAdded     PropertyBoardItem[]
+  questionsAsked      PropertyQuestion[] @relation("QuestionsAsked")
+  answers             PropertyAnswer[]
+  userChecklists      UserChecklist[]
+  openHouseRsvps      OpenHouseRSVP[]
+  viewingAppointments ViewingAppointment[]
+  supportMessages     SupportMessage[]
+  verificationDocs    VerificationDocument[]
+  reviewsReceived     UserReview[] @relation("ReviewsReceived")
+  reviewsGiven        UserReview[] @relation("ReviewsGiven")
+  testimonials        Testimonial[]
+  verifiedDocuments   ServiceDocument[] @relation("DocumentVerifier")
+}
+
+model Property {
+  id          String   @id @default(cuid())
+  title       String
+  description String   @db.Text
+  price       Float
+  deposit     Float?
+  country     String   @default("Zambia")
+  city        String
+  area        String?
+  addressText String?
+  latitude    Float?
+  longitude   Float?
+  bedrooms    Int
+  bathrooms   Int
+  sizeSqm     Float?
+  amenities   Json @default("[]")
+  rules       Json @default("[]")
+  furnished   Boolean  @default(false)
+  parkingSpaces Int    @default(0)
+  petsAllowed Boolean  @default(false)
+  internetAvailable Boolean @default(false)
+  waterSource WaterSource @default(MUNICIPAL)
+  powerBackup PowerBackup @default(NONE)
+  securityFeatures Json @default("[]")
+  isShortStay Boolean @default(false)
+  isStudentFriendly Boolean @default(false)
+  virtualTourUrl String?
+  yearBuilt   Int?
+  lotSizeSqm  Float?
+  propertyType String?  // HOUSE, APARTMENT, CONDO, TOWNHOUSE, LAND, COMMERCIAL
+  listingType String   @default("RENT") // RENT, SALE, BOTH
+  hoaFees     Float?
+  owner       User     @relation(fields: [ownerId], references: [id])
+  ownerId     String
+  status      ListingStatus @default(DRAFT)
+  isFeatured  Boolean  @default(false)
+  viewCount   Int      @default(0)
+  saveCount   Int      @default(0)
+  daysOnMarket Int     @default(0)
+  images      PropertyImage[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  favorites   Favorite[]
+  messageThreads MessageThread[]
+  reports     ListingReport[]
+  availabilities PropertyAvailability[]
+  views       PropertyView[]
+  bookings    Booking[]
+  applications Application[]
+  transportRequests TransportRequest[]
+  
+  // Zillow-style relations
+  valuations        PropertyValuation[]
+  priceHistory      PropertyPriceHistory[]
+  taxHistory        PropertyTaxHistory[]
+  ownershipHistory  PropertyOwnershipHistory[]
+  notes             PropertyNote[]
+  recentlyViewed    RecentlyViewed[]
+  priceAlerts       PriceAlert[]
+  maintenanceRequests MaintenanceRequest[]
+  expenses          LandlordExpense[]
+  virtualTour       VirtualTour?
+  floorPlans        FloorPlan[]
+  boardItems        PropertyBoardItem[]
+  questions         PropertyQuestion[]
+  openHouses        OpenHouse[]
+  viewingSlots      ViewingSlot[]
+  viewingAppointments ViewingAppointment[]
+  leases            LeaseAgreement[]
+
+  // Monetization relations
+  boosts            PropertyBoost[]
+  inquiries         PropertyInquiry[]
+  transactions      Transaction[]
+  propertyTransactions PropertyTransaction[]
+}
+
+model PropertyImage {
+  id         String   @id @default(cuid())
+  property   Property @relation(fields: [propertyId], references: [id])
+  propertyId String
+  url        String
+  width      Int?
+  height     Int?
+  sortOrder  Int      @default(0)
+  is360      Boolean  @default(false) // Flag for 360° panorama images
+  roomName   String?  // e.g., "Living Room", "Kitchen", "Bedroom"
+  createdAt  DateTime @default(now())
+}
+
+model Favorite {
+  id         String   @id @default(cuid())
+  user       User     @relation(fields: [userId], references: [id])
+  userId     String
+  property   Property @relation(fields: [propertyId], references: [id])
+  propertyId String
+  createdAt  DateTime @default(now())
+  @@unique([userId, propertyId])
+}
+
+model MessageThread {
+  id         String   @id @default(cuid())
+  property   Property @relation(fields: [propertyId], references: [id])
+  propertyId String
+  createdAt  DateTime @default(now())
+  messages   Message[]
+}
+
+model Message {
+  id         String   @id @default(cuid())
+  thread     MessageThread @relation(fields: [threadId], references: [id])
+  threadId   String
+  sender     User     @relation("sentMessages", fields: [senderId], references: [id])
+  senderId   String
+  receiver   User     @relation("receivedMessages", fields: [receiverId], references: [id])
+  receiverId String
+  body       String
+  isRead     Boolean  @default(false)
+  createdAt  DateTime @default(now())
+}
+
+model SavedSearch {
+  id        String   @id @default(cuid())
+  user      User     @relation(fields: [userId], references: [id])
+  userId    String
+  queryJson Json
+  lastNotifiedAt DateTime?
+  createdAt DateTime @default(now())
+}
+
+model ListingReport {
+  id         String   @id @default(cuid())
+  property   Property @relation(fields: [propertyId], references: [id])
+  propertyId String
+  reporter   User     @relation(fields: [reporterId], references: [id])
+  reporterId String
+  reason     String
+  details    String?
+  status     String   @default("OPEN")
+  createdAt  DateTime @default(now())
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  adminId    String
+  action     String
+  entityType String
+  entityId   String
+  beforeJson Json
+  afterJson  Json
+  createdAt  DateTime @default(now())
+}
+
+model Booking {
+  id          String   @id @default(cuid())
+  property    Property @relation(fields: [propertyId], references: [id])
+  propertyId  String
+  tenant      User     @relation(fields: [tenantId], references: [id])
+  tenantId    String
+  startDate   DateTime
+  endDate     DateTime
+  status      BookingStatus @default(PENDING)
+  amountZmw   Int
+  depositZmw  Int?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model TripEvent {
+  id                 String   @id @default(cuid())
+  transportRequest   TransportRequest @relation(fields: [transportRequestId], references: [id])
+  transportRequestId String
+  status             TripStatus
+  lat                Float?
+  lng                Float?
+  note               String?
+  createdAt          DateTime @default(now())
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  user      User     @relation(fields: [userId], references: [id])
+  userId    String
+  type      String
+  data      Json
+  isRead    Boolean  @default(false)
+  channel   String?
+  sentAt    DateTime?
+  createdAt DateTime @default(now())
+}
+
+model PropertyAvailability {
+  id         String   @id @default(cuid())
+  property   Property @relation(fields: [propertyId], references: [id])
+  propertyId String
+  startDate  DateTime
+  endDate    DateTime
+  note       String?
+  createdAt  DateTime @default(now())
+}
+
+// For analytics
+model PropertyView {
+  id         String   @id @default(cuid())
+  property   Property @relation(fields: [propertyId], references: [id])
+  propertyId String
+  ip         String
+  createdAt  DateTime @default(now())
+}
+
+model RefreshToken {
+  id         String   @id @default(cuid())
+  user       User     @relation(fields: [userId], references: [id])
+  userId     String
+  tokenHash  String   // hashed refresh token for revocation checks
+  jti        String   @unique
+  isRevoked  Boolean  @default(false)
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+}
+
+model DriverProfile {
+  id               String    @id @default(cuid())
+  user             User      @relation(fields: [userId], references: [id])
+  userId           String    @unique
+  licenseNumber    String
+  vehicleType      VehicleType
+  vehiclePlate     String
+  vehicleCapacityKg Int?
+  isApproved       Boolean   @default(false)
+  isOnline         Boolean   @default(false)
+  currentLat       Float?
+  currentLng       Float?
+  ratingAvg        Float     @default(0)
+  ratingCount      Int       @default(0)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  TransportRequests TransportRequest[] @relation("driver_requests")
+  DriverEarnings   DriverEarning[]
+  Ratings          Rating[]
+}
+
+model TransportRequest {
+  id                    String     @id @default(cuid())
+  bookingId             String?    
+  tenant                User       @relation(fields: [tenantId], references: [id])
+  tenantId              String
+  property              Property   @relation(fields: [propertyId], references: [id])
+  propertyId            String
+  pickupLat             Float
+  pickupLng             Float
+  pickupAddressText     String
+  dropoffLat            Float
+  dropoffLng            Float
+  dropoffAddressText    String
+  vehicleType           VehicleType
+  distanceKmEstimated   Float
+  durationMinEstimated  Int
+  priceEstimateZmw      Int
+  lockedPriceZmw        Int?
+  pricingBreakdown      Json?
+  priceLockedAt         DateTime?
+  status                TripStatus @default(REQUESTED)
+  assignedDriver        DriverProfile? @relation("driver_requests", fields: [assignedDriverId], references: [id])
+  assignedDriverId      String?
+  expiresAt             DateTime?
+  createdAt             DateTime   @default(now())
+  updatedAt             DateTime   @updatedAt
+  Rating                Rating?
+  DriverEarning         DriverEarning?
+  events                TripEvent[]
+  pricingAudits         PricingAudit[]
+}
+
+model TransportSettings {
+  id                  String   @id @default(cuid())
+  surgeEnabled        Boolean  @default(true)
+  maxSurgeMultiplier  Float    @default(1.3)
+  maxNightMultiplier  Float    @default(1.15)
+  maxWeatherMultiplier Float   @default(1.1)
+  nightStartHour      Int      @default(21)
+  nightEndHour        Int      @default(5)
+  surgeWindowMinutes  Int      @default(5)
+  surgeMinDelta       Int      @default(1) // requests - drivers > delta
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+}
+
+model PricingAudit {
+  id                 String   @id @default(cuid())
+  transportRequest   TransportRequest? @relation(fields: [transportRequestId], references: [id])
+  transportRequestId String?
+  inputs             Json
+  breakdown          Json
+  rawPrice           Int
+  finalPrice         Int
+  reason             String?
+  createdAt          DateTime @default(now())
+}
+
+model PlatformSettings {
+  id                        String   @id @default(cuid())
+  transportCommissionPct    Float    @default(15) // percent
+  rentalSuccessFeePct       Float    @default(0)
+  featuredListingFeeZmw     Int      @default(500)
+  driverSubscriptionFeeZmw  Int      @default(0)
+  landlordSubscriptionFeeZmw Int     @default(0)
+  createdAt                 DateTime @default(now())
+  updatedAt                 DateTime @updatedAt
+}
+
+model PricingRule {
+  id               String      @id @default(cuid())
+  vehicleType      VehicleType
+  baseFareZmw      Int
+  perKmZmw         Int
+  perMinZmw        Int
+  minimumFareZmw   Int
+  surgeMultiplier  Float     @default(1)
+  nightMultiplier  Float     @default(1)
+  weatherMultiplier Float    @default(1)
+  isActive         Boolean   @default(true)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+}
+
+model DriverEarning {
+  id                 String    @id @default(cuid())
+  transportRequest   TransportRequest @relation(fields: [transportRequestId], references: [id])
+  transportRequestId String    @unique
+  driver             DriverProfile @relation(fields: [driverId], references: [id])
+  driverId           String
+  grossZmw           Int
+  platformFeeZmw     Int
+  netZmw             Int
+  createdAt          DateTime  @default(now())
+}
+
+model Rating {
+  id                 String    @id @default(cuid())
+  transportRequest   TransportRequest @relation(fields: [transportRequestId], references: [id])
+  transportRequestId String    @unique
+  tenant             User      @relation(fields: [tenantId], references: [id])
+  tenantId           String
+  driver             DriverProfile @relation(fields: [driverId], references: [id])
+  driverId           String
+  stars              Int
+  comment            String?
+  createdAt          DateTime  @default(now())
+}
+
+model Application {
+  id         String   @id @default(cuid())
+  user       User     @relation(fields: [userId], references: [id])
+  userId     String
+  property   Property @relation(fields: [propertyId], references: [id])
+  propertyId String
+  status     ApplicationStatus @default(PENDING)
+  appliedAt  DateTime @default(now())
+  feeAmount  Float?   @default(35) // ZMW
+  feePaid    Boolean  @default(false)
+  @@unique([userId, propertyId])
+}
+
+// ==========================================
+// ZILLOW-STYLE FEATURES - Property Valuation
+// ==========================================
+
+model PropertyValuation {
+  id              String   @id @default(cuid())
+  property        Property @relation(fields: [propertyId], references: [id])
+  propertyId      String
+  estimatedValue  Float    // Zestimate-style value
+  rentEstimate    Float?   // Rent Zestimate
+  lowEstimate     Float
+  highEstimate    Float
+  confidenceScore Float    @default(0.7) // 0-1 confidence
+  algorithm       String   @default("v1")
+  comparables     Json?    // IDs and data of comparable properties
+  factors         Json?    // Factors affecting valuation
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model PropertyPriceHistory {
+  id          String   @id @default(cuid())
+  property    Property @relation(fields: [propertyId], references: [id])
+  propertyId  String
+  price       Float
+  eventType   String   // LISTED, PRICE_CHANGE, SOLD, DELISTED, RELISTED
+  source      String?  // Where the data came from
+  date        DateTime @default(now())
+  createdAt   DateTime @default(now())
+}
+
+model PropertyTaxHistory {
+  id          String   @id @default(cuid())
+  property    Property @relation(fields: [propertyId], references: [id])
+  propertyId  String
+  year        Int
+  taxAmount   Float
+  assessedValue Float?
+  createdAt   DateTime @default(now())
+}
+
+model PropertyOwnershipHistory {
+  id          String   @id @default(cuid())
+  property    Property @relation(fields: [propertyId], references: [id])
+  propertyId  String
+  ownerName   String?
+  purchasePrice Float?
+  purchaseDate DateTime?
+  salePrice   Float?
+  saleDate    DateTime?
+  daysOwned   Int?
+  createdAt   DateTime @default(now())
+}
+
+// ==========================================
+// ZILLOW-STYLE FEATURES - Neighborhood Data
+// ==========================================
+
+model Neighborhood {
+  id              String   @id @default(cuid())
+  name            String
+  city            String
+  country         String   @default("Zambia")
+  boundaryGeoJson Json?    // GeoJSON polygon
+  walkScore       Int?     // 0-100
+  transitScore    Int?     // 0-100
+  bikeScore       Int?     // 0-100
+  safetyScore     Int?     // 0-100
+  description     String?  @db.Text
+  medianPrice     Float?
+  medianRent      Float?
+  population      Int?
+  medianIncome    Float?
+  averageAge      Float?
+  crimeIndex      Float?   // Lower is safer
+  schoolsCount    Int?
+  amenitiesJson   Json?    // Nearby amenities summary
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  schools         School[]
+  amenities       LocalAmenity[]
+  marketTrends    NeighborhoodMarketTrend[]
+}
+
+model School {
+  id              String       @id @default(cuid())
+  name            String
+  neighborhood    Neighborhood @relation(fields: [neighborhoodId], references: [id])
+  neighborhoodId  String
+  type            String       // PRIMARY, SECONDARY, TERTIARY
+  rating          Float?       // 1-10
+  studentCount    Int?
+  latitude        Float?
+  longitude       Float?
+  districtName    String?
+  isPrivate       Boolean      @default(false)
+  createdAt       DateTime     @default(now())
+}
+
+model LocalAmenity {
+  id              String       @id @default(cuid())
+  name            String
+  neighborhood    Neighborhood @relation(fields: [neighborhoodId], references: [id])
+  neighborhoodId  String
+  category        String       // RESTAURANT, SHOPPING, HOSPITAL, BANK, GYM, PARK, etc.
+  latitude        Float?
+  longitude       Float?
+  rating          Float?
+  priceLevel      Int?         // 1-4 ($-$$$$)
+  createdAt       DateTime     @default(now())
+}
+
+model NeighborhoodMarketTrend {
+  id              String       @id @default(cuid())
+  neighborhood    Neighborhood @relation(fields: [neighborhoodId], references: [id])
+  neighborhoodId  String
+  month           DateTime     // First day of month
+  medianPrice     Float?
+  medianRent      Float?
+  inventoryCount  Int?
+  daysOnMarket    Float?
+  pricePerSqm     Float?
+  yoyPriceChange  Float?       // Year over year % change
+  createdAt       DateTime     @default(now())
+  @@unique([neighborhoodId, month])
+}
+
+// ==========================================
+// ZILLOW-STYLE FEATURES - Agent Reviews
+// ==========================================
+
+model AgentProfile {
+  id                String   @id @default(cuid())
+  user              User     @relation(fields: [userId], references: [id])
+  userId            String   @unique
+  bio               String?  @db.Text
+  specialties       Json?    // Array of specialties
+  areasServed       Json?    // Array of areas
+  licenseNumber     String?
+  yearsExperience   Int?
+  languages         Json?    // Array of languages
+  profilePhotoUrl   String?
+  coverPhotoUrl     String?
+  website           String?
+  facebookUrl       String?
+  linkedinUrl       String?
+  instagramUrl      String?
+  totalSales        Int      @default(0)
+  totalRentals      Int      @default(0)
+  totalVolume       Float    @default(0) // Total transaction value
+  ratingAvg         Float    @default(0)
+  ratingCount       Int      @default(0)
+  responseTimeHours Float?   // Average response time
+  responseRate      Float?   // % of inquiries responded to
+  isVerified        Boolean  @default(false)
+  isFeatured        Boolean  @default(false)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  reviews           AgentReview[]
+  transactions      AgentTransaction[]
+}
+
+model AgentReview {
+  id          String       @id @default(cuid())
+  agent       AgentProfile @relation(fields: [agentId], references: [id])
+  agentId     String
+  reviewer    User         @relation(fields: [reviewerId], references: [id])
+  reviewerId  String
+  propertyId  String?      // Related property if applicable
+  rating      Int          // 1-5 stars
+  title       String?
+  review      String       @db.Text
+  wouldRecommend Boolean   @default(true)
+  helpfulness Int          @default(0) // Upvotes
+  isVerified  Boolean      @default(false) // Verified transaction
+  response    String?      @db.Text // Agent's response
+  responseAt  DateTime?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+}
+
+model AgentTransaction {
+  id              String       @id @default(cuid())
+  agent           AgentProfile @relation(fields: [agentId], references: [id])
+  agentId         String
+  propertyId      String?
+  transactionType String       // SALE, RENTAL
+  amount          Float
+  closedAt        DateTime
+  clientType      String?      // BUYER, SELLER, TENANT, LANDLORD
+  createdAt       DateTime     @default(now())
+}
+
+// ==========================================
+// ZILLOW-STYLE FEATURES - Mortgage Calculator
+// ==========================================
+
+model MortgageCalculation {
+  id              String   @id @default(cuid())
+  user            User?    @relation(fields: [userId], references: [id])
+  userId          String?
+  propertyId      String?
+  homePrice       Float
+  downPayment     Float
+  downPaymentPct  Float
+  loanAmount      Float
+  interestRate    Float
+  loanTermYears   Int
+  monthlyPayment  Float
+  principalInterest Float
+  propertyTax     Float?
+  homeInsurance   Float?
+  hoaFees         Float?
+  pmi             Float?   // Private Mortgage Insurance
+  totalPayment    Float
+  amortization    Json?    // Full amortization schedule
+  createdAt       DateTime @default(now())
+}
+
+model MortgageLender {
+  id              String   @id @default(cuid())
+  name            String
+  logoUrl         String?
+  website         String?
+  phone           String?
+  currentRate     Float?   // Current advertised rate
+  minDownPayment  Float?   // Minimum down payment %
+  loanTypes       Json?    // Array of loan types offered
+  isPartner       Boolean  @default(false)
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+// ==========================================
+// ZILLOW-STYLE FEATURES - Property Comparison
+// ==========================================
+
+model PropertyComparison {
+  id           String   @id @default(cuid())
+  user         User     @relation(fields: [userId], references: [id])
+  userId       String
+  name         String?
+  propertyIds  Json     // Array of property IDs
+  notes        Json?    // Notes for each property
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model PropertyNote {
+  id         String   @id @default(cuid())
+  user       User     @relation(fields: [userId], references: [id])
+  userId     String
+  property   Property @relation(fields: [propertyId], references: [id])
+  propertyId String
+  note       String   @db.Text
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  @@unique([userId, propertyId])
+}
+
+model RecentlyViewed {
+  id         String   @id @default(cuid())
+  user       User     @relation(fields: [userId], references: [id])
+  userId     String
+  property   Property @relation(fields: [propertyId], references: [id])
+  propertyId String
+  viewedAt   DateTime @default(now())
+  @@unique([userId, propertyId])
+}
+
+// ==========================================
+// ZILLOW-STYLE FEATURES - Advanced Alerts
+// ==========================================
+
+model PriceAlert {
+  id               String   @id @default(cuid())
+  user             User     @relation(fields: [userId], references: [id])
+  userId           String
+  property         Property @relation(fields: [propertyId], references: [id])
+  propertyId       String
+  originalPrice    Float
+  targetPrice      Float?   // Alert when price drops to this
+  alertOnAnyChange Boolean  @default(true)
+  isActive         Boolean  @default(true)
+  lastAlertedAt    DateTime?
+  createdAt        DateTime @default(now())
+  @@unique([userId, propertyId])
+}
+
+model MarketReport {
+  id           String   @id @default(cuid())
+  user         User     @relation(fields: [userId], references: [id])
+  userId       String
+  city         String
+  area         String?
+  frequency    String   @default("WEEKLY") // DAILY, WEEKLY, MONTHLY
+  includeNew   Boolean  @default(true)
+  includeSold  Boolean  @default(true)
+  includeTrends Boolean @default(true)
+  lastSentAt   DateTime?
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+}
+
+// ==========================================
+// ZILLOW-STYLE FEATURES - Services Marketplace
+// ==========================================
+
+enum ServiceCategory {
+  HOME_INSPECTOR
+  MOVER
+  CLEANER
+  PHOTOGRAPHER
+  CONTRACTOR
+  ELECTRICIAN
+  PLUMBER
+  PAINTER
+  LANDSCAPER
+  PEST_CONTROL
+  HOME_INSURANCE
+  HOME_WARRANTY
+  LEGAL
+  MORTGAGE_BROKER
+  INTERIOR_DESIGNER
+  SECURITY
+  HVAC
+  ROOFING
+  FLOORING
+  GARDENER
+  MAID
+  OTHER
+}
+
+model ServiceProvider {
+  id              String          @id @default(cuid())
+  user            User?           @relation(fields: [userId], references: [id])
+  userId          String?         @unique
+  businessName    String
+  category        ServiceCategory
+  description     String?         @db.Text
+  phone           String
+  email           String
+  website         String?
+  address         String?
+  city            String
+  area            String?
+  latitude        Float?
+  longitude       Float?
+  logoUrl         String?
+  coverPhotoUrl   String?
+  profilePhotoUrl String?
+  servicesOffered Json?           // Array of specific services
+  priceRange      String?         // e.g., "K500-K2000"
+  hourlyRate      Float?
+  minimumCharge   Float?
+  yearsInBusiness Int?
+  licenseNumber   String?
+  nrcNumber       String?         // National Registration Card
+  tpinNumber      String?         // Tax Payer ID
+  isVerified      Boolean         @default(false)
+  isActive        Boolean         @default(true)
+  isAvailable     Boolean         @default(true)
+  rejectionReason String?         @db.Text
+  ratingAvg       Float           @default(0)
+  ratingCount     Int             @default(0)
+  completedJobs   Int             @default(0)
+  bio             String?         @db.Text
+  workingHours    Json?           // { monday: "8:00-17:00", ... }
+  serviceAreas    Json?           // Array of areas they serve
+  languages       Json?           // Languages spoken
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  reviews         ServiceReview[]
+  bookings        ServiceBooking[]
+  documents       ServiceDocument[]
+  portfolio       ServicePortfolio[]
+}
+
+model ServiceReview {
+  id              String          @id @default(cuid())
+  provider        ServiceProvider @relation(fields: [providerId], references: [id])
+  providerId      String
+  reviewer        User            @relation(fields: [reviewerId], references: [id])
+  reviewerId      String
+  rating          Int             // 1-5
+  review          String?         @db.Text
+  serviceDate     DateTime?
+  priceRating     Int?            // 1-5 value for money
+  qualityRating   Int?            // 1-5 quality of work
+  timelinessRating Int?           // 1-5 punctuality
+  photos          Json?           // Array of photo URLs
+  createdAt       DateTime        @default(now())
+}
+
+model ServiceBooking {
+  id              String          @id @default(cuid())
+  provider        ServiceProvider @relation(fields: [providerId], references: [id])
+  providerId      String
+  customer        User            @relation(fields: [customerId], references: [id])
+  customerId      String
+  propertyId      String?
+  serviceType     String
+  scheduledAt     DateTime
+  notes           String?         @db.Text
+  status          String          @default("PENDING") // PENDING, CONFIRMED, COMPLETED, CANCELED
+  estimatedPrice  Float?
+  finalPrice      Float?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+}
+
+model ServiceDocument {
+  id              String          @id @default(cuid())
+  provider        ServiceProvider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  providerId      String
+  type            DocumentType
+  name            String
+  fileUrl         String
+  fileSize        Int?
+  mimeType        String?
+  isVerified      Boolean         @default(false)
+  verifiedAt      DateTime?
+  verifiedBy      User?           @relation("DocumentVerifier", fields: [verifiedById], references: [id])
+  verifiedById    String?
+  expiresAt       DateTime?
+  uploadedAt      DateTime        @default(now())
+}
+
+model ServicePortfolio {
+  id              String          @id @default(cuid())
+  provider        ServiceProvider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  providerId      String
+  title           String
+  description     String?         @db.Text
+  imageUrl        String
+  category        String?
+  projectDate     DateTime?
+  createdAt       DateTime        @default(now())
+}
+
+// Service Provider Profile Views
+model ServiceProfileView {
+  id              String          @id @default(cuid())
+  providerId      String
+  viewerId        String?         // Null if anonymous
+  viewerName      String?
+  viewerEmail     String?
+  viewerPhone     String?
+  viewerCity      String?
+  source          String?         // Where they came from (search, category, etc)
+  searchQuery     String?         // What they searched for
+  ipAddress       String?
+  userAgent       String?
+  createdAt       DateTime        @default(now())
+
+  @@index([providerId])
+  @@index([viewerId])
+  @@index([createdAt])
+}
+
+// Service Inquiries (potential customers)
+model ServiceInquiry {
+  id              String          @id @default(cuid())
+  providerId      String
+  customerId      String?
+  customerName    String
+  customerEmail   String?
+  customerPhone   String
+  serviceNeeded   String
+  description     String?         @db.Text
+  preferredDate   DateTime?
+  budget          String?
+  propertyAddress String?
+  city            String?
+  status          String          @default("NEW") // NEW, CONTACTED, QUOTED, CONVERTED, CLOSED
+  notes           String?         @db.Text
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  @@index([providerId])
+  @@index([status])
+}
+
+// Service Provider Messages/Chat
+model ServiceMessage {
+  id              String          @id @default(cuid())
+  conversationId  String
+  senderId        String
+  senderType      String          // PROVIDER or CUSTOMER
+  senderName      String
+  receiverId      String
+  content         String          @db.Text
+  isRead          Boolean         @default(false)
+  readAt          DateTime?
+  createdAt       DateTime        @default(now())
+
+  @@index([conversationId])
+  @@index([senderId])
+  @@index([receiverId])
+  @@index([createdAt])
+}
+
+// Service Conversation
+model ServiceConversation {
+  id              String          @id @default(cuid())
+  providerId      String
+  customerId      String
+  customerName    String
+  customerPhone   String?
+  customerEmail   String?
+  lastMessage     String?
+  lastMessageAt   DateTime?
+  unreadProvider  Int             @default(0)
+  unreadCustomer  Int             @default(0)
+  status          String          @default("ACTIVE") // ACTIVE, ARCHIVED
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  @@unique([providerId, customerId])
+  @@index([providerId])
+  @@index([customerId])
+}
+
+// ==========================================
+// ZILLOW-STYLE FEATURES - Landlord Tools
+// ==========================================
+
+model TenantScreening {
+  id              String   @id @default(cuid())
+  landlord        User     @relation("LandlordScreenings", fields: [landlordId], references: [id])
+  landlordId      String
+  applicant       User     @relation("ApplicantScreenings", fields: [applicantId], references: [id])
+  applicantId     String
+  propertyId      String?
+  creditScore     Int?
+  creditStatus    String?  // EXCELLENT, GOOD, FAIR, POOR
+  backgroundCheck Boolean  @default(false)
+  backgroundStatus String? // CLEAR, FLAGS, PENDING
+  evictionHistory Boolean  @default(false)
+  incomeVerified  Boolean  @default(false)
+  monthlyIncome   Float?
+  employerName    String?
+  employmentStatus String? // EMPLOYED, SELF_EMPLOYED, UNEMPLOYED, RETIRED
+  references      Json?    // Array of reference checks
+  status          String   @default("PENDING") // PENDING, COMPLETED, FAILED
+  reportUrl       String?
+  expiresAt       DateTime?
+  createdAt       DateTime @default(now())
+}
+
+model LeaseTemplate {
+  id          String   @id @default(cuid())
+  landlord    User     @relation(fields: [landlordId], references: [id])
+  landlordId  String
+  name        String
+  content     String   @db.LongText
+  variables   Json?    // Placeholders in the template
+  isDefault   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model LeaseAgreement {
+  id              String   @id @default(cuid())
+  property        Property @relation(fields: [propertyId], references: [id])
+  propertyId      String
+  landlord        User     @relation("LandlordLeases", fields: [landlordId], references: [id])
+  landlordId      String
+  tenant          User     @relation("TenantLeases", fields: [tenantId], references: [id])
+  tenantId        String
+  templateId      String?
+  content         String   @db.LongText
+  monthlyRent     Float
+  deposit         Float?
+  startDate       DateTime
+  endDate         DateTime
+  terms           Json?    // Additional terms
+  landlordSigned  Boolean  @default(false)
+  landlordSignedAt DateTime?
+  tenantSigned    Boolean  @default(false)
+  tenantSignedAt  DateTime?
+  status          String   @default("DRAFT") // DRAFT, PENDING_SIGNATURES, ACTIVE, EXPIRED, TERMINATED
+  documentUrl     String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  rentPayments    RentPayment[]
+}
+
+model RentPayment {
+  id           String   @id @default(cuid())
+  lease        LeaseAgreement @relation(fields: [leaseId], references: [id])
+  leaseId      String
+  tenant       User     @relation(fields: [tenantId], references: [id])
+  tenantId     String
+  amount       Float
+  dueDate      DateTime
+  paidDate     DateTime?
+  status       String   @default("PENDING") // PENDING, PAID, LATE, PARTIAL, WAIVED
+  lateFee      Float?
+  paymentMethod String? // CARD, BANK, MOBILE_MONEY, CASH
+  transactionId String?
+  notes        String?
+  createdAt    DateTime @default(now())
+}
+
+model MaintenanceRequest {
+  id           String   @id @default(cuid())
+  property     Property @relation(fields: [propertyId], references: [id])
+  propertyId   String
+  tenant       User     @relation(fields: [tenantId], references: [id])
+  tenantId     String
+  landlord     User     @relation("LandlordMaintenance", fields: [landlordId], references: [id])
+  landlordId   String
+  category     String   // PLUMBING, ELECTRICAL, HVAC, APPLIANCE, STRUCTURAL, PEST, OTHER
+  priority     String   @default("MEDIUM") // LOW, MEDIUM, HIGH, EMERGENCY
+  title        String
+  description  String   @db.Text
+  photos       Json?    // Array of photo URLs
+  status       String   @default("OPEN") // OPEN, IN_PROGRESS, SCHEDULED, COMPLETED, CANCELED
+  assignedTo   String?  // Service provider ID or name
+  scheduledAt  DateTime?
+  completedAt  DateTime?
+  cost         Float?
+  tenantRating Int?     // 1-5 satisfaction rating
+  notes        Json?    // Array of status update notes
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model LandlordExpense {
+  id          String   @id @default(cuid())
+  property    Property @relation(fields: [propertyId], references: [id])
+  propertyId  String
+  landlord    User     @relation(fields: [landlordId], references: [id])
+  landlordId  String
+  category    String   // MAINTENANCE, TAXES, INSURANCE, UTILITIES, MORTGAGE, HOA, OTHER
+  description String
+  amount      Float
+  date        DateTime
+  receiptUrl  String?
+  vendor      String?
+  isRecurring Boolean  @default(false)
+  recurringFrequency String? // MONTHLY, QUARTERLY, YEARLY
+  createdAt   DateTime @default(now())
+}
+
+// ==========================================
+// ZILLOW-STYLE FEATURES - 3D Tours
+// ==========================================
+
+model VirtualTour {
+  id           String   @id @default(cuid())
+  property     Property @relation(fields: [propertyId], references: [id])
+  propertyId   String   @unique
+  matterportId String?  // Matterport tour ID
+  tourUrl      String
+  thumbnailUrl String?
+  floorPlanUrl String?
+  videoTourUrl String?
+  droneVideoUrl String?
+  tourType     String   @default("3D") // 3D, VIDEO, SLIDESHOW
+  viewCount    Int      @default(0)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model FloorPlan {
+  id          String   @id @default(cuid())
+  property    Property @relation(fields: [propertyId], references: [id])
+  propertyId  String
+  name        String?  // e.g., "Ground Floor", "First Floor"
+  imageUrl    String
+  floor       Int      @default(0)
+  isInteractive Boolean @default(false)
+  rooms       Json?    // Room data for interactive plans
+  createdAt   DateTime @default(now())
+}
+
+// ==========================================
+// ZILLOW-STYLE FEATURES - Social Features
+// ==========================================
+
+model PropertyBoard {
+  id          String   @id @default(cuid())
+  owner       User     @relation(fields: [ownerId], references: [id])
+  ownerId     String
+  name        String
+  description String?
+  isPublic    Boolean  @default(false)
+  shareCode   String?  @unique // For sharing
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  members     PropertyBoardMember[]
+  items       PropertyBoardItem[]
+}
+
+model PropertyBoardMember {
+  id        String        @id @default(cuid())
+  board     PropertyBoard @relation(fields: [boardId], references: [id])
+  boardId   String
+  user      User          @relation(fields: [userId], references: [id])
+  userId    String
+  canEdit   Boolean       @default(false)
+  joinedAt  DateTime      @default(now())
+  @@unique([boardId, userId])
+}
+
+model PropertyBoardItem {
+  id         String        @id @default(cuid())
+  board      PropertyBoard @relation(fields: [boardId], references: [id])
+  boardId    String
+  property   Property      @relation(fields: [propertyId], references: [id])
+  propertyId String
+  addedBy    User          @relation(fields: [addedById], references: [id])
+  addedById  String
+  note       String?
+  rank       Int           @default(0) // For ordering
+  createdAt  DateTime      @default(now())
+  @@unique([boardId, propertyId])
+}
+
+model PropertyQuestion {
+  id          String   @id @default(cuid())
+  property    Property @relation(fields: [propertyId], references: [id])
+  propertyId  String
+  asker       User     @relation("QuestionsAsked", fields: [askerId], references: [id])
+  askerId     String
+  question    String   @db.Text
+  isPublic    Boolean  @default(true)
+  status      String   @default("OPEN") // OPEN, ANSWERED, CLOSED
+  createdAt   DateTime @default(now())
+  answers     PropertyAnswer[]
+}
+
+model PropertyAnswer {
+  id         String           @id @default(cuid())
+  question   PropertyQuestion @relation(fields: [questionId], references: [id])
+  questionId String
+  answerer   User             @relation(fields: [answererId], references: [id])
+  answererId String
+  answer     String           @db.Text
+  isOfficial Boolean          @default(false) // From owner/agent
+  upvotes    Int              @default(0)
+  createdAt  DateTime         @default(now())
+}
+
+// ==========================================
+// ZILLOW-STYLE FEATURES - Home Guides
+// ==========================================
+
+model Guide {
+  id          String   @id @default(cuid())
+  slug        String   @unique
+  title       String
+  excerpt     String?  @db.Text
+  content     String   @db.LongText
+  category    String   // BUYING, SELLING, RENTING, INVESTING, FIRST_TIME, MOVING
+  coverImage  String?
+  author      String?
+  tags        Json?    // Array of tags
+  readTime    Int?     // Minutes
+  viewCount   Int      @default(0)
+  isPublished Boolean  @default(false)
+  publishedAt DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Checklist {
+  id          String   @id @default(cuid())
+  slug        String   @unique
+  title       String
+  description String?
+  category    String   // BUYING, SELLING, MOVING, INSPECTION
+  items          Json     // Array of checklist items
+  isPublished    Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  userChecklists UserChecklist[]
+}
+
+model UserChecklist {
+  id          String   @id @default(cuid())
+  user        User     @relation(fields: [userId], references: [id])
+  userId      String
+  checklist   Checklist @relation(fields: [checklistId], references: [id])
+  checklistId String
+  progress    Json     // Which items are completed
+  propertyId  String?  // Optional link to a property
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  @@unique([userId, checklistId, propertyId])
+}
+
+// ==========================================
+// ZILLOW-STYLE FEATURES - Open Houses
+// ==========================================
+
+model OpenHouse {
+  id          String   @id @default(cuid())
+  property    Property @relation(fields: [propertyId], references: [id])
+  propertyId  String
+  startTime   DateTime
+  endTime     DateTime
+  isVirtual   Boolean  @default(false)
+  virtualLink String?
+  notes       String?
+  maxAttendees Int?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  rsvps       OpenHouseRSVP[]
+}
+
+model OpenHouseRSVP {
+  id          String    @id @default(cuid())
+  openHouse   OpenHouse @relation(fields: [openHouseId], references: [id])
+  openHouseId String
+  user        User      @relation(fields: [userId], references: [id])
+  userId      String
+  attendees   Int       @default(1)
+  notes       String?
+  status      String    @default("CONFIRMED") // CONFIRMED, CANCELED, ATTENDED
+  createdAt   DateTime  @default(now())
+  @@unique([openHouseId, userId])
+}
+
+// ==========================================
+// ZILLOW-STYLE FEATURES - Viewing Scheduler
+// ==========================================
+
+model ViewingSlot {
+  id          String   @id @default(cuid())
+  property    Property @relation(fields: [propertyId], references: [id])
+  propertyId  String
+  dayOfWeek   Int?     // 0-6 for recurring
+  date        DateTime? // For specific dates
+  startTime   String   // "09:00"
+  endTime     String   // "17:00"
+  slotDuration Int     @default(30) // Minutes per viewing
+  isRecurring Boolean  @default(true)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+}
+
+model ViewingAppointment {
+  id          String   @id @default(cuid())
+  property    Property @relation(fields: [propertyId], references: [id])
+  propertyId  String
+  visitor     User     @relation(fields: [visitorId], references: [id])
+  visitorId   String
+  scheduledAt DateTime
+  duration    Int      @default(30)
+  status      String   @default("PENDING") // PENDING, CONFIRMED, COMPLETED, CANCELED, NO_SHOW
+  notes       String?
+  reminderSent Boolean @default(false)
+  feedback    String?
+  rating      Int?     // 1-5 visitor rating of property
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// System Settings - stores all platform configuration
+model SystemSettings {
+  id                       String   @id @default("main")
+  siteName                 String   @default("DENUEL")
+  siteDescription          String?  @db.Text
+  contactEmail             String?
+  contactPhone             String?
+  supportEmail             String?
+  currency                 String   @default("ZMW")
+  timezone                 String   @default("Africa/Lusaka")
+  maintenanceMode          Boolean  @default(false)
+  allowRegistration        Boolean  @default(true)
+  requireEmailVerification Boolean  @default(false)
+  maxPropertyImages        Int      @default(10)
+  maxFileSize              Int      @default(5) // in MB
+  commissionRate           Float    @default(5.0) // percentage
+  minRentPrice             Float    @default(100)
+  maxRentPrice             Float    @default(100000)
+  featuredListingPrice     Float    @default(50)
+  enableDriverFeature      Boolean  @default(true)
+  enableServicesFeature    Boolean  @default(true)
+  enableTransportFeature   Boolean  @default(true)
+  // Branding
+  logoUrl                  String?  @db.Text
+  faviconUrl               String?  @db.Text
+  primaryColor             String   @default("#2563eb")
+  secondaryColor           String   @default("#1e40af")
+  accentColor              String   @default("#3b82f6")
+  headerBgColor            String   @default("#ffffff")
+  footerBgColor            String   @default("#1f2937")
+  // Social Media Links
+  facebookUrl              String?
+  twitterUrl               String?
+  instagramUrl             String?
+  linkedinUrl              String?
+  youtubeUrl               String?
+  whatsappNumber           String?
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+}
+
+// Advertisements
+model Advertisement {
+  id          String   @id @default(cuid())
+  name        String
+  imageUrl    String?  @db.Text
+  linkUrl     String
+  placement   String   // homepage-banner, sidebar, listing-page, search-results, footer
+  isActive    Boolean  @default(true)
+  impressions Int      @default(0)
+  clicks      Int      @default(0)
+  startDate   DateTime?
+  endDate     DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// ============ MONETIZATION MODELS ============
+
+// Subscription Plans
+model SubscriptionPlan {
+  id                String   @id @default(cuid())
+  name              String   // Free, Basic, Premium, Enterprise
+  description       String?  @db.Text
+  price             Float    // Monthly price
+  currency          String   @default("ZMW")
+  maxListings       Int      @default(1) // -1 for unlimited
+  maxPhotos         Int      @default(5)
+  maxBoosts         Int      @default(0) // Number of free boosts per month
+  hasFeaturedBadge  Boolean  @default(false)
+  hasPrioritySupport Boolean @default(false)
+  hasAnalytics      Boolean  @default(false)
+  hasAutoBoost      Boolean  @default(false) // Auto move to top daily
+  freeInquiries     Int      @default(5) // Free inquiries before paywall
+  isActive          Boolean  @default(true)
+  sortOrder         Int      @default(0)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  userSubscriptions UserSubscription[]
+}
+
+// User Subscriptions
+model UserSubscription {
+  id               String             @id @default(cuid())
+  userId           String             @unique
+  planId           String
+  status           SubscriptionStatus @default(ACTIVE)
+  currentPeriodStart DateTime
+  currentPeriodEnd   DateTime
+  cancelAtPeriodEnd  Boolean          @default(false)
+  trialEndsAt        DateTime?
+  listingsUsed       Int              @default(0)
+  boostsUsed         Int              @default(0)
+  inquiriesUsed      Int              @default(0)
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+
+  user User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan SubscriptionPlan @relation(fields: [planId], references: [id])
+
+  @@index([userId])
+  @@index([planId])
+}
+
+// Payment Transactions
+model Payment {
+  id                String        @id @default(cuid())
+  userId            String
+  amount            Float
+  currency          String        @default("ZMW")
+  status            PaymentStatus @default(PENDING)
+  paymentMethod     PaymentMethod
+  transactionRef    String?       @unique // External payment reference
+  phoneNumber       String?       // For mobile money
+  description       String?       @db.Text
+  metadata          Json?         // Additional payment data
+  failureReason     String?       @db.Text
+  paidAt            DateTime?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions Transaction[]
+
+  @@index([userId])
+  @@index([transactionRef])
+  @@index([status])
+}
+
+// Transactions (Revenue tracking)
+model Transaction {
+  id              String          @id @default(cuid())
+  userId          String
+  paymentId       String?
+  propertyId      String?
+  type            TransactionType
+  amount          Float
+  currency        String          @default("ZMW")
+  commission      Float           @default(0) // Platform commission amount
+  description     String?         @db.Text
+  metadata        Json?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  payment  Payment?  @relation(fields: [paymentId], references: [id])
+  property Property? @relation(fields: [propertyId], references: [id])
+
+  @@index([userId])
+  @@index([propertyId])
+  @@index([type])
+  @@index([createdAt])
+}
+
+// Property Boosts (Featured, Urgent, etc.)
+model PropertyBoost {
+  id           String            @id @default(cuid())
+  propertyId   String
+  type         PropertyBoostType
+  startDate    DateTime
+  endDate      DateTime
+  isActive     Boolean           @default(true)
+  price        Float
+  currency     String            @default("ZMW")
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+
+  property Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  @@index([propertyId])
+  @@index([isActive])
+  @@index([endDate])
+}
+
+// Property Inquiries (for paywall)
+model PropertyInquiry {
+  id          String   @id @default(cuid())
+  propertyId  String
+  userId      String
+  message     String?  @db.Text
+  phone       String?
+  email       String?
+  isUnlocked  Boolean  @default(false) // Has landlord paid to view?
+  unlockedAt  DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  property Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([propertyId])
+  @@index([userId])
+  @@index([isUnlocked])
+}
+
+// Property Transactions (Sales/Rentals tracking for commission)
+model PropertyTransaction {
+  id              String   @id @default(cuid())
+  propertyId      String
+  landlordId      String
+  tenantId        String?
+  transactionType String   // RENTAL, SALE
+  amount          Float
+  commission      Float    // Platform commission
+  currency        String   @default("ZMW")
+  completedAt     DateTime
+  notes           String?  @db.Text
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  property Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  @@index([propertyId])
+  @@index([landlordId])
+  @@index([completedAt])
+}
+
+model SupportMessage {
+  id          String          @id @default(cuid())
+  userId      String
+  category    MessageCategory @default(GENERAL)
+  subject     String
+  message     String          @db.Text
+  contactInfo String?         // Phone/email for callback
+  isRead      Boolean         @default(false)
+  isResolved  Boolean         @default(false)
+  adminNotes  String?         @db.Text
+  resolvedAt  DateTime?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([isRead])
+  @@index([isResolved])
+  @@index([category])
+  @@index([createdAt])
+}
+
+model VerificationDocument {
+  id          String             @id @default(cuid())
+  userId      String
+  documentType DocumentType
+  documentUrl  String            @db.Text // S3 URL
+  status       VerificationStatus @default(PENDING)
+  reviewedBy   String?
+  reviewNotes  String?           @db.Text
+  submittedAt  DateTime          @default(now())
+  reviewedAt   DateTime?
+  expiresAt    DateTime?         // For documents that expire
+  metadata     String?           @db.Text // JSON for extra data
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([status])
+  @@index([documentType])
+}
+
+model UserReview {
+  id          String   @id @default(cuid())
+  reviewerId  String   // Who gave the review
+  reviewedId  String   // Who received the review
+  propertyId  String?  // Related property if applicable
+  rating      Int      // 1-5
+  comment     String?  @db.Text
+  isVerified  Boolean  @default(false) // Verified transaction
+  isPublic    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  reviewer User @relation("ReviewsGiven", fields: [reviewerId], references: [id], onDelete: Cascade)
+  reviewed User @relation("ReviewsReceived", fields: [reviewedId], references: [id], onDelete: Cascade)
+
+  @@index([reviewerId])
+  @@index([reviewedId])
+  @@index([propertyId])
+  @@index([rating])
+}
+
+// Platform Testimonials - "What Our Renters Say"
+model Testimonial {
+  id          String   @id @default(cuid())
+  userId      String?  // Optional: linked to actual user
+  name        String   // Display name
+  role        String?  // e.g., "Renter", "Landlord", "Agent"
+  location    String?  // e.g., "Lusaka, Zambia"
+  avatar      String?  // Avatar URL
+  rating      Int      // 1-5 stars
+  title       String?  // Short headline
+  content     String   @db.Text // Testimonial text
+  propertyTitle String? // What property they rented
+  status      String   @default("PENDING") // PENDING, APPROVED, REJECTED
+  featured    Boolean  @default(false) // Show on homepage
+  order       Int      @default(0) // Display order
+  approvedBy  String?  // Admin who approved
+  approvedAt  DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([status])
+  @@index([featured])
+  @@index([userId])
+}

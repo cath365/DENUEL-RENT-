@@ -1,0 +1,36 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: DENUEL image processor (SAM template)
+
+Globals:
+  Function:
+    Timeout: 30
+    Runtime: nodejs18.x
+
+Resources:
+  ImageProcessorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: scripts/lambda/image-processor.handler
+      CodeUri: ./
+      Policies:
+        - S3ReadPolicy:
+            BucketName: !Ref ImageBucket
+        - S3WritePolicy:
+            BucketName: !Ref ImageBucket
+      Events:
+        S3Upload:
+          Type: S3
+          Properties:
+            Bucket: !Ref ImageBucket
+            Events: s3:ObjectCreated:*
+
+Parameters:
+  ImageBucket:
+    Type: String
+    Description: S3 bucket name to process images from
+
+Outputs:
+  ImageProcessorFunctionArn:
+    Description: Lambda function ARN
+    Value: !GetAtt ImageProcessorFunction.Arn

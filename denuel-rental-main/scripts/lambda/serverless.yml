@@ -1,0 +1,35 @@
+service: denuel-image-processor
+
+frameworkVersion: '3'
+
+provider:
+  name: aws
+  runtime: nodejs18.x
+  region: us-east-1
+  environment:
+    AWS_NODEJS_CONNECTION_REUSE_ENABLED: '1'
+
+functions:
+  imageProcessor:
+    handler: scripts/lambda/image-processor.handler
+    events:
+      - s3:
+          bucket: ${env:S3_BUCKET}
+          event: s3:ObjectCreated:*
+    iamRoleStatements:
+      - Effect: Allow
+        Action:
+          - s3:GetObject
+          - s3:PutObject
+          - s3:ListBucket
+        Resource:
+          - arn:aws:s3:::${env:S3_BUCKET}
+          - arn:aws:s3:::${env:S3_BUCKET}/*
+
+plugins:
+  - serverless-webpack
+
+package:
+  exclude:
+    - node_modules/**
+    - .git/**

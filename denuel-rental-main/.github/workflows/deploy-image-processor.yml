@@ -1,0 +1,35 @@
+name: Deploy Image Processor (SAM)
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  test-and-deploy:
+    runs-on: ubuntu-latest
+    env:
+      AWS_REGION: us-east-1
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use Node.js 18
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+      - name: Install dependencies
+        run: npm ci
+      - name: Run lambda unit tests
+        run: npm run test:unit
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Install SAM CLI
+        run: |
+          python -m pip install --upgrade pip
+          pip install aws-sam-cli
+      - name: Build SAM app
+        run: sam build --template-file scripts/lambda/template.yaml
+      - name: Deploy SAM app
+        run: sam deploy --template-file .aws-sam/build/template.yaml --stack-name denuel-image-processor --capabilities CAPABILITY_IAM --no-confirm-changeset --parameter-overrides ImageBucket=${{ secrets.S3_BUCKET }}
