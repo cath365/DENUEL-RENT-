@@ -4,7 +4,7 @@ import prisma from '../../../../lib/prisma';
 
 export const dynamic = 'force-dynamic';
 
-const ALLOWED_ROLES = ['USER', 'LANDLORD', 'AGENT', 'ADMIN', 'SERVICE_PROVIDER'];
+const ALLOWED_ROLES = ['USER', 'LANDLORD', 'AGENT', 'ADMIN', 'DRIVER', 'SERVICE_PROVIDER'];
 
 export async function GET(req: NextRequest) {
   try {
