@@ -41,6 +41,7 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ portfolio });
   } catch (error) {
+    if (error instanceof Response) return error;
     console.error('Error fetching portfolio:', error);
     return NextResponse.json({ message: 'Failed to fetch portfolio' }, { status: 500 });
   }
@@ -88,6 +89,7 @@ export async function POST(req: NextRequest) {
       item: portfolioItem,
     });
   } catch (error) {
+    if (error instanceof Response) return error;
     console.error('Error creating portfolio item:', error);
     return NextResponse.json({ message: 'Failed to add portfolio item' }, { status: 500 });
   }
@@ -131,6 +133,7 @@ export async function DELETE(req: NextRequest) {
 
     return NextResponse.json({ message: 'Portfolio item deleted' });
   } catch (error) {
+    if (error instanceof Response) return error;
     console.error('Error deleting portfolio item:', error);
     return NextResponse.json({ message: 'Failed to delete portfolio item' }, { status: 500 });
   }
