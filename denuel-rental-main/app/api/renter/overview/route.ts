@@ -42,7 +42,10 @@ export async function GET(req: NextRequest) {
         },
       }),
       prisma.leaseAgreement.findMany({
-        where: { tenantId: user.id },
+        where: {
+          tenantId: user.id,
+          status: { not: 'DRAFT' },
+        },
         orderBy: { createdAt: 'desc' },
         take: 20,
         include: {
