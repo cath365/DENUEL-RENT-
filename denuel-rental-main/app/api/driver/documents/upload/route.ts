@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { put } from '@vercel/blob';
+import { del, put } from '@vercel/blob';
 import prisma from '@/lib/prisma';
 import { requireAuth, requireCsrf } from '@/lib/auth';
 
@@ -21,13 +21,31 @@ const ALLOWED_MIME_TYPES = new Set([
   'image/webp',
 ]);
 
-const MAX_FILE_SIZE = 10 * 1024 * 1024;
+const MAX_FILE_SIZE = 4 * 1024 * 1024;
 
 function safeFileName(value: string) {
   return value.replace(/[^a-zA-Z0-9._-]/g, '-').slice(0, 120);
 }
 
+async function cleanupManagedBlob(url?: string | null) {
+  if (!url || !url.includes('.blob.vercel-storage.com')) return;
+
+  const token = url.includes('.private.blob.vercel-storage.com')
+    ? process.env.PRIVATE_BLOB_READ_WRITE_TOKEN
+    : process.env.BLOB_READ_WRITE_TOKEN;
+
+  if (!token) return;
+
+  try {
+    await del(url, { token });
+  } catch {
+    console.warn('Unable to clean up an old driver verification blob.');
+  }
+}
+
 export async function POST(req: NextRequest) {
+  let newlyUploadedUrl: string | null = null;
+
   try {
     const user = await requireAuth(req, ['DRIVER']);
     requireCsrf(req);
@@ -58,7 +76,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (file.size <= 0 || file.size > MAX_FILE_SIZE) {
-      return NextResponse.json({ error: 'Document must be 10MB or smaller' }, { status: 400 });
+      return NextResponse.json({ error: 'Document must be 4MB or smaller' }, { status: 400 });
     }
 
     const existing = driver.documents.find((document) => document.type === type);
@@ -89,35 +107,49 @@ export async function POST(req: NextRequest) {
       contentType: file.type,
       addRandomSuffix: true,
     });
+    newlyUploadedUrl = blob.url;
 
-    const document = await prisma.$transaction(async (tx) => {
-      if (existing) {
-        await tx.driverDocument.delete({ where: { id: existing.id } });
-      }
+    let document;
+    try {
+      document = await prisma.$transaction(async (tx) => {
+        if (existing) {
+          await tx.driverDocument.delete({ where: { id: existing.id } });
+        }
 
-      return tx.driverDocument.create({
-        data: {
-          driverId: driver.id,
-          type,
-          name: file.name,
-          fileUrl: blob.url,
-          fileSize: file.size,
-          mimeType: file.type,
-          isVerified: false,
-        },
+        const created = await tx.driverDocument.create({
+          data: {
+            driverId: driver.id,
+            type,
+            name: file.name,
+            fileUrl: blob.url,
+            fileSize: file.size,
+            mimeType: file.type,
+            isVerified: false,
+          },
+        });
+
+        await tx.driverProfile.update({
+          where: { id: driver.id },
+          data: {
+            isApproved: false,
+            isOnline: false,
+            verificationStatus: 'PENDING',
+            rejectionReason: null,
+          },
+        });
+
+        return created;
       });
-    });
+    } catch (error) {
+      await cleanupManagedBlob(blob.url);
+      newlyUploadedUrl = null;
+      throw error;
+    }
 
-    if (driver.isApproved || driver.verificationStatus === 'VERIFIED') {
-      await prisma.driverProfile.update({
-        where: { id: driver.id },
-        data: {
-          isApproved: false,
-          isOnline: false,
-          verificationStatus: 'PENDING',
-          rejectionReason: null,
-        },
-      });
+    newlyUploadedUrl = null;
+
+    if (existing?.fileUrl && existing.fileUrl !== blob.url) {
+      await cleanupManagedBlob(existing.fileUrl);
     }
 
     return NextResponse.json({
@@ -134,6 +166,9 @@ export async function POST(req: NextRequest) {
       },
     });
   } catch (error) {
+    if (newlyUploadedUrl) {
+      await cleanupManagedBlob(newlyUploadedUrl);
+    }
     if (error instanceof Response) return error;
     console.error('Driver document upload error:', error);
     return NextResponse.json({ error: 'Unable to upload driver document' }, { status: 500 });
