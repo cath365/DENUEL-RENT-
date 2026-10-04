@@ -21,11 +21,6 @@ jobs:
           MYSQL_DATABASE: denuel_test
         ports:
           - 3306:3306
-        options: >-
-          --health-cmd="mysqladmin ping -h 127.0.0.1 -proot"
-          --health-interval=10s
-          --health-timeout=5s
-          --health-retries=12
 
     env:
       DATABASE_URL: mysql://root:root@127.0.0.1:3306/denuel_test
@@ -52,6 +47,18 @@ jobs:
 
       - name: Install app dependencies
         run: npm ci
+
+      - name: Wait for temporary MySQL
+        run: |
+          for i in {1..60}; do
+            if node -e "const net=require('net');const s=net.createConnection({host:'127.0.0.1',port:3306},()=>{s.end();process.exit(0)});s.on('error',()=>process.exit(1))"; then
+              echo "Temporary MySQL is reachable"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Temporary MySQL did not become reachable"
+          exit 1
 
       - name: Generate Prisma client
         run: npx prisma generate
