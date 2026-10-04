@@ -9,16 +9,18 @@ export async function POST(req: NextRequest) {
     const user = await requireAuth(req);
     requireCsrf(req);
     const formData = await req.formData();
-    const file = formData.get('file') as File;
+    const fileValue = formData.get('file');
+
+    if (!(fileValue instanceof File)) {
+      return NextResponse.json({ error: 'No file provided' }, { status: 400 });
+    }
+
+    const file = fileValue;
     const keyValue = formData.get('key');
     const key =
       typeof keyValue === 'string' && keyValue.trim()
         ? keyValue.trim()
         : `${Date.now()}-${file.name}`;
-
-    if (!file) {
-      return NextResponse.json({ error: 'No file provided' }, { status: 400 });
-    }
 
     // Check if Vercel Blob is configured
     if (!process.env.BLOB_READ_WRITE_TOKEN) {
