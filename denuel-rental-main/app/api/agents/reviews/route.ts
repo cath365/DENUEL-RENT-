@@ -4,6 +4,8 @@ import { prisma } from '@/lib/prisma';
 import { requireAuth, requireCsrf } from '@/lib/auth';
 import { publicServerError } from '@/lib/publicError';
 
+export const dynamic = 'force-dynamic';
+
 const ReviewSchema = z.object({
   agentId: z.string().min(1),
   propertyId: z.string().optional().nullable(),
