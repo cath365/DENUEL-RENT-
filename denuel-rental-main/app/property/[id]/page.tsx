@@ -8,6 +8,7 @@ import MessageForm from '../../../components/MessageForm';
 import ReportListing from '../../../components/ReportListing';
 import ViewingScheduler from '../../../components/ViewingScheduler';
 import PropertyLocationMap from '../../../components/PropertyLocationMap';
+import PropertyApplicationButton from '../../../components/PropertyApplicationButton';
 import prisma from '../../../lib/prisma';
 
 export const dynamic = 'force-dynamic';
@@ -333,6 +334,10 @@ export default async function PropertyPage({ params }: { params: { id: string } 
                 )}
 
                 <FavoriteButton propertyId={property.id} />
+
+                {isRental && property.status === 'APPROVED' && (
+                  <PropertyApplicationButton propertyId={property.id} />
+                )}
 
                 {property.viewingSlots?.length > 0 && (
                   <div className="border-t border-slate-200 pt-4">
