@@ -1,17 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '../../../../../../lib/prisma';
-import { requireAuth } from '../../../../../../lib/auth';
+import { requireAuth, requireCsrf } from '../../../../../../lib/auth';
 
 // POST /api/admin/approvals/[id]/approve - Approve a service provider application
+export const dynamic = 'force-dynamic';
+
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const user = await requireAuth(request);
-    if (!user || user.role !== 'ADMIN') {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const user = await requireAuth(request, ['ADMIN']);
+    requireCsrf(request);
 
     const { id } = await params;
 
@@ -112,6 +112,7 @@ export async function POST(
 
     return NextResponse.json({ error: 'Application not found' }, { status: 404 });
   } catch (error) {
+    if (error instanceof Response) return error;
     console.error('Error approving application:', error);
     return NextResponse.json({ error: 'Failed to approve application' }, { status: 500 });
   }
