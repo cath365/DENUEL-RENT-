@@ -8,11 +8,20 @@ import { csrfFetch } from '../lib/csrf';
 interface ListingCardProps {
   property: any;
   listingType?: 'RENT' | 'SALE';
+  initialFavorited?: boolean;
+  showViewerCount?: boolean;
+  onFavoriteChange?: (isFavorited: boolean) => void;
 }
 
-export default function ListingCard({ property, listingType }: ListingCardProps) {
+export default function ListingCard({
+  property,
+  listingType,
+  initialFavorited,
+  showViewerCount = false,
+  onFavoriteChange,
+}: ListingCardProps) {
   const isSale = listingType === 'SALE' || property.listingType === 'SALE';
-  const [isFavorited, setIsFavorited] = useState(false);
+  const [isFavorited, setIsFavorited] = useState(Boolean(initialFavorited));
   const [favoriteLoading, setFavoriteLoading] = useState(false);
 
   const imageUrl =
@@ -25,11 +34,16 @@ export default function ListingCard({ property, listingType }: ListingCardProps)
   const has360 = property?.images?.some((img: any) => img.is360) || false;
 
   React.useEffect(() => {
+    if (initialFavorited !== undefined) {
+      setIsFavorited(Boolean(initialFavorited));
+      return;
+    }
+
     fetch('/api/favorites/check?propertyId=' + property.id)
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => data && setIsFavorited(Boolean(data.isFavorited)))
       .catch(() => null);
-  }, [property.id]);
+  }, [property.id, initialFavorited]);
 
   const handleFavorite = async (e: React.MouseEvent) => {
     e.preventDefault();
@@ -51,7 +65,9 @@ export default function ListingCard({ property, listingType }: ListingCardProps)
 
       if (!res.ok) throw new Error('Failed to update favorite');
       const data = await res.json();
-      setIsFavorited(!data.removed);
+      const nextFavorited = !data.removed;
+      setIsFavorited(nextFavorited);
+      onFavoriteChange?.(nextFavorited);
     } catch (error) {
       console.error('Error toggling favorite:', error);
     } finally {
@@ -127,6 +143,27 @@ export default function ListingCard({ property, listingType }: ListingCardProps)
               {property.furnished && <span>Furnished</span>}
               {property.furnished && (property.parkingSpaces ?? 0) > 0 && <span>·</span>}
               {(property.parkingSpaces ?? 0) > 0 && <span>{property.parkingSpaces} parking</span>}
+            </div>
+          )}
+
+          {showViewerCount && typeof property.viewerCount === 'number' && (
+            <div className="mt-3 flex items-center gap-1.5 border-t border-slate-100 pt-3 text-xs font-semibold text-slate-600">
+              <svg
+                className="h-4 w-4"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={1.8}
+                  d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6z"
+                />
+                <circle cx="12" cy="12" r="2.5" strokeWidth={1.8} />
+              </svg>
+              {property.viewerCount.toLocaleString()} {property.viewerCount === 1 ? 'viewer' : 'viewers'}
             </div>
           )}
         </div>
