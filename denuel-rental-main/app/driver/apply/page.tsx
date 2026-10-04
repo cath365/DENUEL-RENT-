@@ -537,19 +537,14 @@ export default function DriverApplyPage() {
           )}
 
           {/* Help Section */}
-          <div className="mt-8 bg-blue-50 rounded-xl p-6">
-            <h3 className="font-semibold text-blue-900 mb-2">Need Help?</h3>
-            <p className="text-blue-700 text-sm mb-3">
-              Having trouble with your application? Our support team is here to help.
+          <div className="mt-8 border border-slate-200 bg-white p-6">
+            <h3 className="font-semibold text-slate-950 mb-2">Need help?</h3>
+            <p className="text-slate-600 text-sm mb-3">
+              If you have trouble with your application, contact support through the platform.
             </p>
-            <div className="flex flex-wrap gap-3">
-              <a href="tel:+260971234567" className="text-blue-600 hover:underline text-sm flex items-center gap-1">
-                📞 +260 97 123 4567
-              </a>
-              <a href="mailto:drivers@denuelrental.com" className="text-blue-600 hover:underline text-sm flex items-center gap-1">
-                ✉️ drivers@denuelrental.com
-              </a>
-            </div>
+            <Link href="/contact-support" className="text-[#16A34A] hover:underline text-sm font-semibold">
+              Contact support
+            </Link>
           </div>
         </div>
       </div>
