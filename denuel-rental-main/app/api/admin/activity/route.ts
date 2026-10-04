@@ -3,6 +3,8 @@ import { requireAuth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 
 // GET - Fetch activity logs (placeholder for now)
+export const dynamic = 'force-dynamic';
+
 export async function GET(req: NextRequest) {
   try {
     const user = await requireAuth(req, ["ADMIN"]);
