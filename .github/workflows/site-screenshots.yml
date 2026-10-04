@@ -1,0 +1,163 @@
+name: Site Screenshots
+
+on:
+  push:
+    branches:
+      - staging/brand-assets
+    paths:
+      - "denuel-rental-main/**"
+      - ".github/scripts/capture-site.mjs"
+      - ".github/workflows/site-screenshots.yml"
+
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: denuel_test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -proot"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=12
+
+    env:
+      DATABASE_URL: mysql://root:root@127.0.0.1:3306/denuel_test
+      JWT_SECRET: nganda-local-preview-only-secret
+      NEXT_PUBLIC_SITE_URL: http://127.0.0.1:3000
+      NEXT_PUBLIC_MAPBOX_TOKEN: ""
+      SCREENSHOT_BASE_URL: http://127.0.0.1:3000
+      NODE_ENV: development
+
+    defaults:
+      run:
+        working-directory: denuel-rental-main
+
+    steps:
+      - name: Checkout staging source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: denuel-rental-main/package-lock.json
+
+      - name: Install app dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Create clean local database schema
+        run: npx prisma db push --skip-generate
+
+      - name: Install Playwright for local screenshots
+        run: |
+          npm install --no-save --package-lock=false playwright@1.55.0
+          npx playwright install --with-deps chromium
+
+      - name: Start local Next.js development server
+        run: |
+          npm run dev -- --hostname 0.0.0.0 > /tmp/nganda-dev.log 2>&1 &
+          echo $! > /tmp/nganda-dev.pid
+
+      - name: Wait for local site
+        run: |
+          for i in {1..90}; do
+            if curl -fsS http://127.0.0.1:3000/ >/dev/null; then
+              echo "Ng'anda local site is ready"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Local site did not become ready"
+          cat /tmp/nganda-dev.log
+          exit 1
+
+      - name: Capture full-page screenshots
+        run: node ../.github/scripts/capture-site.mjs
+
+      - name: Create overview contact sheets
+        run: |
+          python3 -m pip install --quiet pillow
+          python3 - <<'PY'
+          from PIL import Image, ImageOps, ImageDraw, ImageFont
+          from pathlib import Path
+          import json, math
+
+          root = Path("site-screenshots")
+          report = json.loads((root / "capture-report.json").read_text())
+
+          def make_sheet(group, output):
+              entries = [x for x in report if x["group"] == group]
+              if not entries:
+                  return
+
+              thumb_w = 420
+              label_h = 52
+              pad = 18
+              cols = 2
+
+              rendered = []
+              for item in entries:
+                  fp = root / item["file"]
+                  if not fp.exists():
+                      continue
+                  img = Image.open(fp).convert("RGB")
+                  ratio = thumb_w / img.width
+                  h = max(120, min(620, int(img.height * ratio)))
+                  img.thumbnail((thumb_w, h), Image.LANCZOS)
+
+                  card = Image.new("RGB", (thumb_w, img.height + label_h), "white")
+                  x = (thumb_w - img.width) // 2
+                  card.paste(img, (x, label_h))
+                  draw = ImageDraw.Draw(card)
+                  label = f'{item["route"]}  ·  HTTP {item["status"] or "—"}'
+                  draw.text((12, 12), label, fill="black")
+                  rendered.append(card)
+
+              rows = math.ceil(len(rendered) / cols)
+              cell_h = max((im.height for im in rendered), default=700)
+              sheet = Image.new(
+                  "RGB",
+                  (
+                      cols * thumb_w + (cols + 1) * pad,
+                      rows * cell_h + (rows + 1) * pad,
+                  ),
+                  "#e5e7eb",
+              )
+
+              for i, card in enumerate(rendered):
+                  row, col = divmod(i, cols)
+                  x = pad + col * (thumb_w + pad)
+                  y = pad + row * (cell_h + pad)
+                  sheet.paste(card, (x, y))
+
+              sheet.save(root / output, quality=88)
+
+          make_sheet("public", "00-public-overview.jpg")
+          make_sheet("renter", "01-renter-overview.jpg")
+          make_sheet("landlord", "02-landlord-overview.jpg")
+          make_sheet("agent", "03-agent-overview.jpg")
+          PY
+
+      - name: Save local server log
+        if: always()
+        run: cp /tmp/nganda-dev.log site-screenshots/local-server.log || true
+
+      - name: Upload screenshot package
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nganda-whole-site-screenshots
+          path: denuel-rental-main/site-screenshots
+          if-no-files-found: error
+          retention-days: 7
