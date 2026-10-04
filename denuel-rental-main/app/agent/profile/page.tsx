@@ -119,7 +119,7 @@ export default function AgentProfileEditorPage() {
       body.append('file', file);
       body.append('key', `agent/${kind}-${Date.now()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, '-')}`);
 
-      const response = await fetch('/api/uploads/direct', {
+      const response = await csrfFetch('/api/uploads/direct', {
         method: 'POST',
         body,
       });
