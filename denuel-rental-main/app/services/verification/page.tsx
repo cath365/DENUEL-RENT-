@@ -154,7 +154,7 @@ export default function ServiceVerificationPage() {
   }
 
   async function removeDocument(id: string) {
-    const res = await fetch('/api/services/documents?id=' + encodeURIComponent(id), { method: 'DELETE' });
+    const res = await csrfFetch('/api/services/documents?id=' + encodeURIComponent(id), { method: 'DELETE' });
     if (res.ok) setDocuments((current) => current.filter((d) => d.id !== id));
   }
 
