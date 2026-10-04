@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev -p 3000",
-    "build": "prisma generate && prisma migrate deploy && next build",
+    "build": "prisma generate && prisma db push --skip-generate && next build",
     "start": "next start -p $PORT",
     "lint": "next lint",
     "format": "prettier --write \"**/*.{ts,tsx,js,json,md}\"",
@@ -17,7 +17,8 @@
     "worker": "ts-node -r tsconfig-paths/register scripts/worker/worker.ts",
     "serverless:deploy": "serverless deploy",
     "serverless:package": "serverless package",
-    "prisma:deploy": "prisma migrate deploy"
+    "prisma:deploy": "prisma migrate deploy",
+    "prisma:sync": "prisma db push"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.374.0",
