@@ -69,7 +69,13 @@ export async function GET(req: NextRequest) {
       totalDue: payments
         .filter((p) => ['PENDING', 'LATE'].includes(p.status))
         .reduce((sum, p) => sum + p.amount + Math.max(0, Number(p.lateFee || 0)), 0),
-      totalPaid: payments.filter((p) => p.status === 'PAID').reduce((sum, p) => sum + p.amount, 0),
+      totalPaid: payments
+        .filter((p) => p.status === 'PAID')
+        .reduce(
+          (sum, p) =>
+            sum + p.amount + Math.max(0, Number(p.lateFee || 0)),
+          0
+        ),
       overdue: payments.filter((p) => p.status === 'PENDING' && new Date(p.dueDate) < new Date()).length,
       upcoming: payments.filter((p) => {
         const due = new Date(p.dueDate);
