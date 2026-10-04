@@ -8,10 +8,22 @@ const ReplySchema = z.object({
   message: z.string().trim().min(1).max(1200),
 });
 
-async function loadThreadForUser(threadId: string, userId: string, role: string) {
-  const thread = await prisma.messageThread.findUnique({
+async function loadThreadForUser(
+  threadId: string,
+  userId: string,
+  role: string
+) {
+  let thread = await prisma.messageThread.findUnique({
     where: { id: threadId },
     include: {
+      client: {
+        select: {
+          id: true,
+          name: true,
+          companyName: true,
+          profileImage: true,
+        },
+      },
       property: {
         select: {
           id: true,
@@ -68,18 +80,125 @@ async function loadThreadForUser(threadId: string, userId: string, role: string)
 
   if (!thread) return null;
 
-  const isParticipant = thread.messages.some(
-    (message) =>
-      message.senderId === userId || message.receiverId === userId
-  );
-
   const isAdmin = role === 'ADMIN';
 
-  if (!isParticipant && !isAdmin) {
+  if (!thread.clientId) {
+    const possibleClients = Array.from(
+      new Set(
+        thread.messages
+          .flatMap((message) => [
+            message.senderId,
+            message.receiverId,
+          ])
+          .filter(
+            (participantId) =>
+              participantId !== thread!.property.ownerId
+          )
+      )
+    );
+
+    if (possibleClients.length === 1) {
+      const clientId = possibleClients[0];
+
+      try {
+        await prisma.messageThread.update({
+          where: { id: thread.id },
+          data: { clientId },
+        });
+
+        thread = await prisma.messageThread.findUnique({
+          where: { id: threadId },
+          include: {
+            client: {
+              select: {
+                id: true,
+                name: true,
+                companyName: true,
+                profileImage: true,
+              },
+            },
+            property: {
+              select: {
+                id: true,
+                title: true,
+                price: true,
+                listingType: true,
+                status: true,
+                city: true,
+                area: true,
+                addressText: true,
+                ownerId: true,
+                images: {
+                  orderBy: { sortOrder: 'asc' },
+                  take: 1,
+                  select: { url: true },
+                },
+                owner: {
+                  select: {
+                    id: true,
+                    name: true,
+                    companyName: true,
+                    profileImage: true,
+                    phone: true,
+                    isPhoneVerified: true,
+                    isIdVerified: true,
+                    isBusinessVerified: true,
+                  },
+                },
+              },
+            },
+            messages: {
+              orderBy: { createdAt: 'asc' },
+              include: {
+                sender: {
+                  select: {
+                    id: true,
+                    name: true,
+                    companyName: true,
+                    profileImage: true,
+                  },
+                },
+                receiver: {
+                  select: {
+                    id: true,
+                    name: true,
+                    companyName: true,
+                    profileImage: true,
+                  },
+                },
+              },
+            },
+          },
+        });
+      } catch {
+        return {
+          ambiguous: true as const,
+          thread: null,
+        };
+      }
+    } else if (possibleClients.length > 1) {
+      return {
+        ambiguous: true as const,
+        thread: null,
+      };
+    }
+  }
+
+  if (!thread) return null;
+
+  const authorized =
+    isAdmin ||
+    userId === thread.property.ownerId ||
+    userId === thread.clientId;
+
+  if (!authorized) {
     return null;
   }
 
-  return thread;
+  return {
+    ambiguous: false as const,
+    thread,
+  };
 }
 
 export async function GET(
@@ -88,14 +207,30 @@ export async function GET(
 ) {
   try {
     const user = await requireAuth(req);
-    const thread = await loadThreadForUser(params.id, user.id, user.role);
+    const loaded = await loadThreadForUser(
+      params.id,
+      user.id,
+      user.role
+    );
 
-    if (!thread) {
+    if (!loaded) {
       return NextResponse.json(
         { error: 'Conversation not found.' },
         { status: 404 }
       );
     }
+
+    if (loaded.ambiguous) {
+      return NextResponse.json(
+        {
+          error:
+            'This older conversation contains more than one client and cannot be opened safely. An administrator must separate the records.',
+        },
+        { status: 409 }
+      );
+    }
+
+    const thread = loaded.thread;
 
     await prisma.message.updateMany({
       where: {
@@ -106,15 +241,10 @@ export async function GET(
       data: { isRead: true },
     });
 
-    const counterpartCandidates = thread.messages.flatMap((message) => [
-      message.sender,
-      message.receiver,
-    ]);
-
     const counterpart =
-      counterpartCandidates.find(
-        (participant) => participant.id !== user.id
-      ) || thread.property.owner;
+      user.id === thread.property.ownerId
+        ? thread.client
+        : thread.property.owner;
 
     return NextResponse.json({
       thread: {
@@ -128,7 +258,9 @@ export async function GET(
           senderId: message.senderId,
           receiverId: message.receiverId,
           isRead:
-            message.receiverId === user.id ? true : message.isRead,
+            message.receiverId === user.id
+              ? true
+              : message.isRead,
           sender: message.sender,
         })),
         createdAt: thread.createdAt,
@@ -164,7 +296,9 @@ export async function POST(
       req.headers.get('x-real-ip') ||
       'anon';
 
-    const { checkRate } = await import('../../../../lib/rateLimiter');
+    const { checkRate } = await import(
+      '../../../../lib/rateLimiter'
+    );
 
     if (!(await checkRate(ip))) {
       return NextResponse.json(
@@ -176,39 +310,49 @@ export async function POST(
     const user = await requireAuth(req);
     requireCsrf(req);
 
-    const thread = await loadThreadForUser(params.id, user.id, user.role);
+    const loaded = await loadThreadForUser(
+      params.id,
+      user.id,
+      user.role
+    );
 
-    if (!thread) {
+    if (!loaded) {
       return NextResponse.json(
         { error: 'Conversation not found.' },
         { status: 404 }
       );
     }
 
-    const parsed = ReplySchema.parse(await req.json());
-
-    const otherParticipantIds = Array.from(
-      new Set(
-        thread.messages.flatMap((message) => [
-          message.senderId,
-          message.receiverId,
-        ])
-      )
-    ).filter((id) => id !== user.id);
-
-    let receiverId: string | undefined;
-
-    if (user.id === thread.property.ownerId) {
-      receiverId = otherParticipantIds.find(
-        (id) => id !== thread.property.ownerId
+    if (loaded.ambiguous) {
+      return NextResponse.json(
+        {
+          error:
+            'This older conversation cannot accept replies until its client records are separated.',
+        },
+        { status: 409 }
       );
-    } else {
-      receiverId = thread.property.ownerId;
     }
 
-    if (!receiverId) {
+    const thread = loaded.thread;
+    const parsed = ReplySchema.parse(await req.json());
+
+    let receiverId: string | null = null;
+
+    if (user.id === thread.property.ownerId) {
+      receiverId = thread.clientId;
+    } else if (user.id === thread.clientId) {
+      receiverId = thread.property.ownerId;
+    } else if (user.role === 'ADMIN') {
+      receiverId =
+        thread.clientId || thread.property.ownerId;
+    }
+
+    if (!receiverId || receiverId === user.id) {
       return NextResponse.json(
-        { error: 'The other participant could not be determined.' },
+        {
+          error:
+            'The other participant could not be determined safely.',
+        },
         { status: 409 }
       );
     }
@@ -233,7 +377,9 @@ export async function POST(
     });
 
     try {
-      const { createNotification } = await import('../../../../lib/notifications');
+      const { createNotification } = await import(
+        '../../../../lib/notifications'
+      );
 
       await createNotification(receiverId, 'inquiry', {
         message: parsed.message,
@@ -261,7 +407,10 @@ export async function POST(
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json(
-        { error: error.errors[0]?.message || 'Invalid message.' },
+        {
+          error:
+            error.errors[0]?.message || 'Invalid message.',
+        },
         { status: 422 }
       );
     }
