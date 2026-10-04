@@ -944,9 +944,6 @@ model ServiceProvider {
   profileCompletion Int           @default(0)
   verificationStatus String       @default("PENDING") // PENDING | VERIFIED | REJECTED
   businessName    String
-  providerType    String          @default("INDIVIDUAL") // INDIVIDUAL or COMPANY
-  contactPersonName String?
-  contactPersonPosition String?
   category        ServiceCategory
   description     String?         @db.Text
   phone           String
