@@ -109,7 +109,7 @@ export async function GET(req: NextRequest) {
       orderBy: { appliedAt: 'desc' },
     });
 
-    return NextResponse.json({ applications });
+    return NextResponse.json(applications);
   } catch (error) {
     if (error instanceof Response) return error;
 
