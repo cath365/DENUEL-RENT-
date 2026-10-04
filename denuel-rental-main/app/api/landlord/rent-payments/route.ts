@@ -88,58 +88,151 @@ export async function GET(req: NextRequest) {
   }
 }
 
-// POST - Record a payment
-// Manual payment recording is restricted to the landlord or an administrator.
-// Tenants must use a real configured payment flow rather than marking their own rent as paid.
+// POST - Record a real offline/manual full payment
+// Online card payments use the Stripe verification flow instead.
 export async function POST(req: NextRequest) {
   try {
     const user = await requireAuth(req);
     requireCsrf(req);
 
-    const body = await req.json();
-    const paymentId = typeof body.paymentId === 'string' ? body.paymentId : '';
+    const body = await req.json().catch(() => ({}));
+    const paymentId =
+      typeof body.paymentId === 'string' ? body.paymentId : '';
     const amount = Number(body.amount);
     const paymentMethod =
-      typeof body.paymentMethod === 'string' ? body.paymentMethod.trim() : '';
+      typeof body.paymentMethod === 'string'
+        ? body.paymentMethod.trim().toUpperCase()
+        : '';
     const transactionId =
-      typeof body.transactionId === 'string' ? body.transactionId.trim() : '';
+      typeof body.transactionId === 'string'
+        ? body.transactionId.trim().slice(0, 240)
+        : '';
     const notes =
-      typeof body.notes === 'string' ? body.notes.trim().slice(0, 1000) : '';
+      typeof body.notes === 'string'
+        ? body.notes.trim().slice(0, 1000)
+        : '';
 
-    if (!paymentId || !Number.isFinite(amount) || amount <= 0) {
+    const allowedMethods = new Set([
+      'BANK',
+      'MOBILE_MONEY',
+      'CASH',
+      'CARD',
+    ]);
+
+    if (
+      !paymentId ||
+      !Number.isFinite(amount) ||
+      amount <= 0 ||
+      !allowedMethods.has(paymentMethod)
+    ) {
       return NextResponse.json(
-        { error: 'Payment record and amount are required.' },
+        {
+          error:
+            'Payment record, full amount and a valid payment method are required.',
+        },
         { status: 400 }
       );
     }
 
     const payment = await prisma.rentPayment.findUnique({
       where: { id: paymentId },
-      include: { lease: true },
+      include: {
+        lease: {
+          include: {
+            property: {
+              select: {
+                id: true,
+                title: true,
+              },
+            },
+          },
+        },
+      },
     });
 
     if (!payment) {
-      return NextResponse.json({ error: 'Payment record not found.' }, { status: 404 });
+      return NextResponse.json(
+        { error: 'Payment record not found.' },
+        { status: 404 }
+      );
     }
 
     const canRecord =
-      payment.lease.landlordId === user.id || user.role === 'ADMIN';
+      payment.lease.landlordId === user.id ||
+      user.role === 'ADMIN';
 
     if (!canRecord) {
       return NextResponse.json(
-        { error: 'Only the landlord or an administrator can record a manual rent payment.' },
+        {
+          error:
+            'Only the property manager or an administrator can record an offline rent payment.',
+        },
         { status: 403 }
+      );
+    }
+
+    if (payment.status === 'PAID') {
+      return NextResponse.json(
+        { error: 'This rent record is already paid.' },
+        { status: 409 }
+      );
+    }
+
+    if (!['PENDING', 'LATE'].includes(payment.status)) {
+      return NextResponse.json(
+        {
+          error:
+            'This rent record is not available for full manual payment recording.',
+        },
+        { status: 400 }
+      );
+    }
+
+    const lateFee = Math.max(
+      0,
+      Number(payment.lateFee || 0)
+    );
+    const amountDue = Number(payment.amount) + lateFee;
+
+    if (Math.abs(amount - amountDue) > 0.01) {
+      return NextResponse.json(
+        {
+          error:
+            `The recorded amount must match the full amount due: K${amountDue.toLocaleString()}.`,
+        },
+        { status: 400 }
       );
     }
 
     const updated = await prisma.rentPayment.update({
       where: { id: paymentId },
       data: {
-        status: amount >= payment.amount ? 'PAID' : 'PARTIAL',
+        status: 'PAID',
         paidDate: new Date(),
-        paymentMethod: paymentMethod || null,
+        paymentMethod,
         transactionId: transactionId || null,
         notes: notes || null,
+      },
+      include: {
+        lease: {
+          include: {
+            tenant: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+              },
+            },
+            property: {
+              select: {
+                id: true,
+                title: true,
+                city: true,
+                area: true,
+              },
+            },
+          },
+        },
       },
     });
 
@@ -150,22 +243,30 @@ export async function POST(req: NextRequest) {
           type: 'RENT_PAYMENT_RECORDED',
           data: {
             paymentId: updated.id,
-            amount,
+            amount: amountDue,
             propertyId: payment.lease.propertyId,
+            paymentMethod,
+            transactionId: transactionId || null,
           },
         },
       });
     } catch {
-      // Payment record remains valid even if notification delivery fails.
+      // The payment record remains valid if notification delivery fails.
     }
 
     return NextResponse.json(updated);
   } catch (error) {
     if (error instanceof Response) return error;
+
     console.error('Record rent payment error:', error);
+    const safe = publicServerError(
+      error,
+      'Unable to record this rent payment right now.'
+    );
+
     return NextResponse.json(
-      { error: 'Unable to record this payment right now.' },
-      { status: 500 }
+      { error: safe.message },
+      { status: safe.status }
     );
   }
 }
