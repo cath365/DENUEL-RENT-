@@ -3,6 +3,8 @@ import { prisma } from '@/lib/prisma';
 import { requireAuth, requireCsrf } from '@/lib/auth';
 import { publicServerError } from '@/lib/publicError';
 
+export const dynamic = 'force-dynamic';
+
 // GET - Get documents for a provider
 export async function GET(req: NextRequest) {
   try {
