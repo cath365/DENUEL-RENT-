@@ -5,7 +5,9 @@ import { requireAuth } from '../../../../../lib/auth';
 export async function GET(req: Request, { params }: { params: { id: string } }) {
   try {
     await requireAuth(req, ['ADMIN']);
-    const { id } = params;
+    export const dynamic = 'force-dynamic';
+
+const { id } = params;
     
     const user = await prisma.user.findUnique({
       where: { id },
@@ -72,9 +74,26 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     await requireAuth(req, ['ADMIN']);
     const { id } = params;
     const body = await req.json();
-    const { role } = body;
-    if (!['USER', 'LANDLORD', 'AGENT', 'ADMIN'].includes(role)) return NextResponse.json({ error: 'Invalid role' }, { status: 400 });
-    const user = await prisma.user.update({ where: { id }, data: { role } });
+    const { role, isIdVerified } = body;
+    const data: Record<string, unknown> = {};
+
+    if (role !== undefined) {
+      if (!['USER', 'LANDLORD', 'AGENT', 'ADMIN', 'DRIVER', 'SERVICE_PROVIDER'].includes(role)) {
+        return NextResponse.json({ error: 'Invalid role' }, { status: 400 });
+      }
+      data.role = role;
+    }
+
+    if (isIdVerified !== undefined) {
+      data.isIdVerified = Boolean(isIdVerified);
+      data.verifiedAt = isIdVerified ? new Date() : null;
+    }
+
+    if (Object.keys(data).length === 0) {
+      return NextResponse.json({ error: 'No supported fields provided' }, { status: 400 });
+    }
+
+    const user = await prisma.user.update({ where: { id }, data });
     // @ts-ignore
     delete user.password;
     return NextResponse.json({ user });
