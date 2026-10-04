@@ -298,6 +298,9 @@ export default function DriverApplyPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          fullName: formData.fullName.trim(),
+          phone: formData.phone.trim(),
+          nrcNumber: formData.nrcNumber.trim(),
           licenseNumber: formData.licenseNumber.trim(),
           vehicleType: formData.vehicleType,
           vehiclePlate: formData.vehiclePlate.trim().toUpperCase(),
@@ -579,9 +582,10 @@ export default function DriverApplyPage() {
                 <input
                   type="email"
                   value={formData.email}
-                  onChange={(e) => updateField('email', e.target.value)}
-                  className="h-11 w-full border border-slate-300 px-3 text-sm outline-none focus:border-[#16A34A]"
+                  readOnly
+                  className="h-11 w-full border border-slate-300 bg-slate-50 px-3 text-sm text-slate-500 outline-none"
                 />
+                <p className="mt-1 text-xs text-slate-400">Uses the email on your signed-in Ng’anda account.</p>
               </div>
               <div>
                 <label className="mb-1.5 block text-sm font-semibold text-slate-800">Phone *</label>
