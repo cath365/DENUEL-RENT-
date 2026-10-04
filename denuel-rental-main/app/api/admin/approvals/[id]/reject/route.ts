@@ -63,6 +63,7 @@ export async function POST(
           data: {
             isVerified: false,
             isActive: false,
+            verificationStatus: 'REJECTED',
             rejectionReason: reason,
           },
         });
