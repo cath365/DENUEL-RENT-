@@ -15,7 +15,6 @@ const PRIORITIES = new Set([
   'LOW',
   'MEDIUM',
   'HIGH',
-  'URGENT',
   'EMERGENCY',
 ]);
 
