@@ -22,10 +22,14 @@ export default function Footer() {
       <div className="mx-auto max-w-7xl px-4 py-14 sm:px-6">
         <div className="grid gap-10 lg:grid-cols-[1.2fr_2fr]">
           <div>
-            <Link href="/" className="inline-flex items-center gap-2 text-2xl font-black text-white">
-              {settings.logoUrl ? <img src={settings.logoUrl} alt={settings.siteName || 'DENUEL'} className="h-9 max-w-[160px] object-contain" /> : <><span className="grid h-10 w-10 place-items-center rounded-xl bg-blue-600">D</span><span>{settings.siteName || 'DENUEL'}</span></>}
+            <Link href="/" className="inline-flex items-center">
+              <img
+                src={settings.logoUrl || '/brand/nganda-logo-horizontal-dark.svg'}
+                alt={settings.siteName || "Ng'anda"}
+                className="h-16 w-auto max-w-[260px] object-contain"
+              />
             </Link>
-            <p className="mt-5 max-w-sm text-sm leading-6 text-slate-400">{settings.siteDescription || 'A Zambia-first platform for finding, verifying, renting, buying and managing property.'}</p>
+            <p className="mt-5 max-w-sm text-sm leading-6 text-slate-400">{settings.siteDescription || 'Find a place. Make it home.'}</p>
             {(settings.contactEmail || settings.supportEmail || settings.contactPhone) && <div className="mt-6 space-y-1 text-sm text-slate-400">{(settings.supportEmail || settings.contactEmail) && <div>{settings.supportEmail || settings.contactEmail}</div>}{settings.contactPhone && <div>{settings.contactPhone}</div>}</div>}
             {socials.length > 0 && <div className="mt-6 flex flex-wrap gap-2">{socials.map(([name,url]) => <a key={name} href={String(url)} target="_blank" rel="noreferrer" className="rounded-full border border-white/10 px-3 py-1.5 text-xs font-semibold hover:border-white/30 hover:text-white">{name}</a>)}</div>}
           </div>
@@ -34,7 +38,7 @@ export default function Footer() {
           </div>
         </div>
         <div className="mt-12 flex flex-col gap-4 border-t border-white/10 pt-6 text-xs text-slate-500 sm:flex-row sm:items-center sm:justify-between">
-          <div>© {year} {settings.siteName || 'DENUEL'}. All rights reserved.</div>
+          <div>© {year} {settings.siteName || "Ng'anda"}. All rights reserved.</div>
           <div className="flex flex-wrap gap-4"><Link href="/terms" className="hover:text-white">Terms</Link><Link href="/privacy" className="hover:text-white">Privacy</Link><Link href="/cookies" className="hover:text-white">Cookies</Link><Link href="/accessibility" className="hover:text-white">Accessibility</Link></div>
         </div>
       </div>
