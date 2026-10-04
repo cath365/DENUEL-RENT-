@@ -166,7 +166,7 @@ export async function POST(req: NextRequest) {
     }
 
     let leaseContent =
-      typeof content === 'string' ? content : '';
+      typeof content === 'string' ? content.trim() : '';
 
     if (templateId && !leaseContent) {
       const template = await prisma.leaseTemplate.findUnique({
@@ -186,6 +186,45 @@ export async function POST(req: NextRequest) {
           });
         }
       }
+    }
+
+    if (!leaseContent.trim()) {
+      return NextResponse.json(
+        {
+          error:
+            'Lease agreement text is required. Ng\'anda does not generate legal lease clauses automatically.',
+        },
+        { status: 400 }
+      );
+    }
+
+    if (property.status !== 'APPROVED') {
+      return NextResponse.json(
+        { error: 'A lease can only be created for an approved property.' },
+        { status: 400 }
+      );
+    }
+
+    const existingLease = await prisma.leaseAgreement.findFirst({
+      where: {
+        propertyId,
+        tenantId,
+        status: {
+          in: ['DRAFT', 'PENDING_SIGNATURES', 'ACTIVE'],
+        },
+      },
+      select: { id: true, status: true },
+    });
+
+    if (existingLease) {
+      return NextResponse.json(
+        {
+          error:
+            'An active or pending lease already exists for this tenant and property.',
+          leaseId: existingLease.id,
+        },
+        { status: 409 }
+      );
     }
 
     const lease = await prisma.leaseAgreement.create({
