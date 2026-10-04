@@ -35,7 +35,21 @@ export async function GET(req: NextRequest) {
       orderBy: { createdAt: 'desc' },
     });
 
-    return NextResponse.json(screenings);
+    const propertyIds = [...new Set(screenings.map((screening) => screening.propertyId).filter(Boolean))] as string[];
+    const properties = propertyIds.length
+      ? await prisma.property.findMany({
+          where: { id: { in: propertyIds } },
+          select: { id: true, title: true, city: true, area: true },
+        })
+      : [];
+    const propertyMap = new Map(properties.map((property) => [property.id, property]));
+
+    return NextResponse.json(
+      screenings.map((screening) => ({
+        ...screening,
+        property: screening.propertyId ? propertyMap.get(screening.propertyId) || null : null,
+      }))
+    );
   } catch (error) {
     if (error instanceof Response) return error;
     console.error('Fetch tenant screenings error:', error);
@@ -63,6 +77,16 @@ export async function POST(req: NextRequest) {
 
     if (!applicantId) {
       return NextResponse.json({ error: 'Applicant ID is required' }, { status: 400 });
+    }
+
+    if (propertyId) {
+      const property = await prisma.property.findUnique({ where: { id: propertyId } });
+      if (!property || (property.ownerId !== user.id && user.role !== 'ADMIN')) {
+        return NextResponse.json(
+          { error: 'Property not found or unauthorized' },
+          { status: 404 }
+        );
+      }
     }
 
     // Check if applicant exists
@@ -106,13 +130,10 @@ export async function POST(req: NextRequest) {
   }
 }
 
-// PUT - Update screening with results (simulated)
+// PUT - Record verified screening results. Restricted to admins until a trusted screening integration is connected.
 export async function PUT(req: NextRequest) {
   try {
-    const user = await requireAuth(req);
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const user = await requireAuth(req, ['ADMIN']);
 
     const body = await req.json();
     const {
@@ -139,11 +160,6 @@ export async function PUT(req: NextRequest) {
 
     if (!screening) {
       return NextResponse.json({ error: 'Screening not found' }, { status: 404 });
-    }
-
-    // Only landlord or admin can update
-    if (screening.landlordId !== user.id && user.role !== 'ADMIN') {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
     const updated = await prisma.tenantScreening.update({
