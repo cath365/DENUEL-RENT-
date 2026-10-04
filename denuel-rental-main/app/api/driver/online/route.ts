@@ -1,6 +1,8 @@
 import { requireAuth } from '../../../../lib/auth';
 import prisma from '../../../../lib/prisma';
 
+export const dynamic = 'force-dynamic';
+
 export async function POST(req: Request) {
   const user = await requireAuth(req, ['DRIVER']);
   const body = await req.json();

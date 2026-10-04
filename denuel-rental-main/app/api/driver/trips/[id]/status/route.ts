@@ -2,6 +2,8 @@ import { requireAuth } from '../../../../../../lib/auth';
 import prisma from '../../../../../../lib/prisma';
 import hub from '../../../../../../lib/transport/realtime';
 
+export const dynamic = 'force-dynamic';
+
 export async function POST(req: Request, { params }: { params: { id: string } }) {
   const user = await requireAuth(req, ['DRIVER']);
   const body = await req.json();
