@@ -4,13 +4,21 @@
 @tailwind utilities;
 
 :root {
-  --brand-500: #2563eb;
-  --brand-600: #1d4ed8;
+  --nganda-navy: #0F2B46;
+  --nganda-green: #16A34A;
+  --nganda-off-white: #F8F9FA;
+  --nganda-text: #374151;
+
+  --brand-500: var(--nganda-green);
+  --brand-600: var(--nganda-green);
   --background: #ffffff;
-  --surface: #f8fafc;
-  --text-primary: #0f172a;
-  --text-secondary: #475569;
+  --surface: var(--nganda-off-white);
+  --text-primary: var(--nganda-text);
+  --text-secondary: #64748b;
   --border: #e2e8f0;
+
+  --ui-icon-size: 24px;
+  --ui-icon-stroke: 1.8;
 }
 
 html {
@@ -23,7 +31,7 @@ body {
   margin: 0;
   background: var(--background);
   color: var(--text-primary);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-family: "Poppins", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -63,6 +71,38 @@ p {
   margin: 0;
 }
 
+.nganda-icon {
+  width: var(--ui-icon-size);
+  height: var(--ui-icon-size);
+  fill: none;
+  stroke: currentColor;
+  stroke-width: var(--ui-icon-stroke);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.nganda-brand-text {
+  color: var(--nganda-text);
+}
+
+.nganda-brand-surface {
+  background: var(--nganda-off-white);
+}
+
+.nganda-brand-primary {
+  background: var(--nganda-green);
+  color: #ffffff;
+}
+
+.nganda-brand-primary:hover {
+  filter: brightness(0.94);
+}
+
+.nganda-brand-navy {
+  background: var(--nganda-navy);
+  color: #ffffff;
+}
+
 .line-clamp-1 {
   display: -webkit-box;
   -webkit-line-clamp: 1;
@@ -85,7 +125,7 @@ p {
 }
 
 :focus-visible {
-  outline: 2px solid #2563eb;
+  outline: 2px solid var(--nganda-green);
   outline-offset: 2px;
 }
 
