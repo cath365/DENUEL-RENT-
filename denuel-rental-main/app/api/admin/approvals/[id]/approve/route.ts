@@ -67,12 +67,27 @@ export async function POST(
         }
 
         const missing = required.filter(
-          (type) => !provider.documents.some((doc) => doc.type === type && doc.isVerified)
+          (type) => !provider.documents.some((doc) => doc.type === type)
+        );
+        const unverified = required.filter(
+          (type) => provider.documents.some((doc) => doc.type === type && !doc.isVerified)
+        );
+        const insecure = required.filter(
+          (type) => provider.documents.some(
+            (doc) =>
+              doc.type === type &&
+              !doc.fileUrl.includes('.private.blob.vercel-storage.com')
+          )
         );
 
-        if (missing.length > 0) {
+        if (missing.length > 0 || unverified.length > 0 || insecure.length > 0) {
           return NextResponse.json(
-            { error: 'Required documents are still missing or unverified', missing },
+            {
+              error: 'Required documents must be uploaded privately and verified before approval',
+              missing,
+              unverified,
+              insecure,
+            },
             { status: 400 }
           );
         }
