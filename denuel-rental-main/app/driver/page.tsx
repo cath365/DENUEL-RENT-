@@ -327,8 +327,8 @@ export default function DriverDashboardPage() {
   }
 
   async function uploadVerificationDocument(type: string, file: File) {
-    if (file.size > 10 * 1024 * 1024) {
-      setError('Driver verification documents must be 10MB or smaller.');
+    if (file.size > 4 * 1024 * 1024) {
+      setError('Driver verification documents must be 4MB or smaller.');
       return;
     }
 
