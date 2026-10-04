@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '../../../../lib/prisma';
 import { requireAuth } from '../../../../lib/auth';
 import { ServiceCategory } from '@prisma/client';
+import { publicServerError } from '../../../../lib/publicError';
 
 // POST /api/service-providers/apply - Submit service provider application
 export async function POST(request: NextRequest) {
@@ -154,10 +155,11 @@ export async function POST(request: NextRequest) {
       message: 'Application submitted successfully',
     });
   } catch (error) {
-    console.error('Error submitting application:', error);
+    console.error('Error submitting service application:', error);
+    const safe = publicServerError(error, 'Unable to submit the application right now.');
     return NextResponse.json(
-      { error: 'Failed to submit application' },
-      { status: 500 }
+      { error: safe.message },
+      { status: safe.status }
     );
   }
 }
