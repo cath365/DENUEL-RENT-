@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import Header from '@/components/Header';
+import { csrfFetch } from '@/lib/csrf';
 
 type Provider = {
   id: string;
@@ -121,14 +122,14 @@ export default function ServiceVerificationPage() {
       form.append('file', file);
       form.append('key', 'service-verification/' + req.type.toLowerCase() + '-' + Date.now() + '-' + file.name.replace(/\s+/g, '-'));
 
-      const uploadRes = await fetch('/api/uploads/direct', { method: 'POST', body: form });
+      const uploadRes = await csrfFetch('/api/uploads/direct', { method: 'POST', body: form });
       const uploaded = await uploadRes.json();
 
       if (!uploadRes.ok || !uploaded.publicUrl) {
         throw new Error(uploaded.error || 'Upload failed');
       }
 
-      const saveRes = await fetch('/api/services/documents', {
+      const saveRes = await csrfFetch('/api/services/documents', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
