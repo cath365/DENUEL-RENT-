@@ -27,7 +27,6 @@ const PROPERTY_TYPES = [
 const LISTING_TYPES = [
   ['RENT', 'For rent'],
   ['SALE', 'For sale'],
-  ['BOTH', 'For rent or sale'],
 ];
 
 export default function EditPropertyPage({ params }: { params: { id: string } }) {
