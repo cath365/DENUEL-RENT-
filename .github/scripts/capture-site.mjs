@@ -11,9 +11,9 @@ await fs.mkdir(outDir, { recursive: true });
 const browser = await chromium.launch({ headless: true });
 const results = [];
 
-async function capture(context, route, fileName, group) {
+async function capture(context, route, fileName, group, mobile = false) {
   const page = await context.newPage();
-  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.setViewportSize(mobile ? { width: 390, height: 844 } : { width: 1440, height: 1000 });
 
   let status = null;
   let error = null;
@@ -55,33 +55,11 @@ async function capture(context, route, fileName, group) {
     file: fileName + (error ? '-error' : '') + '.png',
     status,
     error,
+    finalUrl: page.url(),
     title: await page.title().catch(() => ''),
   });
 
   await page.close();
-}
-
-async function register(role, email) {
-  const context = await browser.newContext({
-    baseURL,
-    viewport: { width: 1440, height: 1000 },
-  });
-
-  const response = await context.request.post('/api/auth/register', {
-    data: {
-      email,
-      password: 'PreviewOnly123!',
-      role,
-    },
-  });
-
-  if (!response.ok()) {
-    throw new Error(
-      `Could not create local ${role} preview account: ${response.status()} ${await response.text()}`
-    );
-  }
-
-  return context;
 }
 
 const publicContext = await browser.newContext({
@@ -115,69 +93,22 @@ const publicPages = [
 
 for (const [route, file] of publicPages) {
   await capture(publicContext, route, file, 'public');
+  await capture(publicContext, route, file + '-mobile', 'public', true);
 }
 await publicContext.close();
 
-const userContext = await register('USER', 'preview-user@nganda.local');
-const userPages = [
-  ['/dashboard', 'renter-01-dashboard'],
-  ['/favorites', 'renter-02-favorites'],
-  ['/inquiries', 'renter-03-messages'],
-  ['/renter-hub', 'renter-04-hub'],
-  ['/my-leases', 'renter-05-leases'],
-  ['/rent-payment', 'renter-06-rent-payment'],
-  ['/notifications', 'renter-07-notifications'],
-  ['/profile/verification', 'renter-08-verification'],
-];
-for (const [route, file] of userPages) {
-  await capture(userContext, route, file, 'renter');
+// Authenticated captures require a pre-existing legitimate browser session.
+// Never create accounts or records for screenshots.
+if (process.env.SCREENSHOT_STORAGE_STATE) {
+  const context = await browser.newContext({ baseURL, storageState: process.env.SCREENSHOT_STORAGE_STATE });
+  const routes = ['/dashboard', '/favorites', '/inquiries', '/renter-hub', '/landlord', '/landlord/applications', '/landlord/viewings', '/landlord/leases', '/landlord/payments', '/landlord/maintenance', '/landlord/screening', '/landlord/expenses', '/agent', '/agent/profile', '/agent/clients', '/agent/applications', '/agent/viewings', '/agent/leases', '/agent/payments', '/profile/verification', '/admin', '/admin/service-providers', '/admin/verifications'];
+  for (const [index, route] of routes.entries()) {
+    await capture(context, route, `authenticated-${index + 1}`, 'authenticated');
+  }
+  await context.close();
+} else {
+  console.log('Authenticated pages skipped: no existing legitimate storage state supplied.');
 }
-await userContext.close();
-
-const landlordContext = await register(
-  'LANDLORD',
-  'preview-landlord@nganda.local'
-);
-const landlordPages = [
-  ['/landlord', 'landlord-01-dashboard'],
-  ['/dashboard/properties', 'landlord-02-properties'],
-  ['/dashboard/properties/new', 'landlord-03-add-property'],
-  ['/landlord/applications', 'landlord-04-applications'],
-  ['/landlord/viewings', 'landlord-05-viewings'],
-  ['/landlord/leases', 'landlord-06-leases'],
-  ['/landlord/payments', 'landlord-07-payments'],
-  ['/landlord/maintenance', 'landlord-08-maintenance'],
-  ['/landlord/screening', 'landlord-09-screening'],
-  ['/landlord/expenses', 'landlord-10-expenses'],
-  ['/inquiries', 'landlord-11-messages'],
-  ['/profile/verification', 'landlord-12-verification'],
-];
-for (const [route, file] of landlordPages) {
-  await capture(landlordContext, route, file, 'landlord');
-}
-await landlordContext.close();
-
-const agentContext = await register(
-  'AGENT',
-  'preview-agent@nganda.local'
-);
-const agentPages = [
-  ['/agent', 'agent-01-dashboard'],
-  ['/agent/profile', 'agent-02-profile'],
-  ['/dashboard/properties', 'agent-03-properties'],
-  ['/dashboard/properties/new', 'agent-04-add-property'],
-  ['/agent/clients', 'agent-05-clients'],
-  ['/agent/applications', 'agent-06-applications'],
-  ['/agent/viewings', 'agent-07-viewings'],
-  ['/agent/leases', 'agent-08-leases'],
-  ['/agent/payments', 'agent-09-payments'],
-  ['/inquiries', 'agent-10-messages'],
-  ['/profile/verification', 'agent-11-verification'],
-];
-for (const [route, file] of agentPages) {
-  await capture(agentContext, route, file, 'agent');
-}
-await agentContext.close();
 
 await browser.close();
 

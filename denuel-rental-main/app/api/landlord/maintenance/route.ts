@@ -380,7 +380,7 @@ export async function PUT(req: NextRequest) {
               requestId,
               title: request.title,
               status: body.status,
-              scheduledAt: updateData.scheduledAt || request.scheduledAt,
+              scheduledAt: updated.scheduledAt?.toISOString() ?? null,
             },
           },
         });

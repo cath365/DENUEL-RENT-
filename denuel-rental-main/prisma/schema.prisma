@@ -273,6 +273,7 @@ model Property {
   owner       User     @relation(fields: [ownerId], references: [id])
   ownerId     String
   status      ListingStatus @default(DRAFT)
+  rejectionReason String? @db.Text
   isFeatured  Boolean  @default(false)
   viewCount   Int      @default(0)
   saveCount   Int      @default(0)
