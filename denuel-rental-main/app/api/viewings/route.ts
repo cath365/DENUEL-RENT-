@@ -6,21 +6,36 @@ import { requireAuth, requireCsrf } from '@/lib/auth';
 export async function GET(req: NextRequest) {
   try {
     const user = await requireAuth(req);
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
     const { searchParams } = new URL(req.url);
     const propertyId = searchParams.get('propertyId');
-    const role = searchParams.get('role'); // 'owner' or 'visitor'
+    const role = searchParams.get('role');
     const status = searchParams.get('status');
     const upcoming = searchParams.get('upcoming') !== 'false';
 
     const where: Record<string, unknown> = {};
 
     if (propertyId) {
+      const property = await prisma.property.findUnique({
+        where: { id: propertyId },
+        select: { ownerId: true },
+      });
+
+      if (!property) {
+        return NextResponse.json({ error: 'Property not found.' }, { status: 404 });
+      }
+
+      const canViewAllForProperty =
+        property.ownerId === user.id || user.role === 'ADMIN';
+
       where.propertyId = propertyId;
-    } else if (role === 'owner' || user.role === 'LANDLORD' || user.role === 'AGENT') {
+
+      if (!canViewAllForProperty) {
+        where.visitorId = user.id;
+      }
+    } else if (
+      role === 'owner' &&
+      (user.role === 'LANDLORD' || user.role === 'AGENT' || user.role === 'ADMIN')
+    ) {
       where.property = { ownerId: user.id };
     } else {
       where.visitorId = user.id;
@@ -43,21 +58,43 @@ export async function GET(req: NextRequest) {
             title: true,
             addressText: true,
             city: true,
+            area: true,
             ownerId: true,
-            owner: { select: { id: true, name: true, phone: true } },
+            images: {
+              orderBy: { sortOrder: 'asc' },
+              take: 1,
+              select: { url: true },
+            },
+            owner: {
+              select: {
+                id: true,
+                name: true,
+                phone: true,
+                companyName: true,
+              },
+            },
           },
         },
         visitor: {
-          select: { id: true, name: true, email: true, phone: true },
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            phone: true,
+          },
         },
       },
-      orderBy: { scheduledAt: 'asc' },
+      orderBy: { scheduledAt: 'desc' },
     });
 
     return NextResponse.json(appointments);
   } catch (error) {
+    if (error instanceof Response) return error;
     console.error('Fetch viewing appointments error:', error);
-    return NextResponse.json({ error: 'Failed to fetch appointments' }, { status: 500 });
+    return NextResponse.json(
+      { error: 'Unable to load viewing requests right now.' },
+      { status: 500 }
+    );
   }
 }
 
@@ -168,6 +205,7 @@ export async function POST(req: NextRequest) {
 export async function PUT(req: NextRequest) {
   try {
     const user = await requireAuth(req);
+    requireCsrf(req);
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
@@ -247,6 +285,7 @@ export async function PUT(req: NextRequest) {
 export async function DELETE(req: NextRequest) {
   try {
     const user = await requireAuth(req);
+    requireCsrf(req);
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
