@@ -168,6 +168,24 @@ export async function POST(req: NextRequest) {
     if (error instanceof z.ZodError) {
       return NextResponse.json({ error: error.errors }, { status: 422 });
     }
+    if (error?.message === 'MAPBOX_DIRECTIONS_NOT_CONFIGURED') {
+      return NextResponse.json(
+        { error: 'Road-route calculation is not configured yet.' },
+        { status: 503 }
+      );
+    }
+    if (error?.message === 'MAPBOX_DIRECTIONS_UNAVAILABLE') {
+      return NextResponse.json(
+        { error: 'Road-route calculation is temporarily unavailable. Please try again.' },
+        { status: 502 }
+      );
+    }
+    if (error?.message === 'MAPBOX_ROUTE_NOT_FOUND') {
+      return NextResponse.json(
+        { error: 'No drivable route was found between the selected locations.' },
+        { status: 422 }
+      );
+    }
     if (String(error?.message || '').includes('No pricing rule configured')) {
       return NextResponse.json(
         { error: 'Pricing is not configured for this vehicle type yet.' },
