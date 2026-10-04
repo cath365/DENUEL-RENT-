@@ -65,9 +65,8 @@ export default function AdminUsersPage() {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ role: newRole }),
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ isIdVerified: !users.find(u => u.id === userId)?.isVerified }),
       });
+
       if (res.ok) {
         setUsers(users.map(u => u.id === userId ? { ...u, role: newRole } : u));
         if (selectedUser?.id === userId) {
@@ -81,14 +80,18 @@ export default function AdminUsersPage() {
 
   const toggleUserVerification = async (userId: string) => {
     try {
+      const current = users.find(u => u.id === userId);
+      const nextVerified = !current?.isVerified;
       const res = await fetch(`/api/admin/users/${userId}`, {
         method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isIdVerified: nextVerified }),
       });
+
       if (res.ok) {
-        const nextVerified = !users.find(u => u.id === userId)?.isVerified;
-        setUsers(users.map(u => u.id === userId ? { ...u, isVerified: Boolean(nextVerified) } : u));
+        setUsers(users.map(u => u.id === userId ? { ...u, isVerified: nextVerified } : u));
         if (selectedUser?.id === userId) {
-          setSelectedUser({ ...selectedUser, isVerified: Boolean(nextVerified) });
+          setSelectedUser({ ...selectedUser, isVerified: nextVerified });
         }
       }
     } catch (error) {
