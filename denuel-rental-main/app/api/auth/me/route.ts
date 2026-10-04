@@ -3,6 +3,8 @@ import { verifyJwt } from '../../../../lib/auth';
 import prisma from '../../../../lib/prisma';
 import { publicServerError } from '../../../../lib/publicError';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(req: Request) {
   try {
     const cookie = req.headers.get('cookie') || '';
