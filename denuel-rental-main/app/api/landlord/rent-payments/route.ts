@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, requireCsrf } from '@/lib/auth';
+import { publicServerError } from '@/lib/publicError';
 
 // GET - Get rent payments
 export async function GET(req: NextRequest) {
@@ -19,10 +20,16 @@ export async function GET(req: NextRequest) {
 
     if (leaseId) {
       where.leaseId = leaseId;
-    } else if (role === 'landlord' || user.role === 'LANDLORD') {
-      where.lease = {
-        landlordId: user.id,
-      };
+      where.OR = [
+        { tenantId: user.id },
+        { lease: { landlordId: user.id } },
+      ];
+    } else if (role === 'tenant') {
+      where.tenantId = user.id;
+    } else if (role === 'landlord') {
+      where.lease = { landlordId: user.id };
+    } else if (user.role === 'LANDLORD' || user.role === 'AGENT') {
+      where.lease = { landlordId: user.id };
     } else {
       where.tenantId = user.id;
     }
@@ -37,7 +44,13 @@ export async function GET(req: NextRequest) {
         lease: {
           include: {
             property: {
-              select: { id: true, title: true, addressText: true },
+              select: {
+                id: true,
+                title: true,
+                addressText: true,
+                city: true,
+                area: true,
+              },
             },
             tenant: {
               select: { id: true, name: true, email: true },
@@ -53,7 +66,9 @@ export async function GET(req: NextRequest) {
 
     // Calculate summary stats
     const stats = {
-      totalDue: payments.filter((p) => p.status === 'PENDING').reduce((sum, p) => sum + p.amount, 0),
+      totalDue: payments
+        .filter((p) => ['PENDING', 'LATE'].includes(p.status))
+        .reduce((sum, p) => sum + p.amount + Math.max(0, Number(p.lateFee || 0)), 0),
       totalPaid: payments.filter((p) => p.status === 'PAID').reduce((sum, p) => sum + p.amount, 0),
       overdue: payments.filter((p) => p.status === 'PENDING' && new Date(p.dueDate) < new Date()).length,
       upcoming: payments.filter((p) => {
@@ -66,8 +81,10 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ payments, stats });
   } catch (error) {
+    if (error instanceof Response) return error;
     console.error('Fetch rent payments error:', error);
-    return NextResponse.json({ error: 'Failed to fetch payments' }, { status: 500 });
+    const safe = publicServerError(error, 'Unable to load rent payment records.');
+    return NextResponse.json({ error: safe.message }, { status: safe.status });
   }
 }
 
@@ -153,20 +170,25 @@ export async function POST(req: NextRequest) {
   }
 }
 
-// PUT - Update payment (landlord can waive, adjust, etc.)
+// PUT - Update a rent record (landlord/admin only)
 export async function PUT(req: NextRequest) {
   try {
     const user = await requireAuth(req);
     requireCsrf(req);
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
 
     const body = await req.json();
-    const { paymentId, status, lateFee, notes } = body;
+    const paymentId =
+      typeof body.paymentId === 'string' ? body.paymentId : '';
+    const requestedStatus =
+      typeof body.status === 'string' ? body.status : undefined;
+    const notes =
+      typeof body.notes === 'string' ? body.notes.trim().slice(0, 1000) : undefined;
 
     if (!paymentId) {
-      return NextResponse.json({ error: 'Payment ID is required' }, { status: 400 });
+      return NextResponse.json(
+        { error: 'Payment ID is required.' },
+        { status: 400 }
+      );
     }
 
     const payment = await prisma.rentPayment.findUnique({
@@ -175,22 +197,65 @@ export async function PUT(req: NextRequest) {
     });
 
     if (!payment) {
-      return NextResponse.json({ error: 'Payment not found' }, { status: 404 });
+      return NextResponse.json(
+        { error: 'Payment record not found.' },
+        { status: 404 }
+      );
     }
 
-    // Only landlord or admin can modify
     if (payment.lease.landlordId !== user.id && user.role !== 'ADMIN') {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+      return NextResponse.json({ error: 'Forbidden.' }, { status: 403 });
+    }
+
+    const allowedStatuses = ['PENDING', 'PAID', 'LATE', 'PARTIAL', 'WAIVED'];
+    const data: Record<string, unknown> = {};
+
+    if (requestedStatus !== undefined) {
+      if (!allowedStatuses.includes(requestedStatus)) {
+        return NextResponse.json(
+          { error: 'Invalid rent-payment status.' },
+          { status: 400 }
+        );
+      }
+      data.status = requestedStatus;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(body, 'lateFee')) {
+      if (body.lateFee === null || body.lateFee === '') {
+        data.lateFee = null;
+      } else {
+        const lateFee = Number(body.lateFee);
+        if (!Number.isFinite(lateFee) || lateFee < 0) {
+          return NextResponse.json(
+            { error: 'Late fee must be a valid non-negative amount.' },
+            { status: 400 }
+          );
+        }
+        data.lateFee = lateFee;
+      }
+    }
+
+    if (notes !== undefined) {
+      data.notes = notes || null;
+    }
+
+    if (Object.keys(data).length === 0) {
+      return NextResponse.json(
+        { error: 'No permitted payment update was provided.' },
+        { status: 400 }
+      );
     }
 
     const updated = await prisma.rentPayment.update({
       where: { id: paymentId },
-      data: { status, lateFee, notes },
+      data,
     });
 
     return NextResponse.json(updated);
   } catch (error) {
+    if (error instanceof Response) return error;
     console.error('Update rent payment error:', error);
-    return NextResponse.json({ error: 'Failed to update payment' }, { status: 500 });
+    const safe = publicServerError(error, 'Unable to update this rent record.');
+    return NextResponse.json({ error: safe.message }, { status: safe.status });
   }
 }
