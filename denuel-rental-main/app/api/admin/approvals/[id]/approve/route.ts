@@ -57,6 +57,8 @@ export async function POST(
           data: {
             isVerified: true,
             isActive: true,
+            verificationStatus: 'VERIFIED',
+            rejectionReason: null,
           },
         });
 
