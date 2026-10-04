@@ -1,34 +1,114 @@
-"use client";
-import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+'use client';
+
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Header from '../../../components/Header';
 import Link from 'next/link';
+import { TRANSPORT_IMAGES } from '../../../lib/transport/vehicleImages';
 
-const VEHICLE_TYPES = [
-  { id: 'MOTORBIKE', label: 'Motorbike', image: '/transport/motorbike.svg', description: 'Motorbike for eligible trips and lightweight deliveries' },
-  { id: 'CAR', label: 'Car / Sedan', image: '/transport/car.svg', description: 'Passenger car or sedan' },
-  { id: 'SUV', label: 'SUV', image: '/transport/suv.svg', description: 'Larger passenger vehicle with extra luggage space' },
-  { id: 'VAN', label: 'Van / Minibus', image: '/transport/van.svg', description: 'Passenger groups, luggage or light moving' },
-  { id: 'TRUCK_SMALL', label: 'Pickup / Small Truck', image: '/transport/pickup.svg', description: 'Small moving and delivery jobs' },
-  { id: 'TRUCK_MEDIUM', label: 'Medium Moving Truck', image: '/transport/moving-truck.svg', description: 'Furniture and medium moving jobs' },
-  { id: 'TRUCK_LARGE', label: 'Large Truck', image: '/transport/moving-truck.svg', description: 'Large moving or freight jobs' },
+type VehicleType =
+  | 'MOTORBIKE'
+  | 'CAR'
+  | 'SUV'
+  | 'VAN'
+  | 'TRUCK_SMALL'
+  | 'TRUCK_MEDIUM'
+  | 'TRUCK_LARGE';
+
+type VehicleOption = {
+  id: VehicleType;
+  label: string;
+  description: string;
+  image?: string;
+  capacityHint?: string;
+};
+
+const VEHICLE_TYPES: VehicleOption[] = [
+  {
+    id: 'MOTORBIKE',
+    label: 'Motorbike',
+    description: 'Passenger trips and light deliveries.',
+    image: TRANSPORT_IMAGES.motorbike,
+  },
+  {
+    id: 'CAR',
+    label: 'Car / Taxi',
+    description: 'Standard passenger transport.',
+    image: TRANSPORT_IMAGES.taxi,
+  },
+  {
+    id: 'SUV',
+    label: 'SUV / 4x4',
+    description: 'More passenger and luggage space.',
+    image: TRANSPORT_IMAGES.suv,
+  },
+  {
+    id: 'VAN',
+    label: 'Van / Minibus',
+    description: 'Group travel or medium cargo.',
+  },
+  {
+    id: 'TRUCK_SMALL',
+    label: 'Small Truck',
+    description: 'Small moving and delivery jobs.',
+    image: TRANSPORT_IMAGES.small_truck,
+  },
+  {
+    id: 'TRUCK_MEDIUM',
+    label: 'Medium Truck',
+    description: 'Household and business moves.',
+    image: TRANSPORT_IMAGES.medium_truck,
+  },
+  {
+    id: 'TRUCK_LARGE',
+    label: 'Large Truck',
+    description: 'Large moves and heavier loads.',
+    image: TRANSPORT_IMAGES.large_truck,
+  },
 ];
 
 const ZAMBIAN_CITIES = [
-  'Lusaka', 'Kitwe', 'Ndola', 'Kabwe', 'Chingola', 'Mufulira', 'Livingstone',
-  'Luanshya', 'Kasama', 'Chipata', 'Solwezi', 'Mansa', 'Mongu', 'Kafue', 'Choma'
+  'Lusaka',
+  'Kitwe',
+  'Ndola',
+  'Kabwe',
+  'Chingola',
+  'Mufulira',
+  'Livingstone',
+  'Luanshya',
+  'Kasama',
+  'Chipata',
+  'Solwezi',
+  'Mansa',
+  'Mongu',
+  'Kafue',
+  'Choma',
 ];
 
+type DriverDocument = {
+  type: 'nrc' | 'license' | 'vehicle_reg' | 'insurance' | 'clearance';
+  label: string;
+  help: string;
+  file: File | null;
+};
+
 export default function DriverApplyPage() {
+  const router = useRouter();
   const [step, setStep] = useState(1);
+  const [checkingAccount, setCheckingAccount] = useState(true);
+  const [signedIn, setSignedIn] = useState(false);
+  const [existingProfile, setExistingProfile] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState('');
+  const [error, setError] = useState('');
+
   const [formData, setFormData] = useState({
     fullName: '',
     email: '',
     phone: '',
     nrcNumber: '',
     licenseNumber: '',
-    vehicleType: '',
+    vehicleType: '' as VehicleType | '',
     vehicleMake: '',
     vehicleModel: '',
     vehicleYear: '',
@@ -39,517 +119,632 @@ export default function DriverApplyPage() {
     bio: '',
     serviceAreas: [] as string[],
   });
-  const [documents, setDocuments] = useState<{ type: string; file: File | null }[]>([
-    { type: 'nrc', file: null },
-    { type: 'license', file: null },
-    { type: 'vehicle_reg', file: null },
-    { type: 'insurance', file: null },
-    { type: 'clearance', file: null },
+
+  const [documents, setDocuments] = useState<DriverDocument[]>([
+    {
+      type: 'nrc',
+      label: 'NRC / National ID',
+      help: 'Clear copy of the applicant’s identity document.',
+      file: null,
+    },
+    {
+      type: 'license',
+      label: "Driver's licence",
+      help: 'Current driving licence appropriate for the vehicle class.',
+      file: null,
+    },
+    {
+      type: 'vehicle_reg',
+      label: 'Vehicle registration / Blue Book',
+      help: 'Document showing the vehicle registration details.',
+      file: null,
+    },
+    {
+      type: 'insurance',
+      label: 'Vehicle insurance',
+      help: 'Current insurance evidence for the vehicle.',
+      file: null,
+    },
+    {
+      type: 'clearance',
+      label: 'Police clearance / background check',
+      help: 'Background-check document for driver verification.',
+      file: null,
+    },
   ]);
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
-  const router = useRouter();
 
   useEffect(() => {
-    async function check() {
+    let cancelled = false;
+
+    async function checkAccount() {
       try {
-        const p = await axios.get('/api/driver/profile');
-        if (p.data.profile) router.push('/driver');
-      } catch (e) {
-        // ignore
-      }
-    }
-    check();
-  }, [router]);
+        const meRes = await fetch('/api/auth/me');
+        const me = await meRes.json().catch(() => ({ user: null }));
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
-    const { name, value } = e.target;
-    setFormData({ ...formData, [name]: value });
-  };
+        if (!cancelled && meRes.ok && me?.user) {
+          setSignedIn(true);
+          setFormData((current) => ({
+            ...current,
+            fullName: me.user.name || '',
+            email: me.user.email || '',
+            phone: me.user.phone || '',
+          }));
 
-  const handleVehicleSelect = (vehicleId: string) => {
-    setFormData({ ...formData, vehicleType: vehicleId });
-  };
+          const profileRes = await fetch('/api/driver/profile');
+          const profileData = await profileRes.json().catch(() => ({}));
 
-  const handleAreaToggle = (city: string) => {
-    const current = formData.serviceAreas;
-    if (current.includes(city)) {
-      setFormData({ ...formData, serviceAreas: current.filter(c => c !== city) });
-    } else {
-      setFormData({ ...formData, serviceAreas: [...current, city] });
-    }
-  };
-
-  const handleFileChange = (index: number, file: File | null) => {
-    const newDocs = [...documents];
-    newDocs[index].file = file;
-    setDocuments(newDocs);
-  };
-
-  async function handleSubmit() {
-    setError('');
-    setLoading(true);
-    try {
-      // Upload documents first
-      const uploadedDocs: { type: string; url: string; name: string }[] = [];
-      
-      for (const doc of documents) {
-        if (doc.file) {
-          const formDataUpload = new FormData();
-          formDataUpload.append('file', doc.file);
-          formDataUpload.append('type', 'document');
-
-          try {
-            const uploadRes = await axios.post('/api/uploads', formDataUpload);
-            if (uploadRes.data.url) {
-              uploadedDocs.push({ type: doc.type, url: uploadRes.data.url, name: doc.file.name });
-            }
-          } catch (e) {
-            console.log('Document upload failed:', doc.type);
+          if (profileRes.ok && profileData?.profile) {
+            setExistingProfile(true);
           }
         }
+      } catch {
+        // Account state is handled by the sign-in prompt below.
+      } finally {
+        if (!cancelled) setCheckingAccount(false);
+      }
+    }
+
+    checkAccount();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const selectedVehicle = useMemo(
+    () => VEHICLE_TYPES.find((vehicle) => vehicle.id === formData.vehicleType),
+    [formData.vehicleType]
+  );
+
+  function updateField(name: string, value: string) {
+    setFormData((current) => ({ ...current, [name]: value }));
+    setError('');
+  }
+
+  function toggleArea(city: string) {
+    setFormData((current) => ({
+      ...current,
+      serviceAreas: current.serviceAreas.includes(city)
+        ? current.serviceAreas.filter((area) => area !== city)
+        : [...current.serviceAreas, city],
+    }));
+  }
+
+  function setDocument(index: number, file: File | null) {
+    setDocuments((current) =>
+      current.map((document, i) => (i === index ? { ...document, file } : document))
+    );
+  }
+
+  function canContinueStep1() {
+    return Boolean(
+      formData.vehicleType &&
+      formData.vehicleMake.trim() &&
+      formData.vehicleModel.trim() &&
+      formData.vehicleYear &&
+      formData.vehiclePlate.trim() &&
+      formData.vehicleColor.trim()
+    );
+  }
+
+  function canContinueStep2() {
+    return Boolean(
+      formData.fullName.trim() &&
+      formData.email.trim() &&
+      formData.phone.trim() &&
+      formData.nrcNumber.trim() &&
+      formData.licenseNumber.trim() &&
+      formData.experience
+    );
+  }
+
+  async function uploadDocument(document: DriverDocument) {
+    if (!document.file) throw new Error(`${document.label} is required.`);
+
+    const form = new FormData();
+    form.append('file', document.file);
+    form.append(
+      'key',
+      'driver-verification/' +
+        document.type +
+        '-' +
+        Date.now() +
+        '-' +
+        document.file.name.replace(/\s+/g, '-')
+    );
+
+    const response = await fetch('/api/uploads/direct', {
+      method: 'POST',
+      body: form,
+    });
+
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || !data.publicUrl) {
+      throw new Error(data.error || `Could not upload ${document.label}.`);
+    }
+
+    return {
+      type: document.type,
+      url: data.publicUrl,
+      name: document.file.name,
+    };
+  }
+
+  async function handleSubmit() {
+    if (!signedIn) {
+      setError('Sign in before submitting a driver application.');
+      return;
+    }
+
+    if (documents.some((document) => !document.file)) {
+      setError('Upload every required verification document before submitting.');
+      return;
+    }
+
+    setLoading(true);
+    setError('');
+
+    try {
+      const uploadedDocs = [];
+
+      for (let i = 0; i < documents.length; i += 1) {
+        const document = documents[i];
+        setUploadProgress(`Uploading ${i + 1} of ${documents.length}: ${document.label}`);
+        uploadedDocs.push(await uploadDocument(document));
       }
 
-      // Submit driver application
-      const body = {
-        licenseNumber: formData.licenseNumber,
-        vehicleType: formData.vehicleType,
-        vehiclePlate: formData.vehiclePlate,
-        vehicleMake: formData.vehicleMake,
-        vehicleModel: formData.vehicleModel,
-        vehicleYear: parseInt(formData.vehicleYear) || new Date().getFullYear(),
-        vehicleColor: formData.vehicleColor,
-        vehicleCapacityKg: parseInt(formData.capacity) || 0,
-        experience: formData.experience,
-        bio: formData.bio,
-        serviceAreas: formData.serviceAreas,
-        documents: uploadedDocs,
-      };
+      setUploadProgress('Saving driver application…');
 
-      const res = await axios.post('/api/driver/profile', body);
-      if (res.data.error) {
-        setError(res.data.error);
-      } else {
-        router.push('/driver/apply/success');
+      const response = await fetch('/api/driver/profile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          licenseNumber: formData.licenseNumber.trim(),
+          vehicleType: formData.vehicleType,
+          vehiclePlate: formData.vehiclePlate.trim().toUpperCase(),
+          vehicleMake: formData.vehicleMake.trim(),
+          vehicleModel: formData.vehicleModel.trim(),
+          vehicleYear: Number(formData.vehicleYear),
+          vehicleColor: formData.vehicleColor.trim(),
+          vehicleCapacityKg: formData.capacity ? Number(formData.capacity) : undefined,
+          experience: formData.experience,
+          bio: formData.bio.trim() || undefined,
+          serviceAreas: formData.serviceAreas,
+          documents: uploadedDocs,
+        }),
+      });
+
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.error || 'Unable to submit the driver application.');
       }
+
+      router.push('/driver/apply/success');
     } catch (err: any) {
-      setError(err?.response?.data?.error || err?.message || 'Submit failed');
-    } finally { 
-      setLoading(false); 
+      setError(err?.message || 'Unable to submit the driver application.');
+    } finally {
+      setLoading(false);
+      setUploadProgress('');
     }
   }
 
-  return (
-    <main className="min-h-screen bg-gray-50">
-      <Header />
+  if (checkingAccount) {
+    return (
+      <main className="min-h-screen bg-[#F8F9FA]">
+        <Header />
+        <div className="mx-auto max-w-5xl px-4 py-12 sm:px-6">
+          <div className="h-72 animate-pulse border border-slate-200 bg-white" />
+        </div>
+      </main>
+    );
+  }
 
-      <div className="container mx-auto px-4 py-8">
-        {/* Progress Steps */}
-        <div className="max-w-3xl mx-auto mb-8">
-          <div className="flex items-center justify-between">
-            {[1, 2, 3, 4].map((s) => (
-              <React.Fragment key={s}>
-                <div className="flex flex-col items-center">
-                  <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold ${
-                    step >= s ? 'bg-[#0F2B46] text-white' : 'bg-gray-200 text-gray-500'
-                  }`}>
-                    {step > s ? '✓' : s}
-                  </div>
-                  <span className={`text-xs mt-2 ${step >= s ? 'text-[#16A34A] font-medium' : 'text-gray-500'}`}>
-                    {s === 1 ? 'Vehicle' : s === 2 ? 'Personal' : s === 3 ? 'Areas' : 'Documents'}
-                  </span>
-                </div>
-                {s < 4 && <div className={`flex-1 h-1 mx-2 ${step > s ? 'bg-blue-600' : 'bg-gray-200'}`} />}
-              </React.Fragment>
-            ))}
+  if (!signedIn) {
+    return (
+      <main className="min-h-screen bg-[#F8F9FA]">
+        <Header />
+        <div className="mx-auto max-w-3xl px-4 py-16 sm:px-6">
+          <div className="border border-slate-200 bg-white p-7">
+            <p className="text-sm font-semibold text-[#16A34A]">Ng’anda Transport</p>
+            <h1 className="mt-2 text-3xl font-bold tracking-[-0.035em] text-[#0F2B46]">
+              Sign in before applying as a driver
+            </h1>
+            <p className="mt-3 text-sm leading-6 text-slate-600">
+              Your application contains private identity, licence and vehicle documents, so it must be linked to a verified Ng’anda account.
+            </p>
+            <div className="mt-6 flex flex-wrap gap-3">
+              <Link
+                href="/auth/login?redirect=/driver/apply"
+                className="bg-[#16A34A] px-5 py-3 text-sm font-semibold text-white"
+              >
+                Sign in
+              </Link>
+              <Link
+                href="/auth/register?redirect=/driver/apply"
+                className="border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700"
+              >
+                Create account
+              </Link>
+            </div>
           </div>
         </div>
+      </main>
+    );
+  }
 
-        <div className="max-w-3xl mx-auto">
-          {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-6">
-              {error}
-            </div>
-          )}
-
-          {/* Step 1: Vehicle Selection */}
-          {step === 1 && (
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8">
-              <h2 className="text-2xl font-bold text-gray-900 mb-2">🚗 Select Your Vehicle Type</h2>
-              <p className="text-gray-600 mb-6">Choose the type of vehicle you'll be using for transport services</p>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
-                {VEHICLE_TYPES.map((vehicle) => (
-                  <button
-                    key={vehicle.id}
-                    onClick={() => handleVehicleSelect(vehicle.id)}
-                    className={`p-4 rounded-xl border-2 text-left transition-all ${
-                      formData.vehicleType === vehicle.id
-                        ? 'border-[#16A34A] bg-emerald-50'
-                        : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
-                    }`}
-                  >
-                    <div className="overflow-hidden rounded-lg bg-slate-50">
-                      <img
-                        src={vehicle.image}
-                        alt={vehicle.label}
-                        className="h-28 w-full object-contain p-2"
-                      />
-                    </div>
-                    <div className="mt-3">
-                      <h3 className="font-semibold text-gray-900">{vehicle.label}</h3>
-                      <p className="text-sm text-gray-500 mt-1">{vehicle.description}</p>
-                    </div>
-                  </button>
-                ))}
-              </div>
-
-              {/* Vehicle Details */}
-              {formData.vehicleType && (
-                <div className="border-t border-gray-100 pt-6">
-                  <h3 className="font-semibold text-gray-900 mb-4">Vehicle Details</h3>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Make *</label>
-                      <input
-                        type="text"
-                        name="vehicleMake"
-                        value={formData.vehicleMake}
-                        onChange={handleInputChange}
-                        placeholder="e.g., Toyota"
-                        className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#16A34A]"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Model *</label>
-                      <input
-                        type="text"
-                        name="vehicleModel"
-                        value={formData.vehicleModel}
-                        onChange={handleInputChange}
-                        placeholder="e.g., Land Cruiser"
-                        className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#16A34A]"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Year *</label>
-                      <input
-                        type="number"
-                        name="vehicleYear"
-                        value={formData.vehicleYear}
-                        onChange={handleInputChange}
-                        placeholder="e.g., 2020"
-                        min="1990"
-                        max={new Date().getFullYear() + 1}
-                        className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#16A34A]"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Color *</label>
-                      <input
-                        type="text"
-                        name="vehicleColor"
-                        value={formData.vehicleColor}
-                        onChange={handleInputChange}
-                        placeholder="e.g., White"
-                        className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#16A34A]"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Plate Number *</label>
-                      <input
-                        type="text"
-                        name="vehiclePlate"
-                        value={formData.vehiclePlate}
-                        onChange={handleInputChange}
-                        placeholder="e.g., ABZ 1234"
-                        className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#16A34A]"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Capacity (kg) - Optional</label>
-                      <input
-                        type="number"
-                        name="capacity"
-                        value={formData.capacity}
-                        onChange={handleInputChange}
-                        placeholder="e.g., 500"
-                        className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#16A34A]"
-                      />
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              <div className="mt-8 flex justify-end">
-                <button
-                  onClick={() => setStep(2)}
-                  disabled={!formData.vehicleType || !formData.vehicleMake || !formData.vehicleModel || !formData.vehiclePlate}
-                  className="bg-[#0F2B46] text-white px-8 py-3 rounded-lg font-semibold hover:bg-[#163e63] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Continue
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Step 2: Personal Details */}
-          {step === 2 && (
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8">
-              <h2 className="text-2xl font-bold text-gray-900 mb-2">👤 Your Personal Details</h2>
-              <p className="text-gray-600 mb-6">Tell us about yourself</p>
-
-              <div className="space-y-6">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Full Name *</label>
-                    <input
-                      type="text"
-                      name="fullName"
-                      value={formData.fullName}
-                      onChange={handleInputChange}
-                      className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#16A34A]"
-                      placeholder="Your full name"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">NRC Number *</label>
-                    <input
-                      type="text"
-                      name="nrcNumber"
-                      value={formData.nrcNumber}
-                      onChange={handleInputChange}
-                      className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#16A34A]"
-                      placeholder="123456/10/1"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Email *</label>
-                    <input
-                      type="email"
-                      name="email"
-                      value={formData.email}
-                      onChange={handleInputChange}
-                      className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#16A34A]"
-                      placeholder="your@email.com"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Phone Number *</label>
-                    <input
-                      type="tel"
-                      name="phone"
-                      value={formData.phone}
-                      onChange={handleInputChange}
-                      className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#16A34A]"
-                      placeholder="+260 97X XXX XXX"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Driver's License Number *</label>
-                    <input
-                      type="text"
-                      name="licenseNumber"
-                      value={formData.licenseNumber}
-                      onChange={handleInputChange}
-                      className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#16A34A]"
-                      placeholder="DL123456"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Driving Experience *</label>
-                    <select
-                      name="experience"
-                      value={formData.experience}
-                      onChange={handleInputChange}
-                      className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#16A34A]"
-                    >
-                      <option value="">Select experience</option>
-                      <option value="Less than 1 year">Less than 1 year</option>
-                      <option value="1-2 years">1-2 years</option>
-                      <option value="3-5 years">3-5 years</option>
-                      <option value="5-10 years">5-10 years</option>
-                      <option value="10+ years">10+ years</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">About You</label>
-                  <textarea
-                    name="bio"
-                    value={formData.bio}
-                    onChange={handleInputChange}
-                    rows={4}
-                    className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#16A34A]"
-                    placeholder="Tell clients about your driving experience, why you're reliable, etc..."
-                  />
-                </div>
-              </div>
-
-              <div className="mt-8 flex justify-between">
-                <button
-                  onClick={() => setStep(1)}
-                  className="text-gray-600 px-6 py-3 rounded-lg font-medium hover:bg-gray-100 transition-colors"
-                >
-                  Back
-                </button>
-                <button
-                  onClick={() => setStep(3)}
-                  disabled={!formData.fullName || !formData.licenseNumber || !formData.experience}
-                  className="bg-[#0F2B46] text-white px-8 py-3 rounded-lg font-semibold hover:bg-[#163e63] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Continue
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Step 3: Service Areas */}
-          {step === 3 && (
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8">
-              <h2 className="text-2xl font-bold text-gray-900 mb-2">📍 Service Areas</h2>
-              <p className="text-gray-600 mb-6">Select the cities where you're available to provide transport services</p>
-
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                {ZAMBIAN_CITIES.map((city) => (
-                  <label
-                    key={city}
-                    className={`flex items-center gap-2 p-4 rounded-xl border-2 cursor-pointer transition-all ${
-                      formData.serviceAreas.includes(city)
-                        ? 'border-green-500 bg-green-50'
-                        : 'border-gray-200 hover:border-gray-300'
-                    }`}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={formData.serviceAreas.includes(city)}
-                      onChange={() => handleAreaToggle(city)}
-                      className="rounded text-green-600"
-                    />
-                    <span className="font-medium">📍 {city}</span>
-                  </label>
-                ))}
-              </div>
-
-              <div className="mt-8 flex justify-between">
-                <button
-                  onClick={() => setStep(2)}
-                  className="text-gray-600 px-6 py-3 rounded-lg font-medium hover:bg-gray-100 transition-colors"
-                >
-                  Back
-                </button>
-                <button
-                  onClick={() => setStep(4)}
-                  disabled={formData.serviceAreas.length === 0}
-                  className="bg-[#0F2B46] text-white px-8 py-3 rounded-lg font-semibold hover:bg-[#163e63] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Continue
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Step 4: Documents */}
-          {step === 4 && (
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8">
-              <h2 className="text-2xl font-bold text-gray-900 mb-2">📄 Upload Documents</h2>
-              <p className="text-gray-600 mb-6">Please upload the required documents for verification</p>
-
-              <div className="space-y-4">
-                {[
-                  { index: 0, label: 'NRC Copy (Front & Back)', required: true },
-                  { index: 1, label: "Driver's License", required: true },
-                  { index: 2, label: 'Vehicle Registration (Blue Book)', required: true },
-                  { index: 3, label: 'Vehicle Insurance', required: true },
-                  { index: 4, label: 'Police Clearance Certificate', required: true },
-                ].map((doc) => (
-                  <div key={doc.index} className="p-4 border border-gray-200 rounded-xl">
-                    <div className="flex items-center justify-between mb-3">
-                      <div>
-                        <h4 className="font-semibold text-gray-900">
-                          {doc.label} {doc.required && <span className="text-red-500">*</span>}
-                        </h4>
-                      </div>
-                      {documents[doc.index].file && (
-                        <span className="text-green-600 text-sm flex items-center gap-1">
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                          </svg>
-                          Uploaded
-                        </span>
-                      )}
-                    </div>
-                    <input
-                      type="file"
-                      accept="image/*,.pdf"
-                      onChange={(e) => handleFileChange(doc.index, e.target.files?.[0] || null)}
-                      className="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
-                    />
-                  </div>
-                ))}
-
-                {/* Terms */}
-                <div className="bg-gray-50 p-4 rounded-xl mt-6">
-                  <label className="flex items-start gap-3 cursor-pointer">
-                    <input type="checkbox" className="mt-1 rounded text-[#16A34A]" required />
-                    <span className="text-sm text-gray-600">
-                      I confirm that all information provided is accurate and I agree to the{' '}
-                      <Link href="/terms" className="text-[#16A34A] hover:underline">Terms of Service</Link>
-                      {' '}and{' '}
-                      <Link href="/privacy" className="text-[#16A34A] hover:underline">Privacy Policy</Link>.
-                      I understand that providing false information may result in permanent removal from the platform.
-                    </span>
-                  </label>
-                </div>
-              </div>
-
-              <div className="mt-8 flex justify-between">
-                <button
-                  onClick={() => setStep(3)}
-                  className="text-gray-600 px-6 py-3 rounded-lg font-medium hover:bg-gray-100 transition-colors"
-                >
-                  Back
-                </button>
-                <button
-                  onClick={handleSubmit}
-                  disabled={loading || documents.slice(0, 5).some(d => !d.file)}
-                  className="bg-green-600 text-white px-8 py-3 rounded-lg font-semibold hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-                >
-                  {loading ? (
-                    <>
-                      <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
-                      Submitting...
-                    </>
-                  ) : (
-                    <>
-                      Submit Application
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                      </svg>
-                    </>
-                  )}
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Help Section */}
-          <div className="mt-8 border border-slate-200 bg-white p-6">
-            <h3 className="font-semibold text-slate-950 mb-2">Need help?</h3>
-            <p className="text-slate-600 text-sm mb-3">
-              If you have trouble with your application, contact support through the platform.
+  if (existingProfile) {
+    return (
+      <main className="min-h-screen bg-[#F8F9FA]">
+        <Header />
+        <div className="mx-auto max-w-3xl px-4 py-16 sm:px-6">
+          <div className="border border-slate-200 bg-white p-7">
+            <h1 className="text-3xl font-bold tracking-[-0.035em] text-[#0F2B46]">
+              Driver profile already exists
+            </h1>
+            <p className="mt-3 text-sm leading-6 text-slate-600">
+              Use your driver dashboard to review the application status and manage your transport profile.
             </p>
-            <Link href="/contact-support" className="text-[#16A34A] hover:underline text-sm font-semibold">
-              Contact support
+            <Link href="/driver" className="mt-6 inline-flex bg-[#0F2B46] px-5 py-3 text-sm font-semibold text-white">
+              Open driver dashboard
             </Link>
           </div>
+        </div>
+      </main>
+    );
+  }
+
+  const progressLabels = ['Vehicle', 'Driver', 'Coverage', 'Documents'];
+
+  return (
+    <main className="min-h-screen bg-[#F8F9FA]">
+      <Header />
+
+      <section className="border-b border-slate-200 bg-white">
+        <div className="mx-auto grid max-w-5xl gap-6 px-4 py-8 sm:px-6 md:grid-cols-[1fr_260px] md:items-center">
+          <div>
+            <div className="text-sm font-semibold text-[#16A34A]">Ng’anda Transport Provider</div>
+            <h1 className="mt-2 text-3xl font-bold tracking-[-0.035em] text-[#0F2B46] sm:text-4xl">
+              Register your vehicle and driver profile
+            </h1>
+            <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-600">
+              Enter real vehicle details and submit the required documents. The profile remains pending until an administrator completes verification.
+            </p>
+          </div>
+
+          <div className="flex min-h-36 items-center justify-center border border-slate-200 bg-[#F8F9FA] p-4">
+            {selectedVehicle?.image ? (
+              <img src={selectedVehicle.image} alt="" className="max-h-32 w-full object-contain" />
+            ) : (
+              <img src={TRANSPORT_IMAGES.taxi} alt="" className="max-h-32 w-full object-contain" />
+            )}
+          </div>
+        </div>
+      </section>
+
+      <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6">
+        <div className="mb-7 grid grid-cols-4 border border-slate-200 bg-white">
+          {progressLabels.map((label, index) => {
+            const number = index + 1;
+            return (
+              <div
+                key={label}
+                className={`border-r border-slate-200 px-2 py-3 text-center last:border-r-0 ${
+                  step === number ? 'bg-[#0F2B46] text-white' : step > number ? 'bg-emerald-50 text-emerald-800' : 'text-slate-400'
+                }`}
+              >
+                <div className="text-xs font-semibold">{step > number ? '✓' : number}</div>
+                <div className="mt-1 text-[11px] font-medium sm:text-xs">{label}</div>
+              </div>
+            );
+          })}
+        </div>
+
+        {error && (
+          <div className="mb-6 border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {error}
+          </div>
+        )}
+
+        {step === 1 && (
+          <section className="border border-slate-200 bg-white p-5 sm:p-7">
+            <h2 className="text-xl font-bold text-[#0F2B46]">1. Vehicle information</h2>
+            <p className="mt-2 text-sm text-slate-500">
+              Select the exact vehicle type you will use on Ng’anda.
+            </p>
+
+            <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {VEHICLE_TYPES.map((vehicle) => (
+                <button
+                  type="button"
+                  key={vehicle.id}
+                  onClick={() => updateField('vehicleType', vehicle.id)}
+                  className={`min-h-44 border p-3 text-left transition ${
+                    formData.vehicleType === vehicle.id
+                      ? 'border-[#16A34A] bg-emerald-50/40'
+                      : 'border-slate-200 hover:border-slate-400'
+                  }`}
+                >
+                  <div className="flex h-24 items-center justify-center bg-[#F8F9FA]">
+                    {vehicle.image ? (
+                      <img src={vehicle.image} alt="" className="h-full w-full object-contain p-2" />
+                    ) : (
+                      <div className="text-xs font-medium text-slate-400">Image coming soon</div>
+                    )}
+                  </div>
+                  <div className="mt-3 text-sm font-semibold text-slate-950">{vehicle.label}</div>
+                  <div className="mt-1 text-xs leading-5 text-slate-500">{vehicle.description}</div>
+                </button>
+              ))}
+            </div>
+
+            <div className="mt-7 grid gap-4 sm:grid-cols-2">
+              <div>
+                <label className="mb-1.5 block text-sm font-semibold text-slate-800">Vehicle make *</label>
+                <input
+                  value={formData.vehicleMake}
+                  onChange={(e) => updateField('vehicleMake', e.target.value)}
+                  placeholder="e.g. Toyota"
+                  className="h-11 w-full border border-slate-300 px-3 text-sm outline-none focus:border-[#16A34A]"
+                />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-sm font-semibold text-slate-800">Vehicle model *</label>
+                <input
+                  value={formData.vehicleModel}
+                  onChange={(e) => updateField('vehicleModel', e.target.value)}
+                  placeholder="e.g. Corolla"
+                  className="h-11 w-full border border-slate-300 px-3 text-sm outline-none focus:border-[#16A34A]"
+                />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-sm font-semibold text-slate-800">Year *</label>
+                <input
+                  type="number"
+                  min="1990"
+                  max={new Date().getFullYear() + 1}
+                  value={formData.vehicleYear}
+                  onChange={(e) => updateField('vehicleYear', e.target.value)}
+                  className="h-11 w-full border border-slate-300 px-3 text-sm outline-none focus:border-[#16A34A]"
+                />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-sm font-semibold text-slate-800">Colour *</label>
+                <input
+                  value={formData.vehicleColor}
+                  onChange={(e) => updateField('vehicleColor', e.target.value)}
+                  placeholder="e.g. White"
+                  className="h-11 w-full border border-slate-300 px-3 text-sm outline-none focus:border-[#16A34A]"
+                />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-sm font-semibold text-slate-800">Registration / plate number *</label>
+                <input
+                  value={formData.vehiclePlate}
+                  onChange={(e) => updateField('vehiclePlate', e.target.value)}
+                  placeholder="e.g. ABC 1234"
+                  className="h-11 w-full border border-slate-300 px-3 text-sm uppercase outline-none focus:border-[#16A34A]"
+                />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-sm font-semibold text-slate-800">Load capacity (kg) <span className="font-normal text-slate-400">(optional)</span></label>
+                <input
+                  type="number"
+                  min="0"
+                  value={formData.capacity}
+                  onChange={(e) => updateField('capacity', e.target.value)}
+                  className="h-11 w-full border border-slate-300 px-3 text-sm outline-none focus:border-[#16A34A]"
+                />
+              </div>
+            </div>
+
+            <div className="mt-7 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setStep(2)}
+                disabled={!canContinueStep1()}
+                className="bg-[#16A34A] px-5 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Continue
+              </button>
+            </div>
+          </section>
+        )}
+
+        {step === 2 && (
+          <section className="border border-slate-200 bg-white p-5 sm:p-7">
+            <h2 className="text-xl font-bold text-[#0F2B46]">2. Driver information</h2>
+            <p className="mt-2 text-sm text-slate-500">
+              These details are linked to the signed-in account and verification documents.
+            </p>
+
+            <div className="mt-6 grid gap-4 sm:grid-cols-2">
+              <div>
+                <label className="mb-1.5 block text-sm font-semibold text-slate-800">Full name *</label>
+                <input
+                  value={formData.fullName}
+                  onChange={(e) => updateField('fullName', e.target.value)}
+                  className="h-11 w-full border border-slate-300 px-3 text-sm outline-none focus:border-[#16A34A]"
+                />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-sm font-semibold text-slate-800">NRC number *</label>
+                <input
+                  value={formData.nrcNumber}
+                  onChange={(e) => updateField('nrcNumber', e.target.value)}
+                  placeholder="123456/10/1"
+                  className="h-11 w-full border border-slate-300 px-3 text-sm outline-none focus:border-[#16A34A]"
+                />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-sm font-semibold text-slate-800">Email *</label>
+                <input
+                  type="email"
+                  value={formData.email}
+                  onChange={(e) => updateField('email', e.target.value)}
+                  className="h-11 w-full border border-slate-300 px-3 text-sm outline-none focus:border-[#16A34A]"
+                />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-sm font-semibold text-slate-800">Phone *</label>
+                <input
+                  value={formData.phone}
+                  onChange={(e) => updateField('phone', e.target.value)}
+                  placeholder="+260..."
+                  className="h-11 w-full border border-slate-300 px-3 text-sm outline-none focus:border-[#16A34A]"
+                />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-sm font-semibold text-slate-800">Driver's licence number *</label>
+                <input
+                  value={formData.licenseNumber}
+                  onChange={(e) => updateField('licenseNumber', e.target.value)}
+                  className="h-11 w-full border border-slate-300 px-3 text-sm outline-none focus:border-[#16A34A]"
+                />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-sm font-semibold text-slate-800">Driving experience *</label>
+                <select
+                  value={formData.experience}
+                  onChange={(e) => updateField('experience', e.target.value)}
+                  className="h-11 w-full border border-slate-300 bg-white px-3 text-sm outline-none focus:border-[#16A34A]"
+                >
+                  <option value="">Select experience</option>
+                  <option value="Less than 1 year">Less than 1 year</option>
+                  <option value="1-2 years">1-2 years</option>
+                  <option value="3-5 years">3-5 years</option>
+                  <option value="5-10 years">5-10 years</option>
+                  <option value="10+ years">10+ years</option>
+                </select>
+              </div>
+              <div className="sm:col-span-2">
+                <label className="mb-1.5 block text-sm font-semibold text-slate-800">Professional summary <span className="font-normal text-slate-400">(optional)</span></label>
+                <textarea
+                  rows={4}
+                  value={formData.bio}
+                  onChange={(e) => updateField('bio', e.target.value)}
+                  placeholder="Describe your driving experience and transport work."
+                  className="w-full border border-slate-300 p-3 text-sm outline-none focus:border-[#16A34A]"
+                />
+              </div>
+            </div>
+
+            <div className="mt-7 flex justify-between gap-3">
+              <button type="button" onClick={() => setStep(1)} className="border border-slate-300 px-5 py-3 text-sm font-semibold text-slate-700">Back</button>
+              <button
+                type="button"
+                onClick={() => setStep(3)}
+                disabled={!canContinueStep2()}
+                className="bg-[#16A34A] px-5 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Continue
+              </button>
+            </div>
+          </section>
+        )}
+
+        {step === 3 && (
+          <section className="border border-slate-200 bg-white p-5 sm:p-7">
+            <h2 className="text-xl font-bold text-[#0F2B46]">3. Service coverage</h2>
+            <p className="mt-2 text-sm text-slate-500">
+              Select only the cities where you genuinely provide transport.
+            </p>
+
+            <div className="mt-6 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+              {ZAMBIAN_CITIES.map((city) => (
+                <button
+                  type="button"
+                  key={city}
+                  onClick={() => toggleArea(city)}
+                  className={`border px-3 py-3 text-sm font-medium transition ${
+                    formData.serviceAreas.includes(city)
+                      ? 'border-[#16A34A] bg-emerald-50 text-emerald-800'
+                      : 'border-slate-200 bg-white text-slate-600 hover:border-slate-400'
+                  }`}
+                >
+                  {city}
+                </button>
+              ))}
+            </div>
+
+            <div className="mt-7 flex justify-between gap-3">
+              <button type="button" onClick={() => setStep(2)} className="border border-slate-300 px-5 py-3 text-sm font-semibold text-slate-700">Back</button>
+              <button
+                type="button"
+                onClick={() => setStep(4)}
+                disabled={formData.serviceAreas.length === 0}
+                className="bg-[#16A34A] px-5 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Continue
+              </button>
+            </div>
+          </section>
+        )}
+
+        {step === 4 && (
+          <section className="border border-slate-200 bg-white p-5 sm:p-7">
+            <h2 className="text-xl font-bold text-[#0F2B46]">4. Verification documents</h2>
+            <p className="mt-2 text-sm leading-6 text-slate-500">
+              All five items are required. They are stored for admin verification and are not displayed publicly.
+            </p>
+
+            <div className="mt-6 divide-y divide-slate-100 border border-slate-200">
+              {documents.map((document, index) => (
+                <div key={document.type} className="grid gap-3 p-4 sm:grid-cols-[1fr_250px] sm:items-center">
+                  <div>
+                    <div className="text-sm font-semibold text-slate-900">{document.label} *</div>
+                    <div className="mt-1 text-xs leading-5 text-slate-500">{document.help}</div>
+                    {document.file && (
+                      <div className="mt-2 text-xs font-medium text-emerald-700">{document.file.name}</div>
+                    )}
+                  </div>
+                  <input
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp,.pdf"
+                    onChange={(e) => setDocument(index, e.target.files?.[0] || null)}
+                    className="block w-full text-xs text-slate-500 file:mr-3 file:border-0 file:bg-[#0F2B46] file:px-3 file:py-2 file:text-xs file:font-semibold file:text-white"
+                  />
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-5 border border-amber-200 bg-amber-50 p-4 text-xs leading-5 text-slate-600">
+              Submission does not mean automatic approval. An administrator must review the identity, driver licence, vehicle registration, insurance and background-check documents before the driver can receive transport requests.
+            </div>
+
+            {uploadProgress && (
+              <div className="mt-5 border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+                {uploadProgress}
+              </div>
+            )}
+
+            <div className="mt-7 flex flex-col-reverse gap-3 sm:flex-row sm:justify-between">
+              <button
+                type="button"
+                onClick={() => setStep(3)}
+                disabled={loading}
+                className="border border-slate-300 px-5 py-3 text-sm font-semibold text-slate-700 disabled:opacity-50"
+              >
+                Back
+              </button>
+              <button
+                type="button"
+                onClick={handleSubmit}
+                disabled={loading || documents.some((document) => !document.file)}
+                className="bg-[#16A34A] px-5 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {loading ? 'Submitting application…' : 'Submit for verification'}
+              </button>
+            </div>
+          </section>
+        )}
+
+        <div className="mt-6 border border-slate-200 bg-white p-5">
+          <h3 className="font-semibold text-[#0F2B46]">Need help?</h3>
+          <p className="mt-2 text-sm text-slate-600">
+            If you have trouble with the application, use Ng’anda support. No unconfigured phone numbers or email addresses are shown here.
+          </p>
+          <Link href="/contact-support" className="mt-3 inline-flex text-sm font-semibold text-[#16A34A]">
+            Contact support →
+          </Link>
         </div>
       </div>
     </main>
