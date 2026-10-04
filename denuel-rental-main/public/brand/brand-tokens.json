@@ -1,0 +1,12 @@
+{
+  "name": "Ng'anda",
+  "tagline": "Find a place. Make it home.",
+  "colors": {
+    "navy": "#0F2B46",
+    "green": "#16A34A",
+    "offWhite": "#F8F9FA",
+    "text": "#374151"
+  },
+  "recommended_font": "Poppins (or system sans-serif fallback)",
+  "ui_icon_style": "24px outline, 1.8px stroke, rounded caps"
+}
