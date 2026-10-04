@@ -939,6 +939,9 @@ model ServiceProvider {
   user            User?           @relation(fields: [userId], references: [id])
   userId          String?         @unique
   businessName    String
+  providerType    String          @default("INDIVIDUAL") // INDIVIDUAL or COMPANY
+  contactPersonName String?
+  contactPersonPosition String?
   category        ServiceCategory
   description     String?         @db.Text
   phone           String
