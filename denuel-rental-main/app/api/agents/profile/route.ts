@@ -4,6 +4,8 @@ import { prisma } from '@/lib/prisma';
 import { requireAuth, requireCsrf } from '@/lib/auth';
 import { publicServerError } from '@/lib/publicError';
 
+export const dynamic = 'force-dynamic';
+
 const ProfileSchema = z.object({
   bio: z.string().trim().max(4000).optional().nullable(),
   specialties: z.array(z.string().trim().min(1)).max(20).optional(),
