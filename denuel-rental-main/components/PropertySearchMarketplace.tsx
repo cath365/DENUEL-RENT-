@@ -19,7 +19,18 @@ type Props = {
 };
 
 const cities = ['Lusaka', 'Kitwe', 'Ndola', 'Livingstone', 'Kabwe', 'Chipata', 'Chingola', 'Mufulira', 'Solwezi'];
-const propertyTypes = ['HOUSE', 'APARTMENT', 'TOWNHOUSE', 'STUDIO', 'ROOM', 'LAND', 'COMMERCIAL'];
+const propertyTypes = [
+  ['HOUSE', 'House'],
+  ['APARTMENT', 'Apartment'],
+  ['DUPLEX', 'Duplex'],
+  ['STUDIO', 'Studio'],
+  ['ROOM', 'Room'],
+  ['OFFICE', 'Office space'],
+  ['SHOP', 'Shop'],
+  ['WAREHOUSE', 'Warehouse'],
+  ['LAND', 'Land'],
+  ['OTHER', 'Other'],
+] as const;
 
 export default function PropertySearchMarketplace({ mode, title, description }: Props) {
   const [properties, setProperties] = useState<any[]>([]);
@@ -190,21 +201,21 @@ export default function PropertySearchMarketplace({ mode, title, description }: 
 
           {showFilters && (
             <div className="grid gap-3 border-x border-b border-slate-300 bg-white p-4 sm:grid-cols-2 lg:grid-cols-4">
-              <input value={filters.minPrice} onChange={(e) => setFilters({ ...filters, minPrice: e.target.value })} type="number" placeholder="Minimum price (K)" className="h-11 border border-slate-300 px-3 text-sm" />
-              <input value={filters.maxPrice} onChange={(e) => setFilters({ ...filters, maxPrice: e.target.value })} type="number" placeholder="Maximum price (K)" className="h-11 border border-slate-300 px-3 text-sm" />
-              <select value={filters.bedrooms} onChange={(e) => setFilters({ ...filters, bedrooms: e.target.value })} className="h-11 border border-slate-300 px-3 text-sm">
+              <input value={filters.minPrice} onChange={(e) => { setFilters({ ...filters, minPrice: e.target.value }); setPage(1); }} type="number" placeholder="Minimum price (K)" className="h-11 border border-slate-300 px-3 text-sm" />
+              <input value={filters.maxPrice} onChange={(e) => { setFilters({ ...filters, maxPrice: e.target.value }); setPage(1); }} type="number" placeholder="Maximum price (K)" className="h-11 border border-slate-300 px-3 text-sm" />
+              <select value={filters.bedrooms} onChange={(e) => { setFilters({ ...filters, bedrooms: e.target.value }); setPage(1); }} className="h-11 border border-slate-300 px-3 text-sm">
                 <option value="">Any bedrooms</option><option value="1">1+</option><option value="2">2+</option><option value="3">3+</option><option value="4">4+</option>
               </select>
-              <select value={filters.bathrooms} onChange={(e) => setFilters({ ...filters, bathrooms: e.target.value })} className="h-11 border border-slate-300 px-3 text-sm">
+              <select value={filters.bathrooms} onChange={(e) => { setFilters({ ...filters, bathrooms: e.target.value }); setPage(1); }} className="h-11 border border-slate-300 px-3 text-sm">
                 <option value="">Any bathrooms</option><option value="1">1+</option><option value="2">2+</option><option value="3">3+</option>
               </select>
-              <select value={filters.propertyType} onChange={(e) => setFilters({ ...filters, propertyType: e.target.value })} className="h-11 border border-slate-300 px-3 text-sm">
+              <select value={filters.propertyType} onChange={(e) => { setFilters({ ...filters, propertyType: e.target.value }); setPage(1); }} className="h-11 border border-slate-300 px-3 text-sm">
                 <option value="">Any property type</option>
-                {propertyTypes.map((type) => <option key={type} value={type}>{type.replaceAll('_', ' ').toLowerCase()}</option>)}
+                {propertyTypes.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
               </select>
-              <label className="flex h-11 items-center gap-2 border border-slate-300 px-3 text-sm text-slate-700"><input type="checkbox" checked={filters.furnished} onChange={(e) => setFilters({ ...filters, furnished: e.target.checked })} /> Furnished</label>
-              <label className="flex h-11 items-center gap-2 border border-slate-300 px-3 text-sm text-slate-700"><input type="checkbox" checked={filters.petsAllowed} onChange={(e) => setFilters({ ...filters, petsAllowed: e.target.checked })} /> Pets allowed</label>
-              <label className="flex h-11 items-center gap-2 border border-slate-300 px-3 text-sm text-slate-700"><input type="checkbox" checked={filters.hasParking} onChange={(e) => setFilters({ ...filters, hasParking: e.target.checked })} /> Parking</label>
+              <label className="flex h-11 items-center gap-2 border border-slate-300 px-3 text-sm text-slate-700"><input type="checkbox" checked={filters.furnished} onChange={(e) => { setFilters({ ...filters, furnished: e.target.checked }); setPage(1); }} /> Furnished</label>
+              <label className="flex h-11 items-center gap-2 border border-slate-300 px-3 text-sm text-slate-700"><input type="checkbox" checked={filters.petsAllowed} onChange={(e) => { setFilters({ ...filters, petsAllowed: e.target.checked }); setPage(1); }} /> Pets allowed</label>
+              <label className="flex h-11 items-center gap-2 border border-slate-300 px-3 text-sm text-slate-700"><input type="checkbox" checked={filters.hasParking} onChange={(e) => { setFilters({ ...filters, hasParking: e.target.checked }); setPage(1); }} /> Parking</label>
             </div>
           )}
         </div>
@@ -226,7 +237,7 @@ export default function PropertySearchMarketplace({ mode, title, description }: 
             <Link href="/saved-search" className="border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:border-slate-950">
               Saved searches
             </Link>
-            <select value={filters.sort} onChange={(e) => setFilters({ ...filters, sort: e.target.value })} className="h-10 border border-slate-300 bg-white px-3 text-sm">
+            <select value={filters.sort} onChange={(e) => { setFilters({ ...filters, sort: e.target.value }); setPage(1); }} className="h-10 border border-slate-300 bg-white px-3 text-sm">
               <option value="newest">Newest</option>
               <option value="price-asc">Price: low to high</option>
               <option value="price-desc">Price: high to low</option>
