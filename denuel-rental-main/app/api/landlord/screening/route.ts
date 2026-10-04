@@ -1,20 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { requireAuth } from '@/lib/auth';
+import { requireAuth, requireCsrf } from '@/lib/auth';
+import { publicServerError } from '@/lib/publicError';
 
-// GET - Get screenings for landlord or applicant
 export async function GET(req: NextRequest) {
   try {
     const user = await requireAuth(req);
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
     const { searchParams } = new URL(req.url);
-    const role = searchParams.get('role'); // 'landlord' or 'applicant'
+    const role = searchParams.get('role');
 
-    const where: Record<string, unknown> = {};
-    if (role === 'landlord' || user.role === 'LANDLORD') {
+    const where: any = {};
+
+    if (role === 'landlord') {
+      if (!['LANDLORD', 'AGENT', 'ADMIN'].includes(user.role)) {
+        return NextResponse.json({ error: 'Forbidden.' }, { status: 403 });
+      }
+      where.landlordId = user.id;
+    } else if (role === 'applicant') {
+      where.applicantId = user.id;
+    } else if (['LANDLORD', 'AGENT'].includes(user.role)) {
       where.landlordId = user.id;
     } else {
       where.applicantId = user.id;
@@ -24,10 +28,21 @@ export async function GET(req: NextRequest) {
       where,
       include: {
         landlord: {
-          select: { id: true, name: true },
+          select: {
+            id: true,
+            name: true,
+          },
         },
         applicant: {
-          select: { id: true, name: true, email: true },
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            phone: true,
+            isEmailVerified: true,
+            isPhoneVerified: true,
+            isIdVerified: true,
+          },
         },
       },
       orderBy: { createdAt: 'desc' },
@@ -35,133 +50,140 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json(screenings);
   } catch (error) {
+    if (error instanceof Response) return error;
     console.error('Fetch tenant screenings error:', error);
-    return NextResponse.json({ error: 'Failed to fetch screenings' }, { status: 500 });
+    const safe = publicServerError(
+      error,
+      'Unable to load tenant screening records.'
+    );
+    return NextResponse.json(
+      { error: safe.message },
+      { status: safe.status }
+    );
   }
 }
 
-// POST - Request tenant screening
 export async function POST(req: NextRequest) {
   try {
-    const user = await requireAuth(req);
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const user = await requireAuth(req, [
+      'LANDLORD',
+      'AGENT',
+      'ADMIN',
+    ]);
+    requireCsrf(req);
 
-    if (user.role !== 'LANDLORD' && user.role !== 'AGENT' && user.role !== 'ADMIN') {
+    const body = await req.json().catch(() => ({}));
+    const applicantId =
+      typeof body.applicantId === 'string' ? body.applicantId : '';
+    const propertyId =
+      typeof body.propertyId === 'string' && body.propertyId
+        ? body.propertyId
+        : null;
+
+    if (!applicantId) {
       return NextResponse.json(
-        { error: 'Only landlords and agents can request screenings' },
-        { status: 403 }
+        { error: 'Applicant ID is required.' },
+        { status: 400 }
       );
     }
 
-    const body = await req.json();
-    const { applicantId, propertyId } = body;
-
-    if (!applicantId) {
-      return NextResponse.json({ error: 'Applicant ID is required' }, { status: 400 });
-    }
-
-    // Check if applicant exists
     const applicant = await prisma.user.findUnique({
       where: { id: applicantId },
+      select: { id: true },
     });
 
-    if (!applicant) {
-      return NextResponse.json({ error: 'Applicant not found' }, { status: 404 });
+    if (!applicant || applicant.id === user.id) {
+      return NextResponse.json(
+        { error: 'Select a valid applicant.' },
+        { status: 400 }
+      );
     }
 
-    // Create screening request
+    if (propertyId) {
+      const property = await prisma.property.findUnique({
+        where: { id: propertyId },
+        select: { ownerId: true },
+      });
+
+      if (
+        !property ||
+        (property.ownerId !== user.id && user.role !== 'ADMIN')
+      ) {
+        return NextResponse.json(
+          { error: 'Property not found or you do not manage it.' },
+          { status: 404 }
+        );
+      }
+    }
+
+    const existing = await prisma.tenantScreening.findFirst({
+      where: {
+        landlordId: user.id,
+        applicantId,
+        propertyId,
+        status: 'PENDING',
+      },
+    });
+
+    if (existing) {
+      return NextResponse.json(
+        {
+          error:
+            'A pending screening request already exists for this applicant and property.',
+          screening: existing,
+        },
+        { status: 409 }
+      );
+    }
+
     const screening = await prisma.tenantScreening.create({
       data: {
         landlordId: user.id,
         applicantId,
         propertyId,
         status: 'PENDING',
-        expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
       },
     });
 
-    // Notify applicant
-    await prisma.notification.create({
-      data: {
-        userId: applicantId,
-        type: 'SCREENING_REQUEST',
+    try {
+      await prisma.notification.create({
         data: {
-          screeningId: screening.id,
-          landlordName: user.name,
-          propertyId,
+          userId: applicantId,
+          type: 'SCREENING_REQUEST',
+          data: {
+            screeningId: screening.id,
+            landlordName: user.name,
+            propertyId,
+          },
         },
-      },
-    });
+      });
+    } catch {
+      // The request remains valid if notification delivery fails.
+    }
 
     return NextResponse.json(screening, { status: 201 });
   } catch (error) {
+    if (error instanceof Response) return error;
     console.error('Create tenant screening error:', error);
-    return NextResponse.json({ error: 'Failed to create screening request' }, { status: 500 });
+    const safe = publicServerError(
+      error,
+      'Unable to create the screening request.'
+    );
+    return NextResponse.json(
+      { error: safe.message },
+      { status: safe.status }
+    );
   }
 }
 
-// PUT - Update screening with results (simulated)
-export async function PUT(req: NextRequest) {
-  try {
-    const user = await requireAuth(req);
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    const body = await req.json();
-    const {
-      screeningId,
-      creditScore,
-      creditStatus,
-      backgroundCheck,
-      backgroundStatus,
-      evictionHistory,
-      incomeVerified,
-      monthlyIncome,
-      employerName,
-      employmentStatus,
-      references,
-    } = body;
-
-    if (!screeningId) {
-      return NextResponse.json({ error: 'Screening ID is required' }, { status: 400 });
-    }
-
-    const screening = await prisma.tenantScreening.findUnique({
-      where: { id: screeningId },
-    });
-
-    if (!screening) {
-      return NextResponse.json({ error: 'Screening not found' }, { status: 404 });
-    }
-
-    // Only landlord or admin can update
-    if (screening.landlordId !== user.id && user.role !== 'ADMIN') {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-    }
-
-    const updated = await prisma.tenantScreening.update({
-      where: { id: screeningId },
-      data: {
-        creditScore,
-        creditStatus,
-        backgroundCheck,
-        backgroundStatus,
-        evictionHistory,
-        incomeVerified,
-        monthlyIncome,
-        employerName,
-        employmentStatus,
-        references,
-        status: 'COMPLETED',
-      },
-    });
-
-    return NextResponse.json(updated);
-  } catch (error) {
-    console.error('Update tenant screening error:', error);
-    return NextResponse.json({ error: 'Failed to update screening' }, { status: 500 });
-  }
+// Screening results must come from a real verified provider integration.
+// Manual/simulated credit, background or income results are deliberately disabled.
+export async function PUT() {
+  return NextResponse.json(
+    {
+      error:
+        'Tenant screening result updates are unavailable until a verified screening provider is connected.',
+    },
+    { status: 405 }
+  );
 }
