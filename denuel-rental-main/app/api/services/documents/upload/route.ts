@@ -70,9 +70,10 @@ export async function POST(req: NextRequest) {
     }
 
     const existing = provider.documents.find((document) => document.type === type);
-    if (existing?.isVerified) {
+    const existingIsPrivate = Boolean(existing?.fileUrl?.includes('.private.blob.vercel-storage.com'));
+    if (existing?.isVerified && existingIsPrivate) {
       return NextResponse.json(
-        { error: 'A verified document cannot be replaced. Contact DENUEL support or an administrator if it must be changed.' },
+        { error: 'A securely stored verified document cannot be replaced. Contact DENUEL support or an administrator if it must be changed.' },
         { status: 409 }
       );
     }
@@ -100,7 +101,7 @@ export async function POST(req: NextRequest) {
     });
 
     const document = await prisma.$transaction(async (tx) => {
-      if (existing && !existing.isVerified) {
+      if (existing) {
         await tx.serviceDocument.delete({ where: { id: existing.id } });
       }
 
@@ -127,6 +128,7 @@ export async function POST(req: NextRequest) {
         isVerified: document.isVerified,
         uploadedAt: document.uploadedAt,
         fileAccessUrl: '/api/services/documents/' + document.id + '/file',
+        storagePrivate: true,
       },
       message: 'Document uploaded securely and is waiting for admin review.',
     });
