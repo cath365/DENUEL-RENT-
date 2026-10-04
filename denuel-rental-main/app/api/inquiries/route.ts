@@ -1,90 +1,141 @@
 import { NextResponse } from 'next/server';
 import prisma from '../../../lib/prisma';
 import { requireAuth } from '../../../lib/auth';
+import { publicServerError } from '../../../lib/publicError';
 
 export async function GET(req: Request) {
   try {
     const user = await requireAuth(req);
-    
-    // Check URL for type parameter
-    const url = new URL(req.url);
-    const type = url.searchParams.get('type') || 'received';
 
-    let threads;
-    
-    if (type === 'sent') {
-      // For renters: fetch threads they started (sent inquiries)
-      threads = await prisma.messageThread.findMany({
-        where: { 
-          messages: {
-            some: {
-              senderId: user.id
-            }
-          }
+    const threads = await prisma.messageThread.findMany({
+      where: {
+        messages: {
+          some: {
+            OR: [
+              { senderId: user.id },
+              { receiverId: user.id },
+            ],
+          },
         },
-        include: { 
-          property: {
-            include: {
-              images: { take: 1 }
-            }
-          }, 
-          messages: { orderBy: { createdAt: 'desc' }, take: 1 }, 
-          _count: { select: { messages: true } } 
+      },
+      include: {
+        property: {
+          select: {
+            id: true,
+            title: true,
+            price: true,
+            listingType: true,
+            status: true,
+            city: true,
+            area: true,
+            ownerId: true,
+            images: {
+              orderBy: { sortOrder: 'asc' },
+              take: 1,
+              select: { url: true },
+            },
+            owner: {
+              select: {
+                id: true,
+                name: true,
+                companyName: true,
+                profileImage: true,
+              },
+            },
+          },
         },
-        orderBy: { createdAt: 'desc' }
-      });
-    } else {
-      // For landlords/agents/admin: fetch threads for properties they own (received inquiries)
-      if (!['LANDLORD', 'AGENT', 'ADMIN'].includes(user.role)) {
-        // If user is not a landlord/agent, show their sent inquiries instead
-        threads = await prisma.messageThread.findMany({
-          where: { 
-            messages: {
-              some: {
-                senderId: user.id
-              }
-            }
+        messages: {
+          where: {
+            OR: [
+              { senderId: user.id },
+              { receiverId: user.id },
+            ],
           },
-          include: { 
-            property: {
-              include: {
-                images: { take: 1 }
-              }
-            }, 
-            messages: { orderBy: { createdAt: 'desc' }, take: 1 }, 
-            _count: { select: { messages: true } } 
+          orderBy: { createdAt: 'desc' },
+          include: {
+            sender: {
+              select: {
+                id: true,
+                name: true,
+                companyName: true,
+                profileImage: true,
+              },
+            },
+            receiver: {
+              select: {
+                id: true,
+                name: true,
+                companyName: true,
+                profileImage: true,
+              },
+            },
           },
-          orderBy: { createdAt: 'desc' }
-        });
-      } else {
-        threads = await prisma.messageThread.findMany({
-          where: { property: { ownerId: user.id } },
-          include: { 
-            property: {
-              include: {
-                images: { take: 1 }
-              }
-            }, 
-            messages: { orderBy: { createdAt: 'desc' }, take: 1 }, 
-            _count: { select: { messages: true } } 
-          },
-          orderBy: { createdAt: 'desc' }
-        });
-      }
-    }
+        },
+      },
+    });
 
-    const items = threads.map((t) => ({ 
-      id: t.id, 
-      property: t.property, 
-      lastMessage: t.messages?.[0], 
-      messageCount: t._count?.messages || 0,
-      createdAt: t.createdAt
-    }));
-    
-    return NextResponse.json({ items });
-  } catch (e: any) {
-    if (e instanceof Response) return e;
-    console.error('Inquiries API error:', e);
-    return NextResponse.json({ error: e?.message || 'Invalid request' }, { status: 400 });
+    const items = threads
+      .filter((thread) => thread.messages.length > 0)
+      .map((thread) => {
+        const visibleMessages = thread.messages;
+        const lastMessage = visibleMessages[0];
+
+        const participantCandidates = visibleMessages.flatMap((message) => [
+          message.sender,
+          message.receiver,
+        ]);
+
+        const counterpart =
+          participantCandidates.find(
+            (participant) => participant.id !== user.id
+          ) || thread.property.owner;
+
+        const unreadCount = visibleMessages.filter(
+          (message) => message.receiverId === user.id && !message.isRead
+        ).length;
+
+        return {
+          id: thread.id,
+          property: thread.property,
+          counterpart,
+          lastMessage: {
+            id: lastMessage.id,
+            body: lastMessage.body,
+            createdAt: lastMessage.createdAt,
+            senderId: lastMessage.senderId,
+            isRead: lastMessage.isRead,
+          },
+          messageCount: visibleMessages.length,
+          unreadCount,
+          createdAt: thread.createdAt,
+          lastMessageAt: lastMessage.createdAt,
+        };
+      })
+      .sort(
+        (a, b) =>
+          new Date(b.lastMessageAt).getTime() -
+          new Date(a.lastMessageAt).getTime()
+      );
+
+    return NextResponse.json({
+      items,
+      viewer: {
+        id: user.id,
+        role: user.role,
+      },
+    });
+  } catch (error) {
+    if (error instanceof Response) return error;
+
+    console.error('Inquiries list failed', error);
+    const safe = publicServerError(
+      error,
+      'Unable to load your property conversations.'
+    );
+
+    return NextResponse.json(
+      { error: safe.message },
+      { status: safe.status }
+    );
   }
 }
