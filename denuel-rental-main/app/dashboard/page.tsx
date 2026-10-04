@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { redirect } from 'next/navigation';
 import { cookies } from 'next/headers';
 import Header from '../../components/Header';
 import prisma from '../../lib/prisma';
@@ -133,87 +134,11 @@ export default async function DashboardPage() {
   }
 
   if (user.role === 'LANDLORD') {
-    const [properties, applications, activeLeases, maintenance] = await Promise.all([
-      prisma.property.count({ where: { ownerId: user.id } }),
-      prisma.application.count({ where: { property: { ownerId: user.id } } }),
-      prisma.leaseAgreement.count({ where: { landlordId: user.id, status: 'ACTIVE' } }),
-      prisma.maintenanceRequest.count({ where: { landlordId: user.id, status: { in: ['OPEN', 'IN_PROGRESS'] } } }),
-    ]);
-
-    return (
-      <div className="min-h-screen bg-slate-50">
-        <Header />
-        <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
-          <div className="flex flex-col justify-between gap-4 border-b border-slate-200 pb-6 sm:flex-row sm:items-end">
-            <div>
-              <h1 className="text-3xl font-bold tracking-[-0.035em] text-slate-950">Property owner dashboard</h1>
-              <p className="mt-2 text-sm text-slate-500">Welcome back{user.name ? ', ' + user.name : ''}.</p>
-            </div>
-            <Link href="/dashboard/properties/new" className="bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white">Add property</Link>
-          </div>
-          <section className="mt-8 grid border-l border-t border-slate-200 sm:grid-cols-2 lg:grid-cols-4">
-            <Stat label="Properties" value={properties} />
-            <Stat label="Applications" value={applications} />
-            <Stat label="Active leases" value={activeLeases} />
-            <Stat label="Maintenance open" value={maintenance} />
-          </section>
-          <div className="mt-8 grid gap-6 lg:grid-cols-2">
-            <Actions items={[
-              ['Manage properties', '/dashboard/properties'],
-              ['Landlord overview', '/landlord'],
-              ['Leases', '/landlord/leases'],
-              ['Rent payments', '/landlord/payments'],
-              ['Maintenance', '/landlord/maintenance'],
-              ['Expenses', '/landlord/expenses'],
-            ]} />
-            <div className="border border-slate-200 bg-white p-6">
-              <h2 className="text-xl font-semibold text-slate-950">Property management</h2>
-              <p className="mt-2 text-sm leading-6 text-slate-600">Use the landlord workspace for detailed rent, tenant, screening and maintenance workflows.</p>
-              <Link href="/landlord" className="mt-5 inline-flex bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white">Open landlord workspace</Link>
-            </div>
-          </div>
-        </main>
-      </div>
-    );
+    redirect('/landlord');
   }
 
   if (user.role === 'AGENT') {
-    const [properties, inquiries, profile] = await Promise.all([
-      prisma.property.count({ where: { ownerId: user.id } }),
-      prisma.message.count({ where: { receiverId: user.id } }),
-      prisma.agentProfile.findUnique({ where: { userId: user.id } }),
-    ]);
-
-    return (
-      <div className="min-h-screen bg-slate-50">
-        <Header />
-        <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
-          <div className="flex flex-col justify-between gap-4 border-b border-slate-200 pb-6 sm:flex-row sm:items-end">
-            <div>
-              <h1 className="text-3xl font-bold tracking-[-0.035em] text-slate-950">Agent dashboard</h1>
-              <p className="mt-2 text-sm text-slate-500">Manage listings, enquiries and your public agent profile.</p>
-            </div>
-            <Link href="/dashboard/properties/new" className="bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white">List property</Link>
-          </div>
-          <section className="mt-8 grid border-l border-t border-slate-200 sm:grid-cols-2 lg:grid-cols-4">
-            <Stat label="Managed properties" value={properties} />
-            <Stat label="Client enquiries" value={inquiries} />
-            <Stat label="Agent rating" value={profile ? Number(profile.ratingAvg || 0).toFixed(1) : '—'} />
-            <Stat label="Reviews" value={profile?.ratingCount || 0} />
-          </section>
-          <div className="mt-8">
-            <Actions items={[
-              ['My properties', '/dashboard/properties'],
-              ['Client enquiries', '/dashboard/inquiries'],
-              ['Clients', '/dashboard/clients'],
-              ['Marketing', '/dashboard/marketing'],
-              ['Commission', '/dashboard/commission'],
-              ['Public agent directory', '/agents'],
-            ]} />
-          </div>
-        </main>
-      </div>
-    );
+    redirect('/agent');
   }
 
   const [applicationCount, recentApplications, favorites, notifications, savedSearches] = await Promise.all([
