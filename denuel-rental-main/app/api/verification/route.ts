@@ -1,8 +1,28 @@
-import { NextRequest, NextResponse } from "next/server";
-import { requireAuth } from "@/lib/auth";
-import prisma from "@/lib/prisma";
+import { NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
+import { requireAuth, requireCsrf } from '@/lib/auth';
+import prisma from '@/lib/prisma';
+import { publicServerError } from '@/lib/publicError';
 
-// Calculate trust score based on multiple factors
+const DOCUMENT_TYPES = new Set([
+  'NATIONAL_ID',
+  'PASSPORT',
+  'BUSINESS_LICENSE',
+  'PROOF_OF_ADDRESS',
+  'PROPERTY_TITLE',
+  'TAX_CLEARANCE',
+  'NRC',
+  'CERTIFICATE',
+  'LICENSE',
+  'INSURANCE',
+  'QUALIFICATION',
+  'REFERENCE',
+  'PORTFOLIO',
+  'ID_PHOTO',
+  'BACKGROUND_CHECK',
+  'OTHER',
+]);
+
 async function calculateTrustScore(userId: string): Promise<number> {
   const user = await prisma.user.findUnique({
     where: { id: userId },
@@ -10,7 +30,7 @@ async function calculateTrustScore(userId: string): Promise<number> {
       reviewsReceived: true,
       properties: true,
       verificationDocs: {
-        where: { status: "APPROVED" },
+        where: { status: 'APPROVED' },
       },
     },
   });
@@ -18,45 +38,39 @@ async function calculateTrustScore(userId: string): Promise<number> {
   if (!user) return 0;
 
   let score = 0;
-
-  // Base score for account age (max 15 points)
   const accountAgeDays = Math.floor(
-    (Date.now() - user.createdAt.getTime()) / (1000 * 60 * 60 * 24)
+    (Date.now() - user.createdAt.getTime()) /
+      (1000 * 60 * 60 * 24)
   );
-  score += Math.min(accountAgeDays / 30, 15); // 0.5 points per day, max 15
 
-  // Email verification (10 points)
+  score += Math.min(accountAgeDays / 30, 15);
   if (user.isEmailVerified) score += 10;
-
-  // Phone verification (10 points)
   if (user.isPhoneVerified) score += 10;
-
-  // ID verification (20 points)
   if (user.isIdVerified) score += 20;
-
-  // Business verification (15 points)
   if (user.isBusinessVerified) score += 15;
-
-  // Additional verified documents (2 points each, max 10)
   score += Math.min(user.verificationDocs.length * 2, 10);
 
-  // Reviews (max 20 points)
   if (user.reviewsReceived.length > 0) {
     const avgRating =
-      user.reviewsReceived.reduce((sum, r) => sum + r.rating, 0) /
-      user.reviewsReceived.length;
-    const reviewCount = Math.min(user.reviewsReceived.length, 10);
-    score += (avgRating / 5) * 15 + reviewCount * 0.5;
+      user.reviewsReceived.reduce(
+        (sum, review) => sum + review.rating,
+        0
+      ) / user.reviewsReceived.length;
+
+    score +=
+      (avgRating / 5) * 15 +
+      Math.min(user.reviewsReceived.length, 10) * 0.5;
   }
 
-  // Active properties (max 10 points)
-  const activeProps = user.properties.filter((p) => p.status === "APPROVED").length;
-  score += Math.min(activeProps, 10);
+  const activeProperties = user.properties.filter(
+    (property) => property.status === 'APPROVED'
+  ).length;
+
+  score += Math.min(activeProperties, 10);
 
   return Math.min(Math.round(score), 100);
 }
 
-// GET - Get verification status
 export async function GET(req: NextRequest) {
   try {
     const user = await requireAuth(req);
@@ -64,6 +78,7 @@ export async function GET(req: NextRequest) {
     const verificationData = await prisma.user.findUnique({
       where: { id: user.id },
       select: {
+        role: true,
         isPhoneVerified: true,
         isEmailVerified: true,
         isIdVerified: true,
@@ -74,26 +89,25 @@ export async function GET(req: NextRequest) {
         businessLicense: true,
         companyName: true,
         verificationDocs: {
-          orderBy: { submittedAt: "desc" },
-        },
-        reviewsReceived: {
-          include: {
-            reviewer: {
-              select: {
-                id: true,
-                name: true,
-              },
-            },
-          },
-          orderBy: { createdAt: "desc" },
-          take: 10,
+          orderBy: { submittedAt: 'desc' },
         },
       },
     });
 
-    // Calculate and update trust score
+    if (!verificationData) {
+      return NextResponse.json(
+        { error: 'Verification profile not found.' },
+        { status: 404 }
+      );
+    }
+
     const newTrustScore = await calculateTrustScore(user.id);
-    if (verificationData && Math.abs(verificationData.trustScore - newTrustScore) > 1) {
+
+    if (
+      Math.abs(
+        Number(verificationData.trustScore || 0) - newTrustScore
+      ) > 1
+    ) {
       await prisma.user.update({
         where: { id: user.id },
         data: { trustScore: newTrustScore },
@@ -102,25 +116,49 @@ export async function GET(req: NextRequest) {
     }
 
     return NextResponse.json(verificationData);
-  } catch (error: any) {
+  } catch (error) {
+    if (error instanceof Response) return error;
+    console.error('Verification status failed', error);
+    const safe = publicServerError(
+      error,
+      'Unable to load verification status.'
+    );
     return NextResponse.json(
-      { error: error.message || "Failed to fetch verification status" },
-      { status: error.message === "Unauthorized" ? 401 : 500 }
+      { error: safe.message },
+      { status: safe.status }
     );
   }
 }
 
-// POST - Submit verification document
 export async function POST(req: NextRequest) {
   try {
     const user = await requireAuth(req);
-    const body = await req.json();
+    requireCsrf(req);
 
-    const { documentType, documentUrl, metadata } = body;
+    const body = await req.json().catch(() => ({}));
+    const documentType =
+      typeof body.documentType === 'string'
+        ? body.documentType
+        : '';
+    const documentUrl =
+      typeof body.documentUrl === 'string'
+        ? body.documentUrl.trim()
+        : '';
 
-    if (!documentType || !documentUrl) {
+    if (
+      !DOCUMENT_TYPES.has(documentType) ||
+      !documentUrl
+    ) {
       return NextResponse.json(
-        { error: "Document type and URL are required" },
+        { error: 'A valid document type and uploaded document are required.' },
+        { status: 400 }
+      );
+    }
+
+    const parsedUrl = z.string().url().safeParse(documentUrl);
+    if (!parsedUrl.success) {
+      return NextResponse.json(
+        { error: 'Invalid document URL.' },
         { status: 400 }
       );
     }
@@ -128,44 +166,89 @@ export async function POST(req: NextRequest) {
     const document = await prisma.verificationDocument.create({
       data: {
         userId: user.id,
-        documentType,
+        documentType: documentType as any,
         documentUrl,
-        metadata: metadata ? JSON.stringify(metadata) : null,
+        metadata: body.metadata
+          ? JSON.stringify(body.metadata)
+          : null,
       },
     });
 
     return NextResponse.json(document, { status: 201 });
-  } catch (error: any) {
+  } catch (error) {
+    if (error instanceof Response) return error;
+    console.error('Verification submission failed', error);
+    const safe = publicServerError(
+      error,
+      'Unable to submit this verification document.'
+    );
     return NextResponse.json(
-      { error: error.message || "Failed to submit document" },
-      { status: error.message === "Unauthorized" ? 401 : 500 }
+      { error: safe.message },
+      { status: safe.status }
     );
   }
 }
 
-// PATCH - Update verification info (NRC, business license, etc)
 export async function PATCH(req: NextRequest) {
   try {
     const user = await requireAuth(req);
-    const body = await req.json();
+    requireCsrf(req);
 
-    const { nrcNumber, businessLicense, companyName } = body;
+    const body = await req.json().catch(() => ({}));
+    const updateData: Record<string, string | null> = {};
 
-    const updateData: any = {};
-    if (nrcNumber) updateData.nrcNumber = nrcNumber;
-    if (businessLicense) updateData.businessLicense = businessLicense;
-    if (companyName) updateData.companyName = companyName;
+    if (Object.prototype.hasOwnProperty.call(body, 'nrcNumber')) {
+      updateData.nrcNumber =
+        typeof body.nrcNumber === 'string' &&
+        body.nrcNumber.trim()
+          ? body.nrcNumber.trim().slice(0, 80)
+          : null;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(body, 'businessLicense')) {
+      updateData.businessLicense =
+        typeof body.businessLicense === 'string' &&
+        body.businessLicense.trim()
+          ? body.businessLicense.trim().slice(0, 120)
+          : null;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(body, 'companyName')) {
+      updateData.companyName =
+        typeof body.companyName === 'string' &&
+        body.companyName.trim()
+          ? body.companyName.trim().slice(0, 180)
+          : null;
+    }
+
+    if (Object.keys(updateData).length === 0) {
+      return NextResponse.json(
+        { error: 'No verification information was provided.' },
+        { status: 400 }
+      );
+    }
 
     const updated = await prisma.user.update({
       where: { id: user.id },
       data: updateData,
+      select: {
+        nrcNumber: true,
+        businessLicense: true,
+        companyName: true,
+      },
     });
 
     return NextResponse.json(updated);
-  } catch (error: any) {
+  } catch (error) {
+    if (error instanceof Response) return error;
+    console.error('Verification info update failed', error);
+    const safe = publicServerError(
+      error,
+      'Unable to update verification information.'
+    );
     return NextResponse.json(
-      { error: error.message || "Failed to update verification info" },
-      { status: error.message === "Unauthorized" ? 401 : 500 }
+      { error: safe.message },
+      { status: safe.status }
     );
   }
 }
