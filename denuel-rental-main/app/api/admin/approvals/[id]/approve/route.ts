@@ -50,8 +50,31 @@ export async function POST(
 
     // Try service provider
     try {
-      const provider = await prisma.serviceProvider.findUnique({ where: { id } });
+      const provider = await prisma.serviceProvider.findUnique({
+        where: { id },
+        include: { documents: true },
+      });
       if (provider) {
+        const required: string[] = [];
+        if (provider.providerType === 'COMPANY') {
+          required.push('BUSINESS_LICENSE', 'TAX_CLEARANCE');
+          if (provider.category === 'SECURITY') required.push('LICENSE');
+          if (provider.insured) required.push('INSURANCE');
+        } else {
+          required.push('NRC');
+          if (provider.category === 'SECURITY') required.push('LICENSE', 'BACKGROUND_CHECK');
+        }
+
+        const missing = required.filter(
+          (type) => !provider.documents.some((doc) => doc.type === type && doc.isVerified)
+        );
+
+        if (missing.length > 0) {
+          return NextResponse.json(
+            { error: 'Required documents are still missing or unverified', missing },
+            { status: 400 }
+          );
+        }
         await prisma.serviceProvider.update({
           where: { id },
           data: {
