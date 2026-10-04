@@ -42,6 +42,7 @@ const CreateSchema = z.object({
   price: z.number().positive(),
   deposit: z.number().nonnegative().optional(),
   listingType: z.enum(['RENT', 'SALE', 'BOTH']).default('RENT'),
+  propertyType: z.string().min(1).optional(),
   country: z.string().min(2).optional(),
   city: z.string().min(2),
   area: z.string().min(1).optional(),
@@ -140,6 +141,7 @@ export async function POST(req: Request) {
         price: parsed.price,
         deposit: parsed.deposit,
         listingType: parsed.listingType,
+        propertyType: parsed.propertyType,
         country: parsed.country || 'Zambia',
         city: parsed.city,
         area: parsed.area,
@@ -162,7 +164,7 @@ export async function POST(req: Request) {
         amenities: parsed.amenities || [],
         rules: parsed.rules || [],
         ownerId: user.id,
-        status: user.role === 'ADMIN' ? 'APPROVED' : 'PENDING'
+        status: user.role === 'ADMIN' ? 'APPROVED' : 'PENDING',
         images: parsed.images?.length ? { 
           create: parsed.images.map((img, idx) => {
             // Handle both legacy string URLs and new image objects
