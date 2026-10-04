@@ -456,8 +456,8 @@ export default function AgentDashboardPage() {
                   ['Viewings', '/agent/viewings'],
                   ['Clients', '/agent/clients'],
                   ['Messages', '/inquiries'],
-                  ['Leases', '/landlord/leases'],
-                  ['Rent payments', '/landlord/payments'],
+                  ['Leases', '/agent/leases'],
+                  ['Rent payments', '/agent/payments'],
                   ['Profile & verification', '/agent/profile'],
                 ].map(([label, href]) => (
                   <Link
