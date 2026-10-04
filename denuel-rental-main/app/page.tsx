@@ -112,16 +112,19 @@ export default async function Home() {
         <section className="border-b border-slate-200">
           <div className="mx-auto grid max-w-7xl grid-cols-2 divide-x divide-y divide-slate-200 px-4 sm:px-6 md:grid-cols-4 md:divide-y-0">
             {[
-              ['Rent', 'Homes and apartments', '/rent'],
-              ['Buy', 'Property for sale', '/buy'],
-              ['Land', 'Plots and development land', '/land'],
-              ['Commercial', 'Offices, shops and warehouses', '/commercial'],
-            ].map(([title, text, href]) => (
+              ['Rent', 'Homes and apartments', '/rent', '/property-types/home.svg'],
+              ['Buy', 'Property for sale', '/buy', '/property-types/houses.svg'],
+              ['Land', 'Plots and development land', '/land', '/property-types/home.svg'],
+              ['Commercial', 'Offices, shops and warehouses', '/commercial', '/property-types/apartments.svg'],
+            ].map(([title, text, href, icon]) => (
               <Link key={title} href={href} className="group px-4 py-6 first:pl-0 md:px-6">
                 <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <div className="font-semibold text-slate-950">{title}</div>
-                    <div className="mt-1 text-sm text-slate-500">{text}</div>
+                  <div className="flex items-center gap-3">
+                    <img src={icon} alt="" className="h-7 w-7 shrink-0" aria-hidden="true" />
+                    <div>
+                      <div className="font-semibold text-slate-950">{title}</div>
+                      <div className="mt-1 text-sm text-slate-500">{text}</div>
+                    </div>
                   </div>
                   <span className="text-slate-400 transition group-hover:translate-x-0.5 group-hover:text-slate-950">
                     <Arrow />
