@@ -3,6 +3,8 @@ import prisma from '../../../../lib/prisma';
 import { hashPassword, issueTokens } from '../../../../lib/auth';
 import { z } from 'zod';
 
+export const dynamic = 'force-dynamic';
+
 const RegisterSchema = z.object({
   name: z.string().min(1).optional(),
   email: z.string().email(),
@@ -27,17 +29,20 @@ export async function POST(req: Request) {
 
     const body = await req.json();
     const parsed = RegisterSchema.parse(body);
+    const email = parsed.email.trim().toLowerCase();
+    const name = parsed.name?.trim() || null;
+    const phone = parsed.phone?.trim() || null;
 
-    const existing = await prisma.user.findUnique({ where: { email: parsed.email } });
+    const existing = await prisma.user.findUnique({ where: { email } });
     if (existing) return NextResponse.json({ error: 'Email already registered' }, { status: 409 });
 
     const hashed = hashPassword(parsed.password);
     
     const user = await prisma.user.create({
       data: {
-        name: parsed.name || null,
-        email: parsed.email,
-        phone: parsed.phone || null,
+        name,
+        email,
+        phone,
         password: hashed,
         role: parsed.role || 'USER',
       },
