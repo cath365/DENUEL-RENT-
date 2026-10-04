@@ -3,6 +3,8 @@ import { prisma } from '@/lib/prisma';
 import { requireAuth, requireCsrf } from '@/lib/auth';
 import { publicServerError } from '@/lib/publicError';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(req: NextRequest) {
   try {
     const user = await requireAuth(req);
