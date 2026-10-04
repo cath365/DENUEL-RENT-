@@ -2,6 +2,8 @@ import Header from '../../components/Header';
 import ListingCard from '../../components/ListingCard';
 import prisma from '../../lib/prisma';
 
+export const dynamic = 'force-dynamic';
+
 export const metadata = { title: 'Commercial Property in Zambia | DENUEL', description: 'Find offices, shops, warehouses and commercial property across Zambia.' };
 
 export default async function CommercialPage({ searchParams }: { searchParams?: { q?: string; priceMin?: string; priceMax?: string } }) {
