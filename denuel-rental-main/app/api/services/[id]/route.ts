@@ -50,8 +50,25 @@ export async function GET(
       timeliness: provider.reviews.reduce((sum, r) => sum + (r.timelinessRating || 0), 0) / provider.reviews.filter(r => r.timelinessRating).length || 0,
     };
 
+    const {
+      nrcNumber,
+      tpinNumber,
+      companyRegistrationNumber,
+      licenseNumber,
+      insuranceProvider,
+      user,
+      ...publicProvider
+    } = provider as any;
+
     return NextResponse.json({
-      ...provider,
+      ...publicProvider,
+      verificationSignals: {
+        identitySupplied: Boolean(nrcNumber),
+        tpinSupplied: Boolean(tpinNumber),
+        companyRegistrationSupplied: Boolean(companyRegistrationNumber),
+        licenseSupplied: Boolean(licenseNumber),
+        insuranceProviderSupplied: Boolean(insuranceProvider),
+      },
       stats: {
         ratingDistribution,
         subRatings,
