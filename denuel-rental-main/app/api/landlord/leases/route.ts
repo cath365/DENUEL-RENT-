@@ -167,6 +167,29 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Select a valid tenant.' }, { status: 400 });
     }
 
+    const approvedApplication = await prisma.application.findUnique({
+      where: {
+        userId_propertyId: {
+          userId: tenantId,
+          propertyId,
+        },
+      },
+      select: {
+        id: true,
+        status: true,
+      },
+    });
+
+    if (!approvedApplication || approvedApplication.status !== 'APPROVED') {
+      return NextResponse.json(
+        {
+          error:
+            'A lease can only be created after this tenant has an approved application for the property.',
+        },
+        { status: 400 }
+      );
+    }
+
     let leaseContent =
       typeof content === 'string' ? content.trim() : '';
 
@@ -368,6 +391,36 @@ export async function PUT(req: NextRequest) {
     if (!requestedStatus) {
       return NextResponse.json(
         { error: 'No permitted lease update was provided.' },
+        { status: 400 }
+      );
+    }
+
+    if (requestedStatus === 'ACTIVE') {
+      return NextResponse.json(
+        {
+          error:
+            'A lease becomes active only after both parties sign it.',
+        },
+        { status: 400 }
+      );
+    }
+
+    if (requestedStatus === 'EXPIRED') {
+      if (new Date(lease.endDate) > new Date()) {
+        return NextResponse.json(
+          {
+            error:
+              'A lease cannot be marked expired before its end date.',
+          },
+          { status: 400 }
+        );
+      }
+    } else if (requestedStatus !== 'TERMINATED') {
+      return NextResponse.json(
+        {
+          error:
+            'Only termination or date-valid expiry can be recorded directly. Signature state controls activation.',
+        },
         { status: 400 }
       );
     }
