@@ -43,9 +43,9 @@ export default function DriverHistoryPage() {
   };
 
   const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-NG', {
+    return new Intl.NumberFormat('en-ZM', {
       style: 'currency',
-      currency: 'NGN',
+      currency: 'ZMW',
       minimumFractionDigits: 0,
     }).format(amount);
   };
@@ -108,7 +108,7 @@ export default function DriverHistoryPage() {
   const stats = {
     total: trips.length,
     completed: trips.filter(t => t.status === 'COMPLETED').length,
-    cancelled: trips.filter(t => t.status === 'CANCELLED').length,
+    cancelled: trips.filter(t => t.status === 'CANCELED').length,
     totalEarnings: trips.filter(t => t.status === 'COMPLETED').reduce((sum, t) => sum + t.fare, 0),
     avgRating: trips.filter(t => t.rating).reduce((sum, t, _, arr) => sum + (t.rating || 0) / arr.length, 0),
   };
