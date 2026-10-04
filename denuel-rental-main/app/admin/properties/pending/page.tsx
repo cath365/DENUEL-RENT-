@@ -50,6 +50,8 @@ export default function PendingPropertiesPage() {
     try {
       const res = await fetch(`/api/admin/properties/${propertyId}/approve`, {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'APPROVED' }),
       });
       if (res.ok) {
         setProperties(properties.filter(p => p.id !== propertyId));
@@ -65,10 +67,10 @@ export default function PendingPropertiesPage() {
     if (!selectedProperty) return;
     setActionLoading(selectedProperty.id);
     try {
-      const res = await fetch(`/api/admin/properties/${selectedProperty.id}/reject`, {
+      const res = await fetch(`/api/admin/properties/${selectedProperty.id}/approve`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ reason: rejectionReason }),
+        body: JSON.stringify({ status: 'REJECTED' }),
       });
       if (res.ok) {
         setProperties(properties.filter(p => p.id !== selectedProperty.id));
