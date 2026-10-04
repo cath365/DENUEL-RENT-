@@ -1,17 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { requireAuth } from '@/lib/auth';
+import { requireAuth, requireCsrf } from '@/lib/auth';
 
 // PATCH - Update provider (admin)
+export const dynamic = 'force-dynamic';
+
 export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const user = await requireAuth(req);
-    if (!user || user.role !== 'ADMIN') {
-      return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
-    }
+    const user = await requireAuth(req, ['ADMIN']);
+    requireCsrf(req);
 
     const { id } = await params;
     const body = await req.json();
@@ -27,6 +27,7 @@ export async function PATCH(
 
     return NextResponse.json({ provider });
   } catch (error) {
+    if (error instanceof Response) return error;
     console.error('Error updating provider:', error);
     return NextResponse.json({ message: 'Failed to update provider' }, { status: 500 });
   }
@@ -51,6 +52,7 @@ export async function DELETE(
 
     return NextResponse.json({ message: 'Provider deleted' });
   } catch (error) {
+    if (error instanceof Response) return error;
     console.error('Error deleting provider:', error);
     return NextResponse.json({ message: 'Failed to delete provider' }, { status: 500 });
   }
