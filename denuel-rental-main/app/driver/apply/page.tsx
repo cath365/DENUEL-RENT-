@@ -63,7 +63,7 @@ const VEHICLE_TYPES: VehicleOption[] = [
     id: 'TRUCK_LARGE',
     label: 'Large Truck',
     description: 'Large moves and heavier loads.',
-    image: TRANSPORT_IMAGES.large_truck,
+    image: TRANSPORT_IMAGES.medium_truck,
   },
 ];
 
