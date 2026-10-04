@@ -162,6 +162,7 @@ export async function GET(req: NextRequest) {
                   city: true,
                   area: true,
                   price: true,
+                  deposit: true,
                   listingType: true,
                   status: true,
                   images: {
@@ -285,6 +286,7 @@ export async function PUT(req: NextRequest) {
             city: true,
             area: true,
             price: true,
+            deposit: true,
             listingType: true,
             status: true,
             images: {
