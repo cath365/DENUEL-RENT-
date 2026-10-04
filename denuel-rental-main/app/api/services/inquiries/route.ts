@@ -48,6 +48,7 @@ export async function GET(req: NextRequest) {
       }, {} as Record<string, number>),
     });
   } catch (error: any) {
+    if (error instanceof Response) return error;
     console.error('Error fetching inquiries:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
@@ -107,6 +108,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ success: true, inquiry });
   } catch (error: any) {
+    if (error instanceof Response) return error;
     console.error('Error creating inquiry:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
@@ -151,6 +153,7 @@ export async function PATCH(req: NextRequest) {
 
     return NextResponse.json({ success: true, inquiry: updated });
   } catch (error: any) {
+    if (error instanceof Response) return error;
     console.error('Error updating inquiry:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
