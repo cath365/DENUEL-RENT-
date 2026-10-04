@@ -1,376 +1,437 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import Header from '@/components/Header';
 
-interface ServiceProvider {
-  id: string;
-  businessName: string;
-  category: string;
-  phone: string;
-  email: string;
-  city: string;
-  isVerified: boolean;
-  isActive: boolean;
-  createdAt: string;
-  user: { name: string; email: string } | null;
-  documents: ServiceDocument[];
-  _count: { bookings: number; reviews: number };
-}
-
-interface ServiceDocument {
+type ServiceDocument = {
   id: string;
   type: string;
   name: string;
   fileUrl: string;
   isVerified: boolean;
   uploadedAt: string;
-}
+};
+
+type ServiceProvider = {
+  id: string;
+  providerType: string;
+  businessName: string;
+  category: string;
+  phone: string;
+  email: string;
+  city: string;
+  area?: string | null;
+  isVerified: boolean;
+  isActive: boolean;
+  insured: boolean;
+  verificationStatus: string;
+  rejectionReason?: string | null;
+  contactPersonName?: string | null;
+  contactPersonRole?: string | null;
+  companyRegistrationNumber?: string | null;
+  tpinNumber?: string | null;
+  nrcNumber?: string | null;
+  licenseNumber?: string | null;
+  yearsInBusiness?: number | null;
+  teamSize?: number | null;
+  createdAt: string;
+  documents: ServiceDocument[];
+  _count: { bookings: number; reviews: number };
+};
 
 const CATEGORY_LABELS: Record<string, string> = {
+  SECURITY: 'Security',
+  PEST_CONTROL: 'Pest control',
+  LANDSCAPER: 'Gardening & landscaping',
   GARDENER: 'Gardener',
-  LANDSCAPER: 'Landscaper',
-  PEST_CONTROL: 'Pest Control',
-  MOVER: 'Moving Services',
+  MOVER: 'Moving',
   CLEANER: 'Cleaning',
-  MAID: 'Maid/Housekeeper',
+  MAID: 'Housekeeping',
   PAINTER: 'Painting',
   PLUMBER: 'Plumbing',
-  SECURITY: 'Security',
-  INTERIOR_DESIGNER: 'Interior Design',
-  ELECTRICIAN: 'Electrician',
+  ELECTRICIAN: 'Electrical',
   CONTRACTOR: 'Contractor',
+  INTERIOR_DESIGNER: 'Interior design',
+  HOME_INSPECTOR: 'Home inspection',
 };
+
+function requiredDocuments(provider: ServiceProvider) {
+  const required: { type: string; label: string }[] = [];
+
+  if (provider.providerType === 'COMPANY') {
+    required.push(
+      { type: 'BUSINESS_LICENSE', label: 'Company registration' },
+      { type: 'TAX_CLEARANCE', label: 'TPIN / tax document' }
+    );
+    if (provider.category === 'SECURITY') {
+      required.push({ type: 'LICENSE', label: 'Security / operating licence' });
+    }
+    if (provider.insured) {
+      required.push({ type: 'INSURANCE', label: 'Insurance evidence' });
+    }
+  } else {
+    required.push({ type: 'NRC', label: 'NRC / national identity' });
+    if (provider.category === 'SECURITY') {
+      required.push(
+        { type: 'LICENSE', label: 'Security / professional licence' },
+        { type: 'BACKGROUND_CHECK', label: 'Background / police clearance' }
+      );
+    }
+  }
+
+  return required;
+}
 
 export default function AdminServiceProvidersPage() {
   const [providers, setProviders] = useState<ServiceProvider[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<'all' | 'pending' | 'verified'>('all');
-  const [selectedProvider, setSelectedProvider] = useState<ServiceProvider | null>(null);
-
-  useEffect(() => {
-    fetchProviders();
-  }, [filter]);
+  const [selected, setSelected] = useState<ServiceProvider | null>(null);
+  const [status, setStatus] = useState('PENDING');
+  const [providerType, setProviderType] = useState('');
+  const [category, setCategory] = useState('');
+  const [query, setQuery] = useState('');
+  const [rejectReason, setRejectReason] = useState('');
+  const [processing, setProcessing] = useState('');
+  const [error, setError] = useState('');
 
   const fetchProviders = async () => {
-    try {
-      const params = new URLSearchParams();
-      if (filter === 'pending') params.append('verified', 'false');
-      if (filter === 'verified') params.append('verified', 'true');
+    setLoading(true);
+    const p = new URLSearchParams();
+    if (status) p.set('status', status);
+    if (providerType) p.set('providerType', providerType);
+    if (category) p.set('category', category);
+    if (query.trim()) p.set('q', query.trim());
+    p.set('limit', '100');
 
-      const res = await fetch(`/api/admin/service-providers?${params}`);
-      if (res.ok) {
-        const data = await res.json();
-        setProviders(data.providers);
-      }
-    } catch (error) {
-      console.error('Error fetching providers:', error);
-    }
-    setLoading(false);
-  };
-
-  const verifyProvider = async (providerId: string) => {
     try {
-      const res = await fetch(`/api/admin/service-providers/${providerId}/verify`, {
-        method: 'POST',
-      });
-      if (res.ok) {
-        fetchProviders();
-        setSelectedProvider(null);
-      }
-    } catch (error) {
-      console.error('Error verifying provider:', error);
+      const res = await fetch('/api/admin/service-providers?' + p.toString());
+      const data = await res.json();
+      setProviders(Array.isArray(data.providers) ? data.providers : []);
+    } catch {
+      setProviders([]);
+    } finally {
+      setLoading(false);
     }
   };
 
-  const verifyDocument = async (documentId: string) => {
-    try {
-      const res = await fetch(`/api/admin/service-documents/${documentId}/verify`, {
-        method: 'POST',
-      });
-      if (res.ok) {
-        fetchProviders();
-        if (selectedProvider) {
-          const updated = providers.find(p => p.id === selectedProvider.id);
-          setSelectedProvider(updated || null);
-        }
-      }
-    } catch (error) {
-      console.error('Error verifying document:', error);
-    }
-  };
+  useEffect(() => {
+    const timer = setTimeout(fetchProviders, 200);
+    return () => clearTimeout(timer);
+  }, [status, providerType, category, query]);
 
-  const toggleProviderStatus = async (providerId: string, isActive: boolean) => {
-    try {
-      const res = await fetch(`/api/admin/service-providers/${providerId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ isActive }),
-      });
-      if (res.ok) {
-        fetchProviders();
-      }
-    } catch (error) {
-      console.error('Error updating provider:', error);
-    }
-  };
+  const allStats = useMemo(() => ({
+    total: providers.length,
+    companies: providers.filter((p) => p.providerType === 'COMPANY').length,
+    individuals: providers.filter((p) => p.providerType !== 'COMPANY').length,
+    verified: providers.filter((p) => p.isVerified).length,
+  }), [providers]);
 
-  const pendingCount = providers.filter(p => !p.isVerified).length;
+  function replaceProvider(updated: ServiceProvider) {
+    setProviders((current) => current.map((p) => p.id === updated.id ? updated : p));
+    setSelected(updated);
+  }
+
+  async function verifyDocument(documentId: string) {
+    if (!selected) return;
+    setProcessing(documentId);
+    setError('');
+    const res = await fetch('/api/admin/service-documents/' + documentId + '/verify', { method: 'POST' });
+    const data = await res.json().catch(() => ({}));
+
+    if (!res.ok) {
+      setError(data.message || 'Could not verify document.');
+      setProcessing('');
+      return;
+    }
+
+    const updated = {
+      ...selected,
+      documents: selected.documents.map((doc) => doc.id === documentId ? { ...doc, isVerified: true } : doc),
+    };
+    replaceProvider(updated);
+    setProcessing('');
+  }
+
+  async function approveProvider() {
+    if (!selected) return;
+    setProcessing('approve');
+    setError('');
+    const res = await fetch('/api/admin/approvals/' + selected.id + '/approve', { method: 'POST' });
+    const data = await res.json().catch(() => ({}));
+
+    if (!res.ok) {
+      const missing = Array.isArray(data.missing) ? ' Missing: ' + data.missing.join(', ') : '';
+      setError((data.error || data.message || 'Could not approve provider.') + missing);
+      setProcessing('');
+      return;
+    }
+
+    replaceProvider({ ...selected, isVerified: true, isActive: true, verificationStatus: 'VERIFIED', rejectionReason: null });
+    setProcessing('');
+  }
+
+  async function rejectProvider() {
+    if (!selected || !rejectReason.trim()) return;
+    setProcessing('reject');
+    setError('');
+    const res = await fetch('/api/admin/approvals/' + selected.id + '/reject', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reason: rejectReason.trim() }),
+    });
+    const data = await res.json().catch(() => ({}));
+
+    if (!res.ok) {
+      setError(data.error || 'Could not reject provider.');
+      setProcessing('');
+      return;
+    }
+
+    replaceProvider({ ...selected, isVerified: false, isActive: false, verificationStatus: 'REJECTED', rejectionReason: rejectReason.trim() });
+    setRejectReason('');
+    setProcessing('');
+  }
+
+  async function toggleActive(provider: ServiceProvider) {
+    const res = await fetch('/api/admin/service-providers/' + provider.id, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ isActive: !provider.isActive }),
+    });
+
+    if (res.ok) {
+      replaceProvider({ ...provider, isActive: !provider.isActive });
+    }
+  }
+
+  const checklist = selected ? requiredDocuments(selected) : [];
+  const canApprove = selected
+    ? checklist.every((req) => selected.documents.some((doc) => doc.type === req.type && doc.isVerified))
+    : false;
 
   return (
-    <div className="min-h-screen bg-gray-100">
-      <div className="bg-white shadow">
-        <div className="max-w-7xl mx-auto px-4 py-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-2xl font-bold text-gray-800">Service Providers</h1>
-              <p className="text-gray-600">Manage and verify service provider accounts</p>
-            </div>
-            <Link href="/admin" className="text-blue-600 hover:underline">
-              ← Back to Admin
-            </Link>
-          </div>
-        </div>
-      </div>
+    <div className="min-h-screen bg-slate-50">
+      <Header />
 
-      <div className="max-w-7xl mx-auto px-4 py-8">
-        {/* Stats */}
-        <div className="grid grid-cols-4 gap-4 mb-8">
-          <div className="bg-white rounded-lg shadow p-4">
-            <div className="text-3xl font-bold text-blue-600">{providers.length}</div>
-            <div className="text-gray-600">Total Providers</div>
+      <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
+        <div className="flex flex-col justify-between gap-4 border-b border-slate-200 pb-6 lg:flex-row lg:items-end">
+          <div>
+            <div className="text-sm font-semibold text-blue-700">Admin · Trust & safety</div>
+            <h1 className="mt-2 text-3xl font-bold tracking-[-0.035em] text-slate-950">Service provider verification</h1>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">Review companies and individuals, inspect supporting documents and control the public DENUEL verified badge.</p>
           </div>
-          <div className="bg-white rounded-lg shadow p-4">
-            <div className="text-3xl font-bold text-green-600">
-              {providers.filter(p => p.isVerified).length}
-            </div>
-            <div className="text-gray-600">Verified</div>
-          </div>
-          <div className="bg-white rounded-lg shadow p-4">
-            <div className="text-3xl font-bold text-yellow-600">{pendingCount}</div>
-            <div className="text-gray-600">Pending Verification</div>
-          </div>
-          <div className="bg-white rounded-lg shadow p-4">
-            <div className="text-3xl font-bold text-purple-600">
-              {providers.filter(p => p.isActive).length}
-            </div>
-            <div className="text-gray-600">Active</div>
+          <div className="flex flex-wrap gap-2">
+            <Link href="/admin" className="border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700">Admin home</Link>
+            <Link href="/services" className="border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700">Public services</Link>
           </div>
         </div>
 
-        {/* Filter Tabs */}
-        <div className="flex gap-2 mb-6">
-          {(['all', 'pending', 'verified'] as const).map((f) => (
-            <button
-              key={f}
-              onClick={() => setFilter(f)}
-              className={`px-4 py-2 rounded-lg font-medium ${
-                filter === f
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-white text-gray-600 hover:bg-gray-50'
-              }`}
-            >
-              {f.charAt(0).toUpperCase() + f.slice(1)}
-              {f === 'pending' && pendingCount > 0 && (
-                <span className="ml-2 bg-red-500 text-white text-xs px-2 py-0.5 rounded-full">
-                  {pendingCount}
-                </span>
-              )}
-            </button>
+        <section className="mt-7 grid border-l border-t border-slate-200 sm:grid-cols-2 lg:grid-cols-4">
+          {[
+            ['Visible results', allStats.total],
+            ['Companies', allStats.companies],
+            ['Individuals', allStats.individuals],
+            ['Verified', allStats.verified],
+          ].map(([label, value]) => (
+            <div key={label} className="border-b border-r border-slate-200 bg-white p-5">
+              <div className="text-sm text-slate-500">{label}</div>
+              <div className="mt-2 text-2xl font-bold tracking-[-0.02em] text-slate-950">{value}</div>
+            </div>
           ))}
-        </div>
+        </section>
 
-        {/* Providers Table */}
-        <div className="bg-white rounded-lg shadow overflow-hidden">
+        <section className="mt-6 border border-slate-200 bg-white p-4">
+          <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-[1fr_170px_190px_200px]">
+            <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search company, person, email, phone or city" className="h-11 border border-slate-300 px-3 text-sm outline-none focus:border-slate-950" />
+            <select value={status} onChange={(e) => setStatus(e.target.value)} className="h-11 border border-slate-300 bg-white px-3 text-sm">
+              <option value="">All statuses</option>
+              <option value="PENDING">Pending</option>
+              <option value="VERIFIED">Verified</option>
+              <option value="REJECTED">Rejected</option>
+            </select>
+            <select value={providerType} onChange={(e) => setProviderType(e.target.value)} className="h-11 border border-slate-300 bg-white px-3 text-sm">
+              <option value="">Company + individual</option>
+              <option value="COMPANY">Companies</option>
+              <option value="INDIVIDUAL">Individuals</option>
+            </select>
+            <select value={category} onChange={(e) => setCategory(e.target.value)} className="h-11 border border-slate-300 bg-white px-3 text-sm">
+              <option value="">All service categories</option>
+              {Object.entries(CATEGORY_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+            </select>
+          </div>
+        </section>
+
+        <section className="mt-6 overflow-hidden border border-slate-200 bg-white">
           {loading ? (
-            <div className="p-8 text-center">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
-            </div>
+            <div className="p-10 text-sm text-slate-500">Loading provider applications…</div>
           ) : providers.length === 0 ? (
-            <div className="p-8 text-center text-gray-500">No providers found</div>
+            <div className="p-10">
+              <h2 className="text-lg font-semibold text-slate-950">No providers match these filters</h2>
+              <p className="mt-2 text-sm text-slate-500">Try another verification status, category or provider type.</p>
+            </div>
           ) : (
-            <table className="w-full">
-              <thead className="bg-gray-50 border-b">
-                <tr>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">Provider</th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">Category</th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">Location</th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">Documents</th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">Status</th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y">
-                {providers.map((provider) => (
-                  <tr key={provider.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-3">
-                      <div className="font-medium text-gray-800">{provider.businessName}</div>
-                      <div className="text-sm text-gray-500">{provider.email}</div>
-                    </td>
-                    <td className="px-4 py-3 text-gray-600">
-                      {CATEGORY_LABELS[provider.category] || provider.category}
-                    </td>
-                    <td className="px-4 py-3 text-gray-600">{provider.city}</td>
-                    <td className="px-4 py-3">
-                      <span className="text-sm">
-                        {provider.documents.filter(d => d.isVerified).length} / {provider.documents.length} verified
+            <div className="divide-y divide-slate-100">
+              {providers.map((provider) => {
+                const required = requiredDocuments(provider);
+                const verifiedRequired = required.filter((req) => provider.documents.some((doc) => doc.type === req.type && doc.isVerified)).length;
+                return (
+                  <button key={provider.id} onClick={() => { setSelected(provider); setError(''); setRejectReason(''); }} className="grid w-full gap-4 px-5 py-5 text-left transition hover:bg-slate-50 md:grid-cols-[minmax(0,1.4fr)_150px_170px_160px] md:items-center">
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-semibold text-slate-950">{provider.businessName}</span>
+                        <span className="border border-slate-200 px-2 py-0.5 text-[11px] font-semibold text-slate-600">{provider.providerType === 'COMPANY' ? 'Company' : 'Individual'}</span>
+                      </div>
+                      <div className="mt-1 text-sm text-slate-500">{provider.email} · {[provider.area, provider.city].filter(Boolean).join(', ')}</div>
+                    </div>
+                    <div>
+                      <div className="text-sm font-medium text-slate-800">{CATEGORY_LABELS[provider.category] || provider.category}</div>
+                      <div className="mt-1 text-xs text-slate-400">{provider._count?.reviews || 0} reviews</div>
+                    </div>
+                    <div>
+                      <div className="text-sm font-semibold text-slate-800">{verifiedRequired}/{required.length} required verified</div>
+                      <div className="mt-1 text-xs text-slate-400">{provider.documents.length} total documents</div>
+                    </div>
+                    <div>
+                      <span className={`inline-flex px-2.5 py-1 text-xs font-semibold ${
+                        provider.verificationStatus === 'VERIFIED'
+                          ? 'bg-emerald-50 text-emerald-700'
+                          : provider.verificationStatus === 'REJECTED'
+                            ? 'bg-red-50 text-red-700'
+                            : 'bg-amber-50 text-amber-700'
+                      }`}>
+                        {provider.verificationStatus || (provider.isVerified ? 'VERIFIED' : 'PENDING')}
                       </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex flex-col gap-1">
-                        {provider.isVerified ? (
-                          <span className="inline-block text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded">
-                            Verified
-                          </span>
-                        ) : (
-                          <span className="inline-block text-xs bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded">
-                            Pending
-                          </span>
-                        )}
-                        {!provider.isActive && (
-                          <span className="inline-block text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded">
-                            Inactive
-                          </span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => setSelectedProvider(provider)}
-                          className="text-blue-600 hover:underline text-sm"
-                        >
-                          View
-                        </button>
-                        {!provider.isVerified && (
-                          <button
-                            onClick={() => verifyProvider(provider.id)}
-                            className="text-green-600 hover:underline text-sm"
-                          >
-                            Verify
-                          </button>
-                        )}
-                        <button
-                          onClick={() => toggleProviderStatus(provider.id, !provider.isActive)}
-                          className={`text-sm ${provider.isActive ? 'text-red-600' : 'text-green-600'} hover:underline`}
-                        >
-                          {provider.isActive ? 'Deactivate' : 'Activate'}
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
           )}
-        </div>
-      </div>
+        </section>
+      </main>
 
-      {/* Provider Detail Modal */}
-      {selectedProvider && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="p-6 border-b">
-              <div className="flex justify-between items-start">
-                <div>
-                  <h2 className="text-xl font-bold text-gray-800">{selectedProvider.businessName}</h2>
-                  <p className="text-gray-600">{CATEGORY_LABELS[selectedProvider.category]}</p>
+      {selected && (
+        <div className="fixed inset-0 z-[80] bg-black/50 p-0 sm:p-4">
+          <div className="ml-auto h-full w-full max-w-3xl overflow-y-auto bg-white shadow-2xl">
+            <div className="sticky top-0 z-10 flex items-start justify-between border-b border-slate-200 bg-white px-5 py-5 sm:px-7">
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 className="text-xl font-bold text-slate-950">{selected.businessName}</h2>
+                  <span className="border border-slate-200 px-2 py-0.5 text-xs font-semibold text-slate-600">{selected.providerType === 'COMPANY' ? 'Company' : 'Individual'}</span>
                 </div>
-                <button
-                  onClick={() => setSelectedProvider(null)}
-                  className="text-gray-500 hover:text-gray-700 text-2xl"
-                >
-                  ×
-                </button>
+                <p className="mt-1 text-sm text-slate-500">{CATEGORY_LABELS[selected.category] || selected.category} · {selected.city}</p>
               </div>
+              <button onClick={() => setSelected(null)} className="text-sm font-semibold text-slate-500">Close</button>
             </div>
 
-            <div className="p-6 space-y-6">
-              {/* Contact Info */}
-              <div>
-                <h3 className="font-semibold text-gray-800 mb-2">Contact Information</h3>
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div>
-                    <span className="text-gray-500">Email:</span>
-                    <p className="text-gray-800">{selectedProvider.email}</p>
-                  </div>
-                  <div>
-                    <span className="text-gray-500">Phone:</span>
-                    <p className="text-gray-800">{selectedProvider.phone}</p>
-                  </div>
-                  <div>
-                    <span className="text-gray-500">City:</span>
-                    <p className="text-gray-800">{selectedProvider.city}</p>
-                  </div>
-                  <div>
-                    <span className="text-gray-500">Registered:</span>
-                    <p className="text-gray-800">
-                      {new Date(selectedProvider.createdAt).toLocaleDateString()}
-                    </p>
-                  </div>
-                </div>
-              </div>
+            <div className="space-y-6 p-5 sm:p-7">
+              {error && <div className="border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
 
-              {/* Documents */}
-              <div>
-                <h3 className="font-semibold text-gray-800 mb-2">Documents</h3>
-                {selectedProvider.documents.length > 0 ? (
-                  <div className="space-y-2">
-                    {selectedProvider.documents.map((doc) => (
-                      <div key={doc.id} className="flex items-center justify-between p-3 border rounded-lg">
+              <section>
+                <h3 className="text-sm font-bold uppercase tracking-wide text-slate-400">Profile identity</h3>
+                <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                  {selected.providerType === 'COMPANY' ? (
+                    <>
+                      <div><div className="text-xs text-slate-400">Contact person</div><div className="mt-1 text-sm font-semibold text-slate-900">{selected.contactPersonName || 'Not supplied'}</div></div>
+                      <div><div className="text-xs text-slate-400">Position</div><div className="mt-1 text-sm font-semibold text-slate-900">{selected.contactPersonRole || 'Not supplied'}</div></div>
+                      <div><div className="text-xs text-slate-400">Company registration</div><div className="mt-1 text-sm font-semibold text-slate-900">{selected.companyRegistrationNumber || 'Not supplied'}</div></div>
+                      <div><div className="text-xs text-slate-400">TPIN</div><div className="mt-1 text-sm font-semibold text-slate-900">{selected.tpinNumber || 'Not supplied'}</div></div>
+                      <div><div className="text-xs text-slate-400">Team size</div><div className="mt-1 text-sm font-semibold text-slate-900">{selected.teamSize || 'Not supplied'}</div></div>
+                    </>
+                  ) : (
+                    <>
+                      <div><div className="text-xs text-slate-400">NRC / identity</div><div className="mt-1 text-sm font-semibold text-slate-900">{selected.nrcNumber ? 'Supplied' : 'Not supplied'}</div></div>
+                      <div><div className="text-xs text-slate-400">Experience</div><div className="mt-1 text-sm font-semibold text-slate-900">{selected.yearsInBusiness != null ? selected.yearsInBusiness + ' years' : 'Not supplied'}</div></div>
+                    </>
+                  )}
+                  <div><div className="text-xs text-slate-400">Phone</div><div className="mt-1 text-sm font-semibold text-slate-900">{selected.phone}</div></div>
+                  <div><div className="text-xs text-slate-400">Email</div><div className="mt-1 text-sm font-semibold text-slate-900">{selected.email}</div></div>
+                  <div><div className="text-xs text-slate-400">Licence number</div><div className="mt-1 text-sm font-semibold text-slate-900">{selected.licenseNumber || 'Not supplied'}</div></div>
+                  <div><div className="text-xs text-slate-400">Registered</div><div className="mt-1 text-sm font-semibold text-slate-900">{new Date(selected.createdAt).toLocaleDateString('en-ZM')}</div></div>
+                </div>
+              </section>
+
+              <section className="border-t border-slate-200 pt-6">
+                <div className="flex items-end justify-between">
+                  <div>
+                    <h3 className="text-lg font-bold text-slate-950">Required verification</h3>
+                    <p className="mt-1 text-sm text-slate-500">Every required item must be uploaded and verified before approval.</p>
+                  </div>
+                  <Link href={'/services/' + selected.id} target="_blank" className="text-sm font-semibold text-blue-700">Public profile ↗</Link>
+                </div>
+
+                <div className="mt-4 divide-y divide-slate-100 border border-slate-200">
+                  {checklist.map((req) => {
+                    const doc = selected.documents.find((d) => d.type === req.type);
+                    return (
+                      <div key={req.type} className="grid gap-3 px-4 py-4 sm:grid-cols-[1fr_auto] sm:items-center">
                         <div>
-                          <p className="font-medium text-gray-800">{doc.name}</p>
-                          <p className="text-sm text-gray-500">{doc.type.replace(/_/g, ' ')}</p>
+                          <div className="text-sm font-semibold text-slate-900">{req.label}</div>
+                          <div className="mt-1 text-xs text-slate-500">{doc ? doc.name : 'Not uploaded'}</div>
                         </div>
-                        <div className="flex items-center gap-3">
-                          <a
-                            href={doc.fileUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-blue-600 hover:underline text-sm"
-                          >
-                            View
-                          </a>
-                          {doc.isVerified ? (
-                            <span className="text-green-600 text-sm">✓ Verified</span>
+                        <div className="flex items-center gap-2">
+                          {doc ? (
+                            <>
+                              <a href={doc.fileUrl} target="_blank" rel="noreferrer" className="border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700">View</a>
+                              {doc.isVerified ? (
+                                <span className="bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700">Verified</span>
+                              ) : (
+                                <button disabled={processing === doc.id} onClick={() => verifyDocument(doc.id)} className="bg-slate-950 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">
+                                  {processing === doc.id ? 'Saving…' : 'Verify document'}
+                                </button>
+                              )}
+                            </>
                           ) : (
-                            <button
-                              onClick={() => verifyDocument(doc.id)}
-                              className="text-sm bg-green-600 text-white px-3 py-1 rounded hover:bg-green-700"
-                            >
-                              Verify
-                            </button>
+                            <span className="bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">Missing</span>
                           )}
                         </div>
                       </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-gray-500 text-sm">No documents uploaded</p>
-                )}
-              </div>
+                    );
+                  })}
+                </div>
 
-              {/* Actions */}
-              <div className="flex gap-3 pt-4 border-t">
-                {!selectedProvider.isVerified && (
-                  <button
-                    onClick={() => verifyProvider(selectedProvider.id)}
-                    className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
-                  >
-                    Verify Provider
-                  </button>
+                {selected.documents.filter((doc) => !checklist.some((req) => req.type === doc.type)).length > 0 && (
+                  <div className="mt-5">
+                    <h4 className="text-sm font-semibold text-slate-900">Additional documents</h4>
+                    <div className="mt-3 divide-y divide-slate-100 border border-slate-200">
+                      {selected.documents.filter((doc) => !checklist.some((req) => req.type === doc.type)).map((doc) => (
+                        <div key={doc.id} className="flex items-center justify-between gap-4 px-4 py-3">
+                          <div><div className="text-sm font-medium text-slate-800">{doc.name}</div><div className="text-xs text-slate-400">{doc.type.replaceAll('_', ' ')}</div></div>
+                          <div className="flex gap-2">
+                            <a href={doc.fileUrl} target="_blank" rel="noreferrer" className="border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700">View</a>
+                            {!doc.isVerified ? <button disabled={processing === doc.id} onClick={() => verifyDocument(doc.id)} className="bg-slate-950 px-3 py-2 text-xs font-semibold text-white">Verify</button> : <span className="bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700">Verified</span>}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 )}
-                <button
-                  onClick={() => toggleProviderStatus(selectedProvider.id, !selectedProvider.isActive)}
-                  className={`px-4 py-2 rounded-lg ${
-                    selectedProvider.isActive
-                      ? 'bg-red-600 text-white hover:bg-red-700'
-                      : 'bg-blue-600 text-white hover:bg-blue-700'
-                  }`}
-                >
-                  {selectedProvider.isActive ? 'Deactivate' : 'Activate'}
-                </button>
-              </div>
+              </section>
+
+              <section className="border-t border-slate-200 pt-6">
+                <h3 className="text-lg font-bold text-slate-950">Decision</h3>
+                <p className="mt-1 text-sm text-slate-500">{canApprove ? 'All required documents are verified. This provider can be approved.' : 'Approval is locked until all required documents are uploaded and verified.'}</p>
+
+                {selected.rejectionReason && <div className="mt-4 border border-red-200 bg-red-50 p-4 text-sm text-red-700"><strong>Previous rejection reason:</strong> {selected.rejectionReason}</div>}
+
+                <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                  <button disabled={!canApprove || processing === 'approve'} onClick={approveProvider} className="bg-emerald-700 px-4 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40">
+                    {processing === 'approve' ? 'Approving…' : 'Approve & verify provider'}
+                  </button>
+                  <button onClick={() => toggleActive(selected)} className="border border-slate-300 px-4 py-3 text-sm font-semibold text-slate-700">
+                    {selected.isActive ? 'Deactivate profile' : 'Activate profile'}
+                  </button>
+                </div>
+
+                <div className="mt-5 border-t border-slate-100 pt-5">
+                  <label className="mb-2 block text-sm font-semibold text-slate-800">Reject / request corrections</label>
+                  <textarea value={rejectReason} onChange={(e) => setRejectReason(e.target.value)} rows={3} placeholder="Explain exactly what the provider needs to correct or upload." className="w-full border border-slate-300 p-3 text-sm outline-none focus:border-red-500" />
+                  <button disabled={!rejectReason.trim() || processing === 'reject'} onClick={rejectProvider} className="mt-3 border border-red-300 bg-red-50 px-4 py-2.5 text-sm font-semibold text-red-700 disabled:opacity-40">
+                    {processing === 'reject' ? 'Saving…' : 'Reject and notify provider'}
+                  </button>
+                </div>
+              </section>
             </div>
           </div>
         </div>
