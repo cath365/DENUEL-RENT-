@@ -76,6 +76,15 @@ function buildRentSchedule(lease: {
 export async function GET(req: NextRequest) {
   try {
     const user = await requireAuth(req);
+
+    await prisma.leaseAgreement.updateMany({
+      where: {
+        status: 'ACTIVE',
+        endDate: { lt: new Date() },
+      },
+      data: { status: 'EXPIRED' },
+    });
+
     const { searchParams } = new URL(req.url);
     const propertyId = searchParams.get('propertyId');
     const status = searchParams.get('status');
@@ -411,6 +420,24 @@ export async function PUT(req: NextRequest) {
           },
         });
       });
+
+      try {
+        await prisma.notification.create({
+          data: {
+            userId: isLandlord ? lease.tenantId : lease.landlordId,
+            type: result?.status === 'ACTIVE' ? 'LEASE_ACTIVATED' : 'LEASE_SIGNED',
+            data: {
+              leaseId: lease.id,
+              propertyId: lease.propertyId,
+              propertyTitle: lease.property.title,
+              signedBy: isLandlord ? 'LANDLORD' : 'TENANT',
+              status: result?.status,
+            },
+          },
+        });
+      } catch {
+        console.warn('Unable to create lease signing notification.');
+      }
 
       return NextResponse.json({ lease: result });
     }
