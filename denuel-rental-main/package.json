@@ -16,7 +16,8 @@
     "worker": "ts-node -r tsconfig-paths/register scripts/worker/worker.ts",
     "serverless:deploy": "serverless deploy",
     "serverless:package": "serverless package",
-    "prisma:deploy": "prisma migrate deploy"
+    "prisma:deploy": "prisma migrate deploy",
+    "audit:demo-data": "ts-node --transpile-only scripts/audit-demo-data.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.374.0",
