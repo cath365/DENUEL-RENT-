@@ -92,11 +92,6 @@ export default async function PropertyPage({ params }: { params: { id: string } 
         },
         images: { orderBy: { sortOrder: 'asc' } },
         floorPlans: { orderBy: { floor: 'asc' } },
-        viewingSlots: {
-          where: { isActive: true },
-          orderBy: { createdAt: 'desc' },
-          take: 10,
-        },
       },
     });
   } catch (error) {
@@ -553,12 +548,10 @@ export default async function PropertyPage({ params }: { params: { id: string } 
 
                   <FavoriteButton propertyId={property.id} />
 
-                  {property.viewingSlots?.length > 0 && (
-                    <div className="mt-3 border-t border-slate-200 pt-4">
-                      <div className="mb-3 text-sm font-semibold text-slate-900">Schedule a viewing</div>
-                      <ViewingScheduler propertyId={property.id} propertyTitle={property.title} />
-                    </div>
-                  )}
+                  <div className="mt-3 border-t border-slate-200 pt-4">
+                    <div className="mb-3 text-sm font-semibold text-slate-900">Request a viewing</div>
+                    <ViewingScheduler propertyId={property.id} propertyTitle={property.title} />
+                  </div>
 
                   <div className="mt-3 border-t border-slate-200 pt-5">
                     <div className="mb-3 text-sm font-semibold text-slate-900">Send an enquiry</div>
