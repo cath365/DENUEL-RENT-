@@ -53,7 +53,7 @@ export default async function AdminPage() {
     prisma.serviceProvider.count({ where: { verificationStatus: 'PENDING' } }),
     prisma.serviceProvider.count({ where: { verificationStatus: 'VERIFIED' } }),
     prisma.listingReport.count({ where: { status: 'OPEN' } }),
-    prisma.supportTicket.count({ where: { status: { in: ['OPEN', 'IN_PROGRESS'] } } }).catch(() => 0),
+    prisma.supportMessage.count({ where: { isResolved: false } }),
     prisma.booking.count(),
     prisma.serviceProvider.findMany({
       orderBy: { createdAt: 'desc' },
