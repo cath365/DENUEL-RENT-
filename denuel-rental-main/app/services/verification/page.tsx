@@ -28,17 +28,60 @@ export default function ServiceVerificationPage() {
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState('');
   const [message, setMessage] = useState('');
+  const [loadError, setLoadError] = useState('');
 
   useEffect(() => {
-    Promise.all([
-      fetch('/api/services/me').then((r) => r.ok ? r.json() : null),
-      fetch('/api/services/documents').then((r) => r.ok ? r.json() : null),
-    ])
-      .then(([profileData, docsData]) => {
-        setProvider(profileData?.provider || null);
-        setDocuments(Array.isArray(docsData?.documents) ? docsData.documents : []);
-      })
-      .finally(() => setLoading(false));
+    let cancelled = false;
+
+    async function loadVerification() {
+      setLoading(true);
+      setLoadError('');
+
+      try {
+        const [profileRes, docsRes] = await Promise.all([
+          fetch('/api/services/me'),
+          fetch('/api/services/documents'),
+        ]);
+
+        const profileData = await profileRes.json().catch(() => ({}));
+        const docsData = await docsRes.json().catch(() => ({}));
+
+        if (!profileRes.ok) {
+          if (!cancelled) {
+            setLoadError(
+              profileData?.message ||
+              'Unable to connect to the database right now. Please try again shortly.'
+            );
+          }
+          return;
+        }
+
+        if (!cancelled) {
+          setProvider(profileData?.provider || null);
+          setDocuments(
+            docsRes.ok && Array.isArray(docsData?.documents)
+              ? docsData.documents
+              : []
+          );
+
+          if (!docsRes.ok && docsData?.message) {
+            setMessage(docsData.message);
+          }
+        }
+      } catch {
+        if (!cancelled) {
+          setLoadError('Unable to connect right now. Please check your connection and try again.');
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    loadVerification();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const requirements = useMemo<Requirement[]>(() => {
@@ -121,8 +164,28 @@ export default function ServiceVerificationPage() {
     return <div className="min-h-screen bg-slate-50"><Header /><div className="mx-auto max-w-5xl px-4 py-10 sm:px-6"><div className="h-64 animate-pulse border border-slate-200 bg-white" /></div></div>;
   }
 
+  if (loadError) {
+    return (
+      <div className="min-h-screen bg-slate-50">
+        <Header />
+        <main className="mx-auto max-w-3xl px-4 py-16 sm:px-6">
+          <div className="border border-amber-200 bg-amber-50 p-6">
+            <h1 className="text-xl font-bold text-slate-950">Verification is temporarily unavailable</h1>
+            <p className="mt-2 text-sm leading-6 text-slate-600">{loadError}</p>
+            <button
+              onClick={() => window.location.reload()}
+              className="mt-5 bg-[#0F2B46] px-4 py-2.5 text-sm font-semibold text-white"
+            >
+              Try again
+            </button>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
   if (!provider) {
-    return <div className="min-h-screen bg-slate-50"><Header /><main className="mx-auto max-w-3xl px-4 py-16"><h1 className="text-2xl font-bold">No service-provider profile found</h1><Link href="/services/register" className="mt-4 inline-flex text-sm font-semibold text-blue-700">Create your profile</Link></main></div>;
+    return <div className="min-h-screen bg-slate-50"><Header /><main className="mx-auto max-w-3xl px-4 py-16"><h1 className="text-2xl font-bold">No service-provider profile found</h1><Link href="/services/register" className="mt-4 inline-flex text-sm font-semibold text-[#16A34A]">Create your profile</Link></main></div>;
   }
 
   return (
