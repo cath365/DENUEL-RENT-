@@ -94,8 +94,6 @@ export async function GET(req: NextRequest) {
         select: {
           id: true,
           name: true,
-          email: true,
-          phone: true,
           companyName: true,
           profileImage: true,
           isEmailVerified: true,
