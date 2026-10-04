@@ -61,10 +61,12 @@ export default function AdminUsersPage() {
 
   const updateUserRole = async (userId: string, newRole: string) => {
     try {
-      const res = await fetch(`/api/admin/users/${userId}/role`, {
-        method: 'PUT',
+      const res = await fetch(`/api/admin/users/${userId}`, {
+        method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ role: newRole }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isIdVerified: !users.find(u => u.id === userId)?.isVerified }),
       });
       if (res.ok) {
         setUsers(users.map(u => u.id === userId ? { ...u, role: newRole } : u));
@@ -79,13 +81,14 @@ export default function AdminUsersPage() {
 
   const toggleUserVerification = async (userId: string) => {
     try {
-      const res = await fetch(`/api/admin/users/${userId}/verify`, {
-        method: 'POST',
+      const res = await fetch(`/api/admin/users/${userId}`, {
+        method: 'PATCH',
       });
       if (res.ok) {
-        setUsers(users.map(u => u.id === userId ? { ...u, isVerified: !u.isVerified } : u));
+        const nextVerified = !users.find(u => u.id === userId)?.isVerified;
+        setUsers(users.map(u => u.id === userId ? { ...u, isVerified: Boolean(nextVerified) } : u));
         if (selectedUser?.id === userId) {
-          setSelectedUser({ ...selectedUser, isVerified: !selectedUser.isVerified });
+          setSelectedUser({ ...selectedUser, isVerified: Boolean(nextVerified) });
         }
       }
     } catch (error) {
