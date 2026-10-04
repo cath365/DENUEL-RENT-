@@ -361,9 +361,12 @@ export default function LandlordDashboardPage() {
                       Applications submitted to your approved rental properties.
                     </p>
                   </div>
-                  <span className="text-sm font-semibold text-slate-500">
-                    {stats.pendingApplications || 0} pending
-                  </span>
+                  <Link
+                    href="/landlord/applications"
+                    className="text-sm font-semibold text-[#16A34A]"
+                  >
+                    Manage {stats.pendingApplications || 0} pending
+                  </Link>
                 </div>
 
                 {applications.length === 0 ? (
@@ -421,9 +424,12 @@ export default function LandlordDashboardPage() {
                       Real viewing requests waiting or already confirmed.
                     </p>
                   </div>
-                  <span className="text-sm font-semibold text-slate-500">
-                    {stats.upcomingViewings || 0}
-                  </span>
+                  <Link
+                    href="/landlord/viewings"
+                    className="text-sm font-semibold text-[#16A34A]"
+                  >
+                    Manage {stats.upcomingViewings || 0}
+                  </Link>
                 </div>
 
                 {viewings.length === 0 ? (
@@ -700,6 +706,8 @@ export default function LandlordDashboardPage() {
               <div className="mt-5 grid border-l border-t border-slate-200 sm:grid-cols-2 lg:grid-cols-4">
                 {[
                   ['Properties', '/dashboard/properties'],
+                  ['Applications', '/landlord/applications'],
+                  ['Viewings', '/landlord/viewings'],
                   ['Messages', '/inquiries'],
                   ['Leases', '/landlord/leases'],
                   ['Rent payments', '/landlord/payments'],
