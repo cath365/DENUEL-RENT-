@@ -144,7 +144,7 @@ export default function ServiceProviderRegisterPage() {
               <div><label className={label}>Website</label><input name="website" className={input} placeholder="https://..." /></div>
               <div><label className={label}>City</label><input name="city" required className={input} defaultValue="Lusaka" /></div>
               <div><label className={label}>Area</label><input name="area" className={input} placeholder="Kabulonga, Roma, Kitwe..." /></div>
-              <div className="sm:col-span-2"><label className={label}>Business / work address</label><input name="address" className={input} /></div>
+              <div className="sm:col-span-2"><label className={label}>{isCompany ? 'Registered / operating address *' : 'Work address'}</label><input name="address" required={isCompany} className={input} /></div>
             </div>
           </section>
 
@@ -156,7 +156,7 @@ export default function ServiceProviderRegisterPage() {
                 <>
                   <div><label className={label}>Company registration number *</label><input name="companyRegistrationNumber" required className={input} /></div>
                   <div><label className={label}>TPIN *</label><input name="tpinNumber" required className={input} /></div>
-                  <div><label className={label}>Team size</label><input type="number" min="1" name="teamSize" className={input} /></div>
+                  <div><label className={label}>Team size *</label><input type="number" min="1" name="teamSize" required className={input} /></div>
                 </>
               ) : (
                 <>
@@ -203,9 +203,11 @@ export default function ServiceProviderRegisterPage() {
           )}
 
           <section className="border border-blue-200 bg-blue-50 p-5">
-            <h2 className="font-semibold text-slate-950">Verification documents</h2>
+            <h2 className="font-semibold text-slate-950">Required verification after profile creation</h2>
             <p className="mt-2 text-sm leading-6 text-slate-600">
-              After creating the profile, the provider should upload the applicable identity, registration, tax, licence, insurance, qualification and supporting documents for DENUEL review. The public profile should only show which checks passed.
+              {isCompany
+                ? 'Company profiles must complete company-registration, TPIN/tax, authorised-contact ID and any category-specific licence checks. Security companies must also provide security-licence and background-screening evidence. Insurance evidence is required if the company claims to be insured.'
+                : 'Individual profiles must complete identity verification with an NRC/national ID and add a professional profile photo. Security professionals must provide licence and background-check evidence; electricians must provide a qualification, certificate or licence. The public profile only shows checks that DENUEL has approved.'}
             </p>
           </section>
 

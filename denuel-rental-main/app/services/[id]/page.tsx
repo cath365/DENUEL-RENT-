@@ -93,7 +93,8 @@ export default function ServiceProviderProfilePage() {
     );
   }
 
-  const companyName = provider.businessName || 'Service provider';
+  const isCompany = provider.providerType === 'COMPANY';
+  const companyName = provider.businessName || (isCompany ? 'Service company' : 'Service professional');
   const initials = companyName.slice(0, 2).toUpperCase();
   const category = humanize(provider.category);
   const whatsappDigits = (provider.whatsappNumber || provider.phone || '').replace(/[^\d]/g, '');
@@ -130,7 +131,7 @@ export default function ServiceProviderProfilePage() {
                     <h1 className="text-2xl font-bold tracking-[-0.03em] text-slate-950 sm:text-3xl">{companyName}</h1>
                     {provider.isVerified && <span className="border border-blue-200 bg-blue-50 px-2 py-1 text-xs font-semibold text-blue-700">Verified provider</span>}
                   </div>
-                  <p className="mt-1 text-sm font-medium text-slate-600">{category}</p>
+                  <p className="mt-1 text-sm font-medium text-slate-600">{category} · {isCompany ? 'Company / organisation' : 'Individual professional'}</p>
                   <p className="mt-1 text-sm text-slate-500">
                     {[provider.area, provider.city].filter(Boolean).join(', ')}
                     {provider.yearsInBusiness ? ' · ' + provider.yearsInBusiness + ' years in business' : ''}
@@ -202,7 +203,7 @@ export default function ServiceProviderProfilePage() {
 
             {provider.category === 'SECURITY' && (
               <section className="border border-slate-200 bg-white p-6">
-                <h2 className="text-xl font-bold text-slate-950">Security company capabilities</h2>
+                <h2 className="text-xl font-bold text-slate-950">{isCompany ? 'Security company capabilities' : 'Security professional capabilities'}</h2>
                 <p className="mt-2 text-sm leading-6 text-slate-500">Information supplied by the provider and verification records held by DENUEL.</p>
                 <div className="mt-5 grid gap-4 sm:grid-cols-2">
                   {[
@@ -276,14 +277,20 @@ export default function ServiceProviderProfilePage() {
             <section className="border border-slate-200 bg-white p-5">
               <h2 className="font-semibold text-slate-950">Trust & verification</h2>
               <div className="mt-4 space-y-3 text-sm">
-                {[
+                {(isCompany ? [
                   ['DENUEL verified', provider.isVerified],
-                  ['Business registration supplied', Boolean(provider.companyRegistrationNumber)],
+                  ['Company registration supplied', Boolean(provider.companyRegistrationNumber)],
                   ['TPIN supplied', Boolean(provider.tpinNumber)],
                   ['Licence supplied', Boolean(provider.licenseNumber)],
                   ['Insured', Boolean(provider.insured)],
-                  ['Background-checked staff', Boolean(provider.backgroundCheckedStaff)],
-                ].map(([label, ok]: any) => (
+                  ['Staff background checks declared', Boolean(provider.backgroundCheckedStaff)],
+                ] : [
+                  ['DENUEL verified', provider.isVerified],
+                  ['Identity supplied', Boolean(provider.nrcNumber)],
+                  ['Professional / trade licence supplied', Boolean(provider.licenseNumber)],
+                  ['Background check declared', Boolean(provider.backgroundCheckedStaff)],
+                  ['Insured', Boolean(provider.insured)],
+                ]).map(([label, ok]: any) => (
                   <div key={label} className="flex items-center justify-between gap-4">
                     <span className="text-slate-600">{label}</span>
                     <span className={ok ? 'font-semibold text-emerald-700' : 'text-slate-400'}>{ok ? 'Yes' : 'Not confirmed'}</span>
@@ -304,17 +311,17 @@ export default function ServiceProviderProfilePage() {
             </section>
 
             <section className="border border-slate-200 bg-white p-5">
-              <h2 className="font-semibold text-slate-950">Contact company</h2>
+              <h2 className="font-semibold text-slate-950">{isCompany ? 'Contact company' : 'Contact professional'}</h2>
               <div className="mt-4 grid gap-2">
                 {whatsappHref && <a href={whatsappHref} target="_blank" rel="noreferrer" className="bg-[#128C7E] px-4 py-3 text-center text-sm font-semibold text-white">WhatsApp</a>}
                 {provider.phone && <a href={'tel:' + provider.phone} className="border border-slate-300 px-4 py-3 text-center text-sm font-semibold text-slate-800">Call {provider.phone}</a>}
-                {provider.email && <a href={'mailto:' + provider.email} className="border border-slate-300 px-4 py-3 text-center text-sm font-semibold text-slate-800">Email company</a>}
+                {provider.email && <a href={'mailto:' + provider.email} className="border border-slate-300 px-4 py-3 text-center text-sm font-semibold text-slate-800">{isCompany ? 'Email company' : 'Email professional'}</a>}
                 <button onClick={() => setBookingOpen(true)} className="bg-blue-600 px-4 py-3 text-sm font-semibold text-white">Request a quote / booking</button>
               </div>
             </section>
 
             <section className="border border-slate-200 bg-white p-5">
-              <h2 className="font-semibold text-slate-950">Business details</h2>
+              <h2 className="font-semibold text-slate-950">{isCompany ? 'Business details' : 'Professional details'}</h2>
               <div className="mt-4 space-y-3 text-sm">
                 <div><div className="text-xs text-slate-400">Address</div><div className="mt-1 font-medium text-slate-800">{provider.address || [provider.area, provider.city].filter(Boolean).join(', ')}</div></div>
                 <div><div className="text-xs text-slate-400">Price range</div><div className="mt-1 font-medium text-slate-800">{provider.priceRange || (provider.hourlyRate ? 'From K' + provider.hourlyRate.toLocaleString() + '/hour' : 'Contact for quote')}</div></div>

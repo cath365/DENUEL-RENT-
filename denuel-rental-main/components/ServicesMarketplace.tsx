@@ -11,6 +11,7 @@ type ServiceCategory =
 
 interface ServiceProvider {
   id: string;
+  providerType?: 'COMPANY' | 'INDIVIDUAL';
   businessName: string;
   description?: string;
   category: ServiceCategory;
@@ -42,14 +43,14 @@ interface Props {
 }
 
 const categories: { value: ServiceCategory; label: string; image?: string }[] = [
-  { value: 'SECURITY', label: 'Security', image: '/services/security.svg' },
-  { value: 'PEST_CONTROL', label: 'Pest control', image: '/services/pest-control.svg' },
-  { value: 'LANDSCAPER', label: 'Gardening & landscaping', image: '/services/gardening.svg' },
-  { value: 'PAINTER', label: 'Painting', image: '/services/painting.svg' },
-  { value: 'ELECTRICIAN', label: 'Electrical', image: '/services/electrical.svg' },
-  { value: 'PLUMBER', label: 'Plumbing', image: '/services/plumbing.svg' },
-  { value: 'CLEANER', label: 'Cleaning', image: '/services/cleaning.svg' },
-  { value: 'MOVER', label: 'Moving', image: '/services/moving.svg' },
+  { value: 'SECURITY', label: 'Security', image: '/services/security.webp' },
+  { value: 'PEST_CONTROL', label: 'Pest control', image: '/services/pest-control.webp' },
+  { value: 'LANDSCAPER', label: 'Gardening & landscaping', image: '/services/gardening.webp' },
+  { value: 'PAINTER', label: 'Painting', image: '/services/painting.webp' },
+  { value: 'ELECTRICIAN', label: 'Electrical', image: '/services/electrical.webp' },
+  { value: 'PLUMBER', label: 'Plumbing', image: '/services/plumbing.webp' },
+  { value: 'CLEANER', label: 'Cleaning', image: '/services/cleaning.webp' },
+  { value: 'MOVER', label: 'Moving', image: '/services/moving.webp' },
   { value: 'HOME_INSPECTOR', label: 'Inspection' },
   { value: 'INTERIOR_DESIGNER', label: 'Interior design' },
 ];
@@ -112,6 +113,7 @@ export default function ServicesMarketplace({ defaultCategory, defaultCity = 'Lu
   };
 
   const categoryLabel = (value: string) => categories.find((item) => item.value === value)?.label || value.replaceAll('_', ' ').toLowerCase();
+  const categoryImage = (value: string) => categories.find((item) => item.value === value)?.image;
 
   return (
     <div className={className}>
@@ -163,14 +165,18 @@ export default function ServicesMarketplace({ defaultCategory, defaultCity = 'Lu
               >
                 <div className="flex items-start gap-4">
                   <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-full bg-slate-100 text-lg font-semibold text-slate-500">
-                    {provider.logoUrl ? <img src={provider.logoUrl} alt={provider.businessName} className="h-full w-full object-cover" /> : provider.businessName.charAt(0)}
+                    {provider.logoUrl ? (
+                      <img src={provider.logoUrl} alt={provider.businessName} className="h-full w-full object-cover" />
+                    ) : categoryImage(provider.category) ? (
+                      <img src={categoryImage(provider.category)} alt="" className="h-10 w-10 object-contain" />
+                    ) : provider.businessName.charAt(0)}
                   </div>
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
                       <h3 className="truncate font-semibold text-slate-950">{provider.businessName}</h3>
                       {provider.isVerified && <span className="text-xs font-semibold text-blue-700">Verified</span>}
                     </div>
-                    <div className="mt-1 text-sm text-slate-500">{categoryLabel(provider.category)}</div>
+                    <div className="mt-1 text-sm text-slate-500">{categoryLabel(provider.category)}{provider.providerType ? ' · ' + (provider.providerType === 'COMPANY' ? 'Company' : 'Individual professional') : ''}</div>
                     <div className="mt-1 text-sm text-slate-500">{Number(provider.ratingAvg || 0).toFixed(1)} rating · {provider.ratingCount || 0} reviews</div>
                   </div>
                 </div>
