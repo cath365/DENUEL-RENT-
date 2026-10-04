@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { get } from '@vercel/blob';
 import { prisma } from '@/lib/prisma';
 import { requireAuth } from '@/lib/auth';
 
@@ -31,36 +32,75 @@ export async function GET(
       return NextResponse.json({ error: 'Document not found' }, { status: 404 });
     }
 
-    const ownsDocument = Boolean(document.provider.userId && document.provider.userId === user.id);
+    const ownsDocument = Boolean(
+      document.provider.userId && document.provider.userId === user.id
+    );
     const isAdmin = user.role === 'ADMIN';
 
     if (!ownsDocument && !isAdmin) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
-    const isPrivateBlob = document.fileUrl.includes('.private.blob.vercel-storage.com');
-    const token = process.env.PRIVATE_BLOB_READ_WRITE_TOKEN;
+    const isPrivateBlob = document.fileUrl.includes(
+      '.private.blob.vercel-storage.com'
+    );
 
-    if (isPrivateBlob && !token) {
-      return NextResponse.json({ error: 'Private document storage is unavailable' }, { status: 503 });
+    if (isPrivateBlob) {
+      const token = process.env.PRIVATE_BLOB_READ_WRITE_TOKEN;
+      if (!token) {
+        return NextResponse.json(
+          { error: 'Private document storage is unavailable' },
+          { status: 503 }
+        );
+      }
+
+      const result = await get(document.fileUrl, {
+        access: 'private',
+        token,
+      });
+
+      if (!result) {
+        return NextResponse.json(
+          { error: 'Document file not found' },
+          { status: 404 }
+        );
+      }
+
+      return new Response(result.stream, {
+        status: 200,
+        headers: {
+          'Content-Type':
+            result.blob.contentType ||
+            document.mimeType ||
+            'application/octet-stream',
+          'Content-Disposition':
+            'inline; filename="' + safeDispositionName(document.name) + '"',
+          'Cache-Control': 'private, no-store, max-age=0',
+          'X-Content-Type-Options': 'nosniff',
+        },
+      });
     }
 
-    const upstream = await fetch(document.fileUrl, {
-      cache: 'no-store',
-      headers: isPrivateBlob && token
-        ? { Authorization: 'Bearer ' + token }
-        : undefined,
-    });
+    // Legacy public verification files are still protected by this
+    // authenticated route until the provider securely re-uploads them.
+    const upstream = await fetch(document.fileUrl, { cache: 'no-store' });
 
     if (!upstream.ok || !upstream.body) {
-      return NextResponse.json({ error: 'Unable to open document' }, { status: upstream.status || 502 });
+      return NextResponse.json(
+        { error: 'Unable to open document' },
+        { status: upstream.status || 502 }
+      );
     }
 
     return new Response(upstream.body, {
       status: 200,
       headers: {
-        'Content-Type': upstream.headers.get('content-type') || document.mimeType || 'application/octet-stream',
-        'Content-Disposition': 'inline; filename="' + safeDispositionName(document.name) + '"',
+        'Content-Type':
+          upstream.headers.get('content-type') ||
+          document.mimeType ||
+          'application/octet-stream',
+        'Content-Disposition':
+          'inline; filename="' + safeDispositionName(document.name) + '"',
         'Cache-Control': 'private, no-store, max-age=0',
         'X-Content-Type-Options': 'nosniff',
       },
@@ -68,6 +108,9 @@ export async function GET(
   } catch (error) {
     if (error instanceof Response) return error;
     console.error('Service document access error:', error);
-    return NextResponse.json({ error: 'Unable to open document' }, { status: 500 });
+    return NextResponse.json(
+      { error: 'Unable to open document' },
+      { status: 500 }
+    );
   }
 }
