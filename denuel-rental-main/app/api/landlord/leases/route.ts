@@ -3,6 +3,8 @@ import { prisma } from '@/lib/prisma';
 import { requireAuth } from '@/lib/auth';
 
 // GET - Get lease agreements
+export const dynamic = 'force-dynamic';
+
 export async function GET(req: NextRequest) {
   try {
     const user = await requireAuth(req);
@@ -51,6 +53,7 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json(leases);
   } catch (error) {
+    if (error instanceof Response) return error;
     console.error('Fetch leases error:', error);
     return NextResponse.json({ error: 'Failed to fetch leases' }, { status: 500 });
   }
@@ -148,6 +151,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json(lease, { status: 201 });
   } catch (error) {
+    if (error instanceof Response) return error;
     console.error('Create lease error:', error);
     return NextResponse.json({ error: 'Failed to create lease' }, { status: 500 });
   }
@@ -226,6 +230,7 @@ export async function PUT(req: NextRequest) {
 
     return NextResponse.json(updated);
   } catch (error) {
+    if (error instanceof Response) return error;
     console.error('Update lease error:', error);
     return NextResponse.json({ error: 'Failed to update lease' }, { status: 500 });
   }
