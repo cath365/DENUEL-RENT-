@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import Header from '../../components/Header';
+import { csrfFetch } from '../../lib/csrf';
 
 type Application = {
   id: string;
@@ -22,12 +23,15 @@ type Application = {
 type Lease = {
   id: string;
   status: string;
+  content: string;
   monthlyRent: number;
   deposit?: number | null;
   startDate: string;
   endDate: string;
   landlordSigned: boolean;
+  landlordSignedAt?: string | null;
   tenantSigned: boolean;
+  tenantSignedAt?: string | null;
   property: {
     id: string;
     title: string;
@@ -112,8 +116,16 @@ function statusClass(status: string) {
   if (['REJECTED', 'CANCELED'].includes(status)) {
     return 'border-red-200 bg-red-50 text-red-800';
   }
-  if (['IN_PROGRESS', 'DRIVER_ASSIGNED', 'DRIVER_ARRIVING'].includes(status)) {
+  if (
+    ['IN_PROGRESS', 'DRIVER_ASSIGNED', 'DRIVER_ARRIVING', 'PENDING_SIGNATURES'].includes(status)
+  ) {
     return 'border-blue-200 bg-blue-50 text-blue-800';
+  }
+  if (status === 'TERMINATED') {
+    return 'border-red-200 bg-red-50 text-red-800';
+  }
+  if (status === 'EXPIRED') {
+    return 'border-slate-300 bg-slate-100 text-slate-700';
   }
   return 'border-amber-200 bg-amber-50 text-amber-800';
 }
@@ -133,7 +145,10 @@ export default function RenterHub() {
   const [overview, setOverview] = useState<Overview | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [selectedLease, setSelectedLease] = useState<Lease | null>(null);
+  const [leaseProcessing, setLeaseProcessing] = useState(false);
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
 
   async function loadOverview(initial = false) {
     if (initial) setLoading(true);
@@ -192,6 +207,62 @@ export default function RenterHub() {
 
   const now = Date.now();
 
+  async function signTenantLease() {
+    if (!selectedLease) return;
+
+    if (
+      !window.confirm(
+        'Sign this lease as the tenant? If the landlord has already signed, this will activate the lease and generate its rent schedule.'
+      )
+    ) {
+      return;
+    }
+
+    setLeaseProcessing(true);
+    setError('');
+    setNotice('');
+
+    try {
+      const res = await csrfFetch('/api/landlord/leases', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          leaseId: selectedLease.id,
+          action: 'sign',
+        }),
+      });
+      const { text, data } = await readResponse(res);
+
+      if (res.status === 401) {
+        window.location.href =
+          '/auth/login?redirect=' + encodeURIComponent('/renter-hub');
+        return;
+      }
+
+      if (!res.ok) {
+        const validation = Array.isArray(data?.error)
+          ? data.error
+              .map((item: any) => item.message)
+              .filter(Boolean)
+              .join(' ')
+          : data?.error;
+        throw new Error(validation || text || 'Unable to sign lease.');
+      }
+
+      setNotice(
+        data?.lease?.status === 'ACTIVE'
+          ? 'Lease signed and activated because both parties have now signed.'
+          : 'Tenant signature recorded.'
+      );
+      setSelectedLease(null);
+      await loadOverview(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to sign lease.');
+    } finally {
+      setLeaseProcessing(false);
+    }
+  }
+
   return (
     <div className="min-h-screen bg-slate-50 text-slate-950">
       <Header />
@@ -231,6 +302,12 @@ export default function RenterHub() {
         {error && (
           <section className="mt-6 border border-red-200 bg-red-50 p-4 text-sm text-red-700">
             {error}
+          </section>
+        )}
+
+        {notice && (
+          <section className="mt-6 border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
+            {notice}
           </section>
         )}
 
@@ -395,6 +472,25 @@ export default function RenterHub() {
                         <span>Tenant signed: {lease.tenantSigned ? 'Yes' : 'No'}</span>
                         <span>Landlord signed: {lease.landlordSigned ? 'Yes' : 'No'}</span>
                       </div>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedLease(lease);
+                          setError('');
+                          setNotice('');
+                        }}
+                        className={
+                          'mt-4 border px-4 py-2.5 text-sm font-semibold ' +
+                          (lease.status === 'PENDING_SIGNATURES' && !lease.tenantSigned
+                            ? 'border-slate-950 bg-slate-950 text-white'
+                            : 'border-slate-300 bg-white text-slate-700')
+                        }
+                      >
+                        {lease.status === 'PENDING_SIGNATURES' && !lease.tenantSigned
+                          ? 'Review & sign lease'
+                          : 'Review lease'}
+                      </button>
                     </article>
                   ))}
                 </div>
@@ -542,6 +638,130 @@ export default function RenterHub() {
           </aside>
         </div>
       </main>
+
+      {selectedLease && (
+        <div className="fixed inset-0 z-[80] bg-black/50 p-0 sm:p-4">
+          <div className="ml-auto h-full w-full max-w-3xl overflow-y-auto bg-white shadow-2xl">
+            <div className="sticky top-0 z-10 flex items-start justify-between border-b border-slate-200 bg-white px-5 py-5 sm:px-7">
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 className="text-xl font-bold">
+                    {selectedLease.property.title}
+                  </h2>
+                  <span
+                    className={
+                      'border px-2 py-1 text-xs font-semibold ' +
+                      statusClass(selectedLease.status)
+                    }
+                  >
+                    {humanize(selectedLease.status)}
+                  </span>
+                </div>
+                <p className="mt-1 text-sm text-slate-500">
+                  Landlord: {selectedLease.landlord.name || selectedLease.landlord.email}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedLease(null)}
+                className="text-sm font-semibold text-slate-500"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="space-y-7 p-5 sm:p-7">
+              <section className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <div className="text-xs text-slate-400">Monthly rent</div>
+                  <div className="mt-1 font-semibold">
+                    {money(selectedLease.monthlyRent)}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs text-slate-400">Deposit</div>
+                  <div className="mt-1 font-semibold">
+                    {selectedLease.deposit != null
+                      ? money(selectedLease.deposit)
+                      : 'Not recorded'}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs text-slate-400">Starts</div>
+                  <div className="mt-1 font-semibold">
+                    {new Date(selectedLease.startDate).toLocaleDateString('en-ZM')}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs text-slate-400">Ends</div>
+                  <div className="mt-1 font-semibold">
+                    {new Date(selectedLease.endDate).toLocaleDateString('en-ZM')}
+                  </div>
+                </div>
+              </section>
+
+              <section className="border-t border-slate-200 pt-6">
+                <h3 className="font-semibold">Signature status</h3>
+                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                  <div className="border border-slate-200 p-4">
+                    <div className="text-xs text-slate-400">Landlord</div>
+                    <div className="mt-1 font-semibold">
+                      {selectedLease.landlordSigned ? 'Signed' : 'Not signed'}
+                    </div>
+                    {selectedLease.landlordSignedAt && (
+                      <div className="mt-1 text-xs text-slate-500">
+                        {new Date(selectedLease.landlordSignedAt).toLocaleString('en-ZM')}
+                      </div>
+                    )}
+                  </div>
+                  <div className="border border-slate-200 p-4">
+                    <div className="text-xs text-slate-400">Tenant</div>
+                    <div className="mt-1 font-semibold">
+                      {selectedLease.tenantSigned ? 'Signed' : 'Not signed'}
+                    </div>
+                    {selectedLease.tenantSignedAt && (
+                      <div className="mt-1 text-xs text-slate-500">
+                        {new Date(selectedLease.tenantSignedAt).toLocaleString('en-ZM')}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </section>
+
+              <section className="border-t border-slate-200 pt-6">
+                <h3 className="font-semibold">Lease content</h3>
+                {selectedLease.content ? (
+                  <div className="mt-3 max-h-96 overflow-y-auto whitespace-pre-wrap border border-slate-200 bg-slate-50 p-4 text-sm leading-6 text-slate-700">
+                    {selectedLease.content}
+                  </div>
+                ) : (
+                  <p className="mt-2 text-sm text-slate-500">
+                    No lease document content is stored for this agreement.
+                  </p>
+                )}
+              </section>
+
+              {selectedLease.status === 'PENDING_SIGNATURES' &&
+                !selectedLease.tenantSigned && (
+                  <section className="border-t border-slate-200 pt-6">
+                    <h3 className="font-semibold">Tenant signature</h3>
+                    <p className="mt-2 text-sm leading-6 text-slate-600">
+                      Review the stored lease content above before signing. Your signature is recorded with the current time. If the landlord has already signed, the lease will become active and the rent schedule will be created.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={signTenantLease}
+                      disabled={leaseProcessing}
+                      className="mt-4 bg-slate-950 px-5 py-3 text-sm font-semibold text-white disabled:opacity-50"
+                    >
+                      {leaseProcessing ? 'Signing…' : 'Sign lease as tenant'}
+                    </button>
+                  </section>
+                )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
