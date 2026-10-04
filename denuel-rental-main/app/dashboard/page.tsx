@@ -169,6 +169,7 @@ export default async function DashboardPage() {
               ['Rent payments', '/landlord/payments'],
               ['Maintenance', '/landlord/maintenance'],
               ['Expenses', '/landlord/expenses'],
+              ['My transport requests', '/transport/requests'],
             ]} />
             <div className="border border-slate-200 bg-white p-6">
               <h2 className="text-xl font-semibold text-slate-950">Property management</h2>
@@ -213,6 +214,7 @@ export default async function DashboardPage() {
               ['Marketing', '/dashboard/marketing'],
               ['Commission', '/dashboard/commission'],
               ['Public agent directory', '/agents'],
+              ['My transport requests', '/transport/requests'],
             ]} />
           </div>
         </main>
@@ -280,6 +282,7 @@ export default async function DashboardPage() {
             ['Saved properties', '/favorites'],
             ['Saved searches', '/saved-search'],
             ['Notifications', '/notifications'],
+            ['My transport requests', '/transport/requests'],
             ['Renter hub', '/renter-hub'],
             ['Rent payments', '/rent-payment'],
           ]} />
