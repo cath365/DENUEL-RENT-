@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { del } from '@vercel/blob';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, requireCsrf } from '@/lib/auth';
 
@@ -114,6 +115,20 @@ export async function DELETE(req: NextRequest) {
     await prisma.serviceDocument.delete({
       where: { id: docId },
     });
+
+    if (document.fileUrl.includes('.blob.vercel-storage.com')) {
+      const token = document.fileUrl.includes('.private.blob.vercel-storage.com')
+        ? process.env.PRIVATE_BLOB_READ_WRITE_TOKEN
+        : process.env.BLOB_READ_WRITE_TOKEN;
+
+      if (token) {
+        try {
+          await del(document.fileUrl, { token });
+        } catch {
+          console.warn('Unable to clean up deleted service verification blob.');
+        }
+      }
+    }
 
     return NextResponse.json({ message: 'Document deleted' });
   } catch (error) {
