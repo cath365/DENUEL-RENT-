@@ -26,7 +26,7 @@ function LoginContent() {
     setLoading(true);
 
     try {
-      const res = await login({ email: email.trim(), password: password.trim() });
+      const res = await login({ email: email.trim(), password });
 
       if (res?.error) {
         setError(res.error);
