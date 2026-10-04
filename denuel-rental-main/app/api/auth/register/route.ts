@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import prisma from '../../../../lib/prisma';
 import { hashPassword, issueTokens } from '../../../../lib/auth';
 import { z } from 'zod';
+import { publicServerError } from '../../../../lib/publicError';
 
 const RegisterSchema = z.object({
   name: z.string().min(1).optional(),
@@ -60,8 +61,9 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: err.errors[0]?.message || 'Validation error' }, { status: 422 });
     }
     
-    const message = err instanceof Error ? err.message : 'Registration failed';
-    return NextResponse.json({ error: message }, { status: 400 });
+    console.error('Registration failed', err);
+    const safe = publicServerError(err, 'Registration failed. Please try again.');
+    return NextResponse.json({ error: safe.message }, { status: safe.status });
   }
 }
 
