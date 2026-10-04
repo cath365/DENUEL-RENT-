@@ -207,15 +207,21 @@ export async function PUT(req: NextRequest) {
     const user = await requireAuth(req);
     requireCsrf(req);
 
-    const body = await req.json();
+    const body = await req.json().catch(() => ({}));
     const appointmentId =
       typeof body.appointmentId === 'string' ? body.appointmentId : '';
     const requestedStatus =
       typeof body.status === 'string' ? body.status : '';
     const feedback =
-      typeof body.feedback === 'string' ? body.feedback.trim().slice(0, 1500) : '';
-    const rating = Number(body.rating);
-    const rescheduledAt = body.scheduledAt ? new Date(body.scheduledAt) : null;
+      typeof body.feedback === 'string'
+        ? body.feedback.trim().slice(0, 1500)
+        : '';
+    const rating =
+      body.rating === undefined || body.rating === null || body.rating === ''
+        ? null
+        : Number(body.rating);
+    const rescheduledAt =
+      body.scheduledAt ? new Date(body.scheduledAt) : null;
 
     if (!appointmentId) {
       return NextResponse.json(
@@ -226,11 +232,22 @@ export async function PUT(req: NextRequest) {
 
     const appointment = await prisma.viewingAppointment.findUnique({
       where: { id: appointmentId },
-      include: { property: true },
+      include: {
+        property: {
+          select: {
+            id: true,
+            title: true,
+            ownerId: true,
+          },
+        },
+      },
     });
 
     if (!appointment) {
-      return NextResponse.json({ error: 'Appointment not found.' }, { status: 404 });
+      return NextResponse.json(
+        { error: 'Appointment not found.' },
+        { status: 404 }
+      );
     }
 
     const isOwner = appointment.property.ownerId === user.id;
@@ -238,34 +255,28 @@ export async function PUT(req: NextRequest) {
     const isAdmin = user.role === 'ADMIN';
 
     if (!isOwner && !isVisitor && !isAdmin) {
-      return NextResponse.json({ error: 'Forbidden.' }, { status: 403 });
+      return NextResponse.json(
+        { error: 'Forbidden.' },
+        { status: 403 }
+      );
     }
 
     const updateData: Record<string, unknown> = {};
+    let notificationType = '';
+    let notificationMessage = '';
 
-    if (requestedStatus) {
-      if (isVisitor && requestedStatus !== 'CANCELED' && !isAdmin) {
+    if (rescheduledAt) {
+      if (!isOwner && !isAdmin) {
         return NextResponse.json(
-          { error: 'Visitors can only cancel their own viewing request.' },
+          { error: 'Only the property manager can reschedule a viewing.' },
           { status: 403 }
         );
       }
 
       if (
-        (isOwner || isAdmin) &&
-        !['PENDING', 'CONFIRMED', 'COMPLETED', 'CANCELED', 'NO_SHOW'].includes(requestedStatus)
+        Number.isNaN(rescheduledAt.getTime()) ||
+        rescheduledAt.getTime() <= Date.now()
       ) {
-        return NextResponse.json(
-          { error: 'Invalid viewing status.' },
-          { status: 400 }
-        );
-      }
-
-      updateData.status = requestedStatus;
-    }
-
-    if (rescheduledAt) {
-      if (Number.isNaN(rescheduledAt.getTime()) || rescheduledAt.getTime() <= Date.now()) {
         return NextResponse.json(
           { error: 'Choose a valid future viewing time.' },
           { status: 400 }
@@ -274,14 +285,75 @@ export async function PUT(req: NextRequest) {
 
       updateData.scheduledAt = rescheduledAt;
       updateData.status = 'PENDING';
+      notificationType = 'VIEWING_RESCHEDULED';
+      notificationMessage =
+        `The viewing for "${appointment.property.title}" was rescheduled. Please review the new requested time.`;
+    }
+
+    if (requestedStatus) {
+      if (isVisitor && !isAdmin) {
+        if (requestedStatus !== 'CANCELED') {
+          return NextResponse.json(
+            { error: 'Visitors can only cancel their own viewing request.' },
+            { status: 403 }
+          );
+        }
+      }
+
+      if (
+        (isOwner || isAdmin) &&
+        ![
+          'PENDING',
+          'CONFIRMED',
+          'COMPLETED',
+          'CANCELED',
+          'NO_SHOW',
+        ].includes(requestedStatus)
+      ) {
+        return NextResponse.json(
+          { error: 'Invalid viewing status.' },
+          { status: 400 }
+        );
+      }
+
+      updateData.status = requestedStatus;
+
+      if (requestedStatus === 'CONFIRMED') {
+        notificationType = 'VIEWING_CONFIRMED';
+        notificationMessage =
+          `Your viewing for "${appointment.property.title}" was confirmed.`;
+      } else if (requestedStatus === 'CANCELED') {
+        notificationType = 'VIEWING_CANCELED';
+        notificationMessage =
+          `The viewing for "${appointment.property.title}" was canceled.`;
+      } else if (requestedStatus === 'COMPLETED') {
+        notificationType = 'VIEWING_COMPLETED';
+        notificationMessage =
+          `The viewing for "${appointment.property.title}" was marked completed.`;
+      } else if (requestedStatus === 'NO_SHOW') {
+        notificationType = 'VIEWING_NO_SHOW';
+        notificationMessage =
+          `The viewing for "${appointment.property.title}" was marked as no-show.`;
+      }
     }
 
     if (isVisitor) {
-      if (feedback) updateData.feedback = feedback;
-      if (Number.isFinite(rating)) {
-        if (rating < 1 || rating > 5) {
-          return NextResponse.json({ error: 'Rating must be from 1 to 5.' }, { status: 400 });
+      if (feedback) {
+        updateData.feedback = feedback;
+      }
+
+      if (rating !== null) {
+        if (
+          !Number.isFinite(rating) ||
+          rating < 1 ||
+          rating > 5
+        ) {
+          return NextResponse.json(
+            { error: 'Rating must be from 1 to 5.' },
+            { status: 400 }
+          );
         }
+
         updateData.rating = Math.round(rating);
       }
     }
@@ -296,29 +368,57 @@ export async function PUT(req: NextRequest) {
     const updated = await prisma.viewingAppointment.update({
       where: { id: appointmentId },
       data: updateData,
+      include: {
+        property: {
+          select: {
+            id: true,
+            title: true,
+            city: true,
+            area: true,
+          },
+        },
+        visitor: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            phone: true,
+          },
+        },
+      },
     });
 
-    if (requestedStatus === 'CONFIRMED') {
+    if (notificationType) {
       try {
-        await prisma.notification.create({
-          data: {
-            userId: appointment.visitorId,
-            type: 'VIEWING_CONFIRMED',
+        const targetUserId =
+          isVisitor && requestedStatus === 'CANCELED'
+            ? appointment.property.ownerId
+            : appointment.visitorId;
+
+        if (targetUserId !== user.id) {
+          await prisma.notification.create({
             data: {
-              appointmentId,
-              propertyTitle: appointment.property.title,
-              scheduledAt: updated.scheduledAt,
+              userId: targetUserId,
+              type: notificationType,
+              data: {
+                appointmentId,
+                propertyId: appointment.property.id,
+                propertyTitle: appointment.property.title,
+                scheduledAt: updated.scheduledAt,
+                message: notificationMessage,
+              },
             },
-          },
-        });
+          });
+        }
       } catch {
-        // Status update remains valid if notification delivery fails.
+        // The viewing update remains valid if notification delivery fails.
       }
     }
 
     return NextResponse.json(updated);
   } catch (error) {
     if (error instanceof Response) return error;
+
     console.error('Update viewing appointment error:', error);
     return NextResponse.json(
       { error: 'Unable to update the viewing request right now.' },
