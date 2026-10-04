@@ -33,6 +33,7 @@ export async function GET(req: NextRequest) {
       totalUnread,
     });
   } catch (error: any) {
+    if (error instanceof Response) return error;
     console.error('Error fetching conversations:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
@@ -108,6 +109,7 @@ export async function POST(req: NextRequest) {
       message: newMessage,
     });
   } catch (error: any) {
+    if (error instanceof Response) return error;
     console.error('Error creating conversation:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
