@@ -2,12 +2,12 @@ import { NextResponse } from 'next/server';
 import prisma from '../../../lib/prisma';
 import { z } from 'zod';
 import { requireAuth } from '../../../lib/auth';
+import { publicServerError } from '../../../lib/publicError';
 
 const QuerySchema = z.object({
   q: z.string().optional(),
   city: z.string().optional(),
   area: z.string().optional(),
-  status: z.enum(['DRAFT', 'PENDING', 'APPROVED', 'REJECTED']).optional(),
   ownerId: z.string().optional(),
   listingType: z.enum(['RENT', 'SALE', 'BOTH']).optional(),
   propertyType: z.string().optional(),
@@ -17,7 +17,7 @@ const QuerySchema = z.object({
   maxBedrooms: z.coerce.number().optional(),
   sortBy: z.enum(['newest', 'price_asc', 'price_desc', 'popular']).optional(),
   page: z.coerce.number().default(1),
-  pageSize: z.coerce.number().default(12),
+  pageSize: z.coerce.number().min(1).max(100).default(12),
 });
 
 const UrlSchema = z.preprocess(
@@ -26,7 +26,7 @@ const UrlSchema = z.preprocess(
 );
 
 const ImageSchema = z.union([
-  z.string().url(), // Legacy: just URL string
+  z.string().url(),
   z.object({
     url: z.string().url(),
     is360: z.boolean().optional().default(false),
@@ -35,33 +35,46 @@ const ImageSchema = z.union([
 ]);
 
 const CreateSchema = z.object({
-  title: z.string().min(3),
-  description: z.string().min(10),
+  title: z.string().trim().min(3),
+  description: z.string().trim().min(20),
+  propertyType: z.enum([
+    'APARTMENT',
+    'HOUSE',
+    'DUPLEX',
+    'STUDIO',
+    'ROOM',
+    'OFFICE',
+    'SHOP',
+    'WAREHOUSE',
+    'LAND',
+    'COMMERCIAL',
+    'OTHER',
+  ]),
   price: z.number().positive(),
   deposit: z.number().nonnegative().optional(),
-  listingType: z.enum(['RENT', 'SALE', 'BOTH']).default('RENT'),
-  country: z.string().min(2).optional(),
-  city: z.string().min(2),
-  area: z.string().min(1).optional(),
-  addressText: z.string().min(1).optional(),
-  latitude: z.number().optional(),
-  longitude: z.number().optional(),
+  listingType: z.enum(['RENT', 'SALE', 'BOTH']),
+  country: z.string().trim().min(2).default('Zambia'),
+  city: z.string().trim().min(2),
+  area: z.string().trim().min(1).optional(),
+  addressText: z.string().trim().min(1).optional(),
+  latitude: z.number().min(-90).max(90).optional(),
+  longitude: z.number().min(-180).max(180).optional(),
   bedrooms: z.number().int().min(0),
   bathrooms: z.number().int().min(0),
   sizeSqm: z.number().positive().optional(),
-  furnished: z.boolean().optional(),
-  parkingSpaces: z.number().int().min(0).optional(),
-  petsAllowed: z.boolean().optional(),
-  internetAvailable: z.boolean().optional(),
-  waterSource: z.enum(['MUNICIPAL', 'BOREHOLE', 'WELL', 'TANK', 'OTHER']).optional(),
-  powerBackup: z.enum(['NONE', 'SOLAR', 'INVERTER', 'GENERATOR', 'OTHER']).optional(),
+  furnished: z.boolean(),
+  parkingSpaces: z.number().int().min(0),
+  petsAllowed: z.boolean(),
+  internetAvailable: z.boolean(),
+  waterSource: z.enum(['MUNICIPAL', 'BOREHOLE', 'WELL', 'TANK', 'OTHER']),
+  powerBackup: z.enum(['NONE', 'SOLAR', 'INVERTER', 'GENERATOR', 'OTHER']),
   securityFeatures: z.array(z.string().min(1)).optional(),
-  isShortStay: z.boolean().optional(),
-  isStudentFriendly: z.boolean().optional(),
+  isShortStay: z.boolean().default(false),
+  isStudentFriendly: z.boolean().default(false),
   virtualTourUrl: UrlSchema,
   amenities: z.array(z.string().min(1)).optional(),
   rules: z.array(z.string().min(1)).optional(),
-  images: z.array(ImageSchema).optional(),
+  images: z.array(ImageSchema).min(1, 'At least one real property image is required.'),
 });
 
 export async function GET(req: Request) {
@@ -69,34 +82,41 @@ export async function GET(req: Request) {
     const url = new URL(req.url);
     const parsed = QuerySchema.parse(Object.fromEntries(url.searchParams));
 
-    const where: any = {};
+    // This public endpoint only exposes approved listings.
+    const where: any = { status: 'APPROVED' };
+
     if (parsed.q) {
       where.OR = [
-        { title: { contains: parsed.q, mode: 'insensitive' } },
-        { description: { contains: parsed.q, mode: 'insensitive' } },
-        { city: { contains: parsed.q, mode: 'insensitive' } },
-        { area: { contains: parsed.q, mode: 'insensitive' } },
-        { addressText: { contains: parsed.q, mode: 'insensitive' } },
+        { title: { contains: parsed.q } },
+        { description: { contains: parsed.q } },
+        { city: { contains: parsed.q } },
+        { area: { contains: parsed.q } },
+        { addressText: { contains: parsed.q } },
       ];
     }
-    if (parsed.city) where.city = { contains: parsed.city, mode: 'insensitive' };
-    if (parsed.area) where.area = { contains: parsed.area, mode: 'insensitive' };
+    if (parsed.city) where.city = { contains: parsed.city };
+    if (parsed.area) where.area = { contains: parsed.area };
     if (parsed.ownerId) where.ownerId = parsed.ownerId;
-    if (parsed.status) where.status = parsed.status;
     if (parsed.listingType) {
-      where.listingType = parsed.listingType === 'BOTH' ? { in: ['RENT', 'SALE', 'BOTH'] } : { in: [parsed.listingType, 'BOTH'] };
+      where.listingType =
+        parsed.listingType === 'BOTH'
+          ? { in: ['RENT', 'SALE', 'BOTH'] }
+          : { in: [parsed.listingType, 'BOTH'] };
     }
     if (parsed.propertyType) where.propertyType = parsed.propertyType;
-    if (parsed.minPrice || parsed.maxPrice) {
+    if (parsed.minPrice != null || parsed.maxPrice != null) {
       where.price = {};
-      if (parsed.minPrice) where.price.gte = parsed.minPrice;
-      if (parsed.maxPrice) where.price.lte = parsed.maxPrice;
+      if (parsed.minPrice != null) where.price.gte = parsed.minPrice;
+      if (parsed.maxPrice != null) where.price.lte = parsed.maxPrice;
     }
-    if (parsed.minBedrooms) where.bedrooms = { gte: parsed.minBedrooms };
+    if (parsed.minBedrooms != null || parsed.maxBedrooms != null) {
+      where.bedrooms = {};
+      if (parsed.minBedrooms != null) where.bedrooms.gte = parsed.minBedrooms;
+      if (parsed.maxBedrooms != null) where.bedrooms.lte = parsed.maxBedrooms;
+    }
 
     const skip = (parsed.page - 1) * parsed.pageSize;
 
-    // Determine sort order
     let orderBy: any = { createdAt: 'desc' };
     if (parsed.sortBy === 'price_asc') orderBy = { price: 'asc' };
     else if (parsed.sortBy === 'price_desc') orderBy = { price: 'desc' };
@@ -116,9 +136,21 @@ export async function GET(req: Request) {
       }),
     ]);
 
-    return NextResponse.json({ total, page: parsed.page, pageSize: parsed.pageSize, items, properties: items });
-  } catch (e: any) {
-    return NextResponse.json({ error: e?.message || 'Invalid request' }, { status: 400 });
+    return NextResponse.json({
+      total,
+      page: parsed.page,
+      pageSize: parsed.pageSize,
+      items,
+      properties: items,
+    });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return NextResponse.json({ error: 'Invalid property search.' }, { status: 422 });
+    }
+
+    console.error('Property search failed', error);
+    const safe = publicServerError(error, 'Unable to load properties right now.');
+    return NextResponse.json({ error: safe.message }, { status: safe.status });
   }
 }
 
@@ -135,10 +167,11 @@ export async function POST(req: Request) {
       data: {
         title: parsed.title,
         description: parsed.description,
+        propertyType: parsed.propertyType,
         price: parsed.price,
         deposit: parsed.deposit,
         listingType: parsed.listingType,
-        country: parsed.country || 'Zambia',
+        country: parsed.country,
         city: parsed.city,
         area: parsed.area,
         addressText: parsed.addressText,
@@ -147,23 +180,22 @@ export async function POST(req: Request) {
         bedrooms: parsed.bedrooms,
         bathrooms: parsed.bathrooms,
         sizeSqm: parsed.sizeSqm,
-        furnished: parsed.furnished ?? false,
-        parkingSpaces: parsed.parkingSpaces ?? 0,
-        petsAllowed: parsed.petsAllowed ?? false,
-        internetAvailable: parsed.internetAvailable ?? false,
+        furnished: parsed.furnished,
+        parkingSpaces: parsed.parkingSpaces,
+        petsAllowed: parsed.petsAllowed,
+        internetAvailable: parsed.internetAvailable,
         waterSource: parsed.waterSource,
         powerBackup: parsed.powerBackup,
         securityFeatures: parsed.securityFeatures || [],
-        isShortStay: parsed.isShortStay ?? false,
-        isStudentFriendly: parsed.isStudentFriendly ?? false,
+        isShortStay: parsed.isShortStay,
+        isStudentFriendly: parsed.isStudentFriendly,
         virtualTourUrl: parsed.virtualTourUrl,
         amenities: parsed.amenities || [],
         rules: parsed.rules || [],
         ownerId: user.id,
-        status: 'APPROVED', // Auto-approve properties for immediate visibility
-        images: parsed.images?.length ? { 
+        status: 'PENDING',
+        images: {
           create: parsed.images.map((img, idx) => {
-            // Handle both legacy string URLs and new image objects
             const isString = typeof img === 'string';
             return {
               url: isString ? img : img.url,
@@ -171,18 +203,31 @@ export async function POST(req: Request) {
               is360: isString ? false : (img.is360 ?? false),
               roomName: isString ? undefined : img.roomName,
             };
-          }) 
-        } : undefined,
+          }),
+        },
       },
       include: { images: { orderBy: { sortOrder: 'asc' } } },
     });
 
-    return NextResponse.json({ id: prop.id, property: prop }, { status: 201 });
-  } catch (e: any) {
-    if (e instanceof z.ZodError) return NextResponse.json({ error: e.errors }, { status: 422 });
-    if (e instanceof Response) return e;
-    console.error('Property creation error:', e);
-    return NextResponse.json({ error: e?.message || 'Invalid request' }, { status: 400 });
+    return NextResponse.json(
+      {
+        id: prop.id,
+        property: prop,
+        message: 'Property submitted for review.',
+      },
+      { status: 201 }
+    );
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return NextResponse.json(
+        { error: error.errors[0]?.message || 'Please check the property details.' },
+        { status: 422 }
+      );
+    }
+    if (error instanceof Response) return error;
+
+    console.error('Property creation failed', error);
+    const safe = publicServerError(error, 'Unable to submit this property right now.');
+    return NextResponse.json({ error: safe.message }, { status: safe.status });
   }
 }
-
