@@ -6,12 +6,13 @@ function requiredDocumentTypes(provider: any) {
   const types: string[] = [];
 
   if (provider.providerType === 'COMPANY') {
-    types.push('BUSINESS_LICENSE', 'TAX_CLEARANCE');
-    if (provider.category === 'SECURITY') types.push('LICENSE');
+    types.push('BUSINESS_LICENSE', 'TAX_CLEARANCE', 'NRC');
+    if (provider.category === 'SECURITY') types.push('LICENSE', 'BACKGROUND_CHECK');
     if (provider.insured) types.push('INSURANCE');
   } else {
     types.push('NRC');
     if (provider.category === 'SECURITY') types.push('LICENSE', 'BACKGROUND_CHECK');
+    if (provider.category === 'ELECTRICIAN') types.push('QUALIFICATION');
   }
 
   return types;

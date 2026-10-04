@@ -266,7 +266,7 @@ export async function POST(req: NextRequest) {
         bio: bio || description,
         profilePhotoUrl,
         isVerified: false,
-        isActive: true,
+        isActive: false,
         isAvailable: true,
       },
     });

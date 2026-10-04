@@ -25,6 +25,7 @@ export default function ServiceProviderRegisterPage() {
   const [category, setCategory] = useState('SECURITY');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [profileImage, setProfileImage] = useState<File | null>(null);
   const isCompany = providerType === 'COMPANY';
   const isSecurity = category === 'SECURITY';
 
@@ -36,6 +37,34 @@ export default function ServiceProviderRegisterPage() {
     setError('');
 
     const form = new FormData(e.currentTarget);
+
+    const meRes = await fetch('/api/auth/me');
+    const me = await meRes.json().catch(() => ({ user: null }));
+    if (!me?.user) {
+      setSaving(false);
+      setError('Sign in or create an account before registering a service profile.');
+      return;
+    }
+
+    if (!profileImage) {
+      setSaving(false);
+      setError(isCompany ? 'Add the company logo before continuing.' : 'Add a professional profile photo before continuing.');
+      return;
+    }
+
+    const imageForm = new FormData();
+    imageForm.append('file', profileImage);
+    imageForm.append(
+      'key',
+      'service-profiles/' + Date.now() + '-' + profileImage.name.replace(/\s+/g, '-')
+    );
+    const imageRes = await fetch('/api/uploads/direct', { method: 'POST', body: imageForm });
+    const imageData = await imageRes.json().catch(() => ({}));
+    if (!imageRes.ok || !imageData.publicUrl) {
+      setSaving(false);
+      setError(imageData.error || 'Could not upload the profile image.');
+      return;
+    }
     const services = String(form.get('servicesOffered') || '').split(',').map((x) => x.trim()).filter(Boolean);
     const areas = String(form.get('serviceAreas') || '').split(',').map((x) => x.trim()).filter(Boolean);
     const languages = String(form.get('languages') || '').split(',').map((x) => x.trim()).filter(Boolean);
@@ -70,6 +99,8 @@ export default function ServiceProviderRegisterPage() {
       serviceAreas: areas,
       languages,
       priceRange: String(form.get('priceRange') || ''),
+      logoUrl: isCompany ? imageData.publicUrl : undefined,
+      profilePhotoUrl: !isCompany ? imageData.publicUrl : undefined,
       categoryDetails: isSecurity ? {
         guardingServices: String(form.get('guardingServices') || ''),
         cctv: String(form.get('cctv') || ''),
@@ -149,7 +180,23 @@ export default function ServiceProviderRegisterPage() {
           </section>
 
           <section className="border border-slate-200 bg-white p-6">
-            <h2 className="text-xl font-bold text-slate-950">Identity & verification</h2>
+            <h2 className="text-xl font-bold text-slate-950">Profile identity</h2>
+            <p className="mt-1 text-sm text-slate-500">{isCompany ? 'Use the real company logo that clients recognise.' : 'Use a clear professional photo of yourself.'}</p>
+            <div className="mt-5">
+              <label className={label}>{isCompany ? 'Company logo *' : 'Professional profile photo *'}</label>
+              <input
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                required
+                onChange={(e) => setProfileImage(e.target.files?.[0] || null)}
+                className="block w-full border border-slate-300 bg-white p-3 text-sm"
+              />
+              {profileImage && <p className="mt-2 text-xs text-slate-500">{profileImage.name}</p>}
+            </div>
+          </section>
+
+          <section className="border border-slate-200 bg-white p-6">
+            <h2 className="text-xl font-bold text-slate-950">Identity & verification details</h2>
             <p className="mt-1 text-sm text-slate-500">Sensitive verification documents are reviewed privately. Public profiles show verification status rather than exposing private documents.</p>
             <div className="mt-5 grid gap-4 sm:grid-cols-2">
               {isCompany ? (
@@ -192,12 +239,12 @@ export default function ServiceProviderRegisterPage() {
               <h2 className="text-xl font-bold text-slate-950">Security capabilities</h2>
               <p className="mt-1 text-sm text-slate-500">Give clients enough operational information to understand the security services you can actually provide.</p>
               <div className="mt-5 grid gap-4 sm:grid-cols-2">
-                <div><label className={label}>Guarding services</label><input name="guardingServices" className={input} placeholder="Residential, commercial, event..." /></div>
-                <div><label className={label}>CCTV & surveillance</label><input name="cctv" className={input} placeholder="Installation, monitoring, maintenance..." /></div>
-                <div><label className={label}>Alarm response</label><input name="alarmResponse" className={input} /></div>
-                <div><label className={label}>Patrol services</label><input name="patrolServices" className={input} /></div>
-                <div><label className={label}>Control room capability</label><input name="controlRoom" className={input} /></div>
-                <div><label className={label}>Coverage model</label><input name="coverageModel" className={input} placeholder="24/7, scheduled shifts, call-out..." /></div>
+                <div><label className={label}>Guarding services {isCompany ? '*' : ''}</label><input name="guardingServices" required={isCompany} className={input} placeholder="Residential, commercial, event..." /></div>
+                <div><label className={label}>CCTV & surveillance {isCompany ? '*' : ''}</label><input name="cctv" required={isCompany} className={input} placeholder="Installation, monitoring, maintenance..." /></div>
+                <div><label className={label}>Alarm response {isCompany ? '*' : ''}</label><input name="alarmResponse" required={isCompany} className={input} /></div>
+                <div><label className={label}>Patrol services {isCompany ? '*' : ''}</label><input name="patrolServices" required={isCompany} className={input} /></div>
+                <div><label className={label}>Control room capability {isCompany ? '*' : ''}</label><input name="controlRoom" required={isCompany} className={input} /></div>
+                <div><label className={label}>Coverage model {isCompany ? '*' : ''}</label><input name="coverageModel" required={isCompany} className={input} placeholder="24/7, scheduled shifts, call-out..." /></div>
               </div>
             </section>
           )}
@@ -206,8 +253,8 @@ export default function ServiceProviderRegisterPage() {
             <h2 className="font-semibold text-slate-950">Required verification after profile creation</h2>
             <p className="mt-2 text-sm leading-6 text-slate-600">
               {isCompany
-                ? 'Company profiles must complete company-registration, TPIN/tax, authorised-contact ID and any category-specific licence checks. Security companies must also provide security-licence and background-screening evidence. Insurance evidence is required if the company claims to be insured.'
-                : 'Individual profiles must complete identity verification with an NRC/national ID and add a professional profile photo. Security professionals must provide licence and background-check evidence; electricians must provide a qualification, certificate or licence. The public profile only shows checks that DENUEL has approved.'}
+                ? 'Your company will remain hidden from the public Services directory until DENUEL approves the required documents. Company profiles must complete company-registration, TPIN/tax, authorised-contact ID and any category-specific licence checks. Security companies must also provide security-licence and background-screening evidence. Insurance evidence is required if the company claims to be insured.'
+                : 'Your professional profile will remain hidden from the public Services directory until DENUEL approves the required documents. Individual profiles must complete identity verification with an NRC/national ID and add a professional profile photo. Security professionals must provide licence and background-check evidence; electricians must provide a qualification, certificate or licence. The public profile only shows checks that DENUEL has approved.'}
             </p>
           </section>
 

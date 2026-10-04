@@ -50,7 +50,9 @@ export default function ServiceVerificationPage() {
       return [
         { type: 'BUSINESS_LICENSE', label: 'Company registration / business certificate', required: true, description: 'Official company or business registration document.' },
         { type: 'TAX_CLEARANCE', label: 'TPIN / tax document', required: true, description: 'Tax registration or clearance document.' },
+        { type: 'NRC', label: 'Authorised contact person ID', required: true, description: 'Identity document for the company representative responsible for the DENUEL account.' },
         { type: 'LICENSE', label: security ? 'Security / operating licence' : 'Professional or operating licence', required: security, description: 'Applicable operating or professional licence.' },
+        { type: 'BACKGROUND_CHECK', label: 'Staff screening / police-clearance evidence', required: security, description: 'Security companies must provide evidence of background screening or applicable police-clearance checks.' },
         { type: 'INSURANCE', label: 'Insurance evidence', required: Boolean(provider.insured), description: 'Current insurance certificate or cover note where applicable.' },
         { type: 'PROOF_OF_ADDRESS', label: 'Business address evidence', required: false, description: 'Lease, utility bill or other business address evidence.' },
       ];
@@ -58,7 +60,7 @@ export default function ServiceVerificationPage() {
 
     return [
       { type: 'NRC', label: 'NRC / national identity', required: true, description: 'Clear copy of the provider’s identity document.' },
-      { type: 'QUALIFICATION', label: 'Qualification / trade certificate', required: false, description: 'Relevant qualification, trade certificate or professional training.' },
+      { type: 'QUALIFICATION', label: 'Qualification / trade certificate', required: provider.category === 'ELECTRICIAN', description: 'Relevant qualification, trade certificate or professional training. Required for electricians on DENUEL.' },
       { type: 'LICENSE', label: security ? 'Security / professional licence' : 'Trade or professional licence', required: security, description: 'Applicable licence where the service requires one.' },
       { type: 'BACKGROUND_CHECK', label: 'Background / police clearance', required: security, description: 'Police clearance or equivalent background document where applicable.' },
       { type: 'PROOF_OF_ADDRESS', label: 'Proof of address', required: false, description: 'Recent document confirming current address.' },
@@ -131,7 +133,7 @@ export default function ServiceVerificationPage() {
           <div>
             <p className="text-sm font-semibold text-blue-700">{provider.providerType === 'COMPANY' ? 'Company verification' : 'Individual verification'}</p>
             <h1 className="mt-2 text-3xl font-bold tracking-[-0.035em] text-slate-950">{provider.businessName}</h1>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">Upload the documents that apply to your profile. Private files are reviewed by DENUEL and are not shown publicly.</p>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">Complete the required checks below. Your profile stays out of the public Services directory until an administrator approves the required documents.</p>
           </div>
           <Link href={'/services/' + provider.id} className="border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700">View public profile</Link>
         </div>
@@ -163,7 +165,7 @@ export default function ServiceVerificationPage() {
                       {doc && !doc.isVerified && <span className="bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-700">Awaiting review</span>}
                     </div>
                     <p className="mt-1 text-sm text-slate-500">{req.description}</p>
-                    {doc && <div className="mt-2 flex flex-wrap gap-3 text-xs text-slate-500"><a href={doc.fileUrl} target="_blank" rel="noreferrer" className="font-semibold text-blue-700">View uploaded file</a>{!doc.isVerified && <button onClick={() => removeDocument(doc.id)} className="font-semibold text-red-600">Remove</button>}</div>}
+                    {doc && <div className="mt-2 flex flex-wrap gap-3 text-xs text-slate-500"><span>File received by DENUEL for review.</span>{!doc.isVerified && <button onClick={() => removeDocument(doc.id)} className="font-semibold text-red-600">Remove</button>}</div>}
                   </div>
 
                   {!doc && (
