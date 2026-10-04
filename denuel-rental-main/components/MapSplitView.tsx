@@ -5,7 +5,7 @@ import { motion } from 'framer-motion';
 
 mapboxgl.accessToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || '';
 
-export default function MapSplitView({ properties }: { properties: any[] }) {
+export default function MapSplitView({ properties, listingType = 'RENT' }: { properties: any[]; listingType?: 'RENT' | 'SALE' }) {
   const mapRef = useRef<HTMLDivElement | null>(null);
   const mapInstance = useRef<any>(null);
   const [bboxChanged, setBboxChanged] = useState(false);
@@ -113,7 +113,7 @@ export default function MapSplitView({ properties }: { properties: any[] }) {
     const minLng = bounds.getWest();
     const maxLng = bounds.getEast();
 
-    const res = await fetch(`/api/search?listingType=RENT&minLat=${minLat}&maxLat=${maxLat}&minLng=${minLng}&maxLng=${maxLng}&page=1&pageSize=100`);
+    const res = await fetch(`/api/search?listingType=${listingType}&minLat=${minLat}&maxLat=${maxLat}&minLng=${minLng}&maxLng=${maxLng}&page=1&pageSize=100`);
     const json = await res.json();
     setVisibleItems(json.items || []);
     // update source
