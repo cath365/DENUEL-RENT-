@@ -1,11 +1,14 @@
 import { S3Client, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 
-const s3 = new S3Client({ region: process.env.AWS_REGION });
-
 export async function processImageKey(key: string) {
   const bucket = process.env.S3_BUCKET;
   const region = process.env.AWS_REGION;
-  if (!bucket) throw new Error('S3 not configured');
+
+  if (!bucket || !region) {
+    throw new Error('S3 image processing is not configured');
+  }
+
+  const s3 = new S3Client({ region });
   const { default: sharp } = await import('sharp');
   const get = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
   const body = await streamToBuffer(get.Body as any);
@@ -16,8 +19,19 @@ export async function processImageKey(key: string) {
   for (const w of sizes) {
     const out = await sharp(body).resize({ width: w }).jpeg({ quality: 80 }).toBuffer();
     const destKey = `${key}@w_${w}.jpg`;
-    await s3.send(new PutObjectCommand({ Bucket: bucket, Key: destKey, Body: out, ContentType: 'image/jpeg' }));
-    variants.push({ key: destKey, publicUrl: `https://${bucket}.s3.${region}.amazonaws.com/${destKey}`, width: w });
+    await s3.send(
+      new PutObjectCommand({
+        Bucket: bucket,
+        Key: destKey,
+        Body: out,
+        ContentType: 'image/jpeg',
+      })
+    );
+    variants.push({
+      key: destKey,
+      publicUrl: `https://${bucket}.s3.${region}.amazonaws.com/${destKey}`,
+      width: w,
+    });
   }
 
   return variants;
@@ -25,9 +39,9 @@ export async function processImageKey(key: string) {
 
 async function streamToBuffer(stream: any) {
   return new Promise<Buffer>((resolve, reject) => {
-    const _buf: any[] = [];
-    stream.on('data', (chunk: any) => _buf.push(chunk));
-    stream.on('end', () => resolve(Buffer.concat(_buf)));
+    const chunks: any[] = [];
+    stream.on('data', (chunk: any) => chunks.push(chunk));
+    stream.on('end', () => resolve(Buffer.concat(chunks)));
     stream.on('error', (err: any) => reject(err));
   });
 }
