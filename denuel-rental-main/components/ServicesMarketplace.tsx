@@ -41,17 +41,17 @@ interface Props {
   className?: string;
 }
 
-const categories: { value: ServiceCategory; label: string }[] = [
-  { value: 'MOVER', label: 'Moving' },
-  { value: 'CLEANER', label: 'Cleaning' },
-  { value: 'PLUMBER', label: 'Plumbing' },
-  { value: 'ELECTRICIAN', label: 'Electrical' },
-  { value: 'PAINTER', label: 'Painting' },
-  { value: 'LANDSCAPER', label: 'Landscaping' },
-  { value: 'PEST_CONTROL', label: 'Pest control' },
+const categories: { value: ServiceCategory; label: string; image?: string }[] = [
+  { value: 'SECURITY', label: 'Security', image: '/services/security.svg' },
+  { value: 'PEST_CONTROL', label: 'Pest control', image: '/services/pest-control.svg' },
+  { value: 'LANDSCAPER', label: 'Gardening & landscaping', image: '/services/gardening.svg' },
+  { value: 'PAINTER', label: 'Painting', image: '/services/painting.svg' },
+  { value: 'ELECTRICIAN', label: 'Electrical', image: '/services/electrical.svg' },
+  { value: 'PLUMBER', label: 'Plumbing', image: '/services/plumbing.svg' },
+  { value: 'CLEANER', label: 'Cleaning', image: '/services/cleaning.svg' },
+  { value: 'MOVER', label: 'Moving', image: '/services/moving.svg' },
   { value: 'HOME_INSPECTOR', label: 'Inspection' },
   { value: 'INTERIOR_DESIGNER', label: 'Interior design' },
-  { value: 'SECURITY', label: 'Security' },
 ];
 
 export default function ServicesMarketplace({ defaultCategory, defaultCity = 'Lusaka', className = '' }: Props) {
@@ -116,19 +116,22 @@ export default function ServicesMarketplace({ defaultCategory, defaultCity = 'Lu
   return (
     <div className={className}>
       <div className="grid gap-3 border border-slate-300 bg-white p-4 sm:grid-cols-[1fr_220px]">
-        <div className="flex flex-wrap gap-2">
-          <button onClick={() => setCategory('')} className={`border px-3 py-2 text-sm font-medium ${!category ? 'border-slate-950 bg-slate-950 text-white' : 'border-slate-300 text-slate-700'}`}>
+        <div>
+          <button onClick={() => setCategory('')} className={`mb-3 border px-3 py-2 text-sm font-medium ${!category ? 'border-slate-950 bg-slate-950 text-white' : 'border-slate-300 text-slate-700'}`}>
             All services
           </button>
-          {categories.map((item) => (
-            <button
-              key={item.value}
-              onClick={() => setCategory(item.value)}
-              className={`border px-3 py-2 text-sm font-medium ${category === item.value ? 'border-slate-950 bg-slate-950 text-white' : 'border-slate-300 text-slate-700'}`}
-            >
-              {item.label}
-            </button>
-          ))}
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-5">
+            {categories.map((item) => (
+              <button
+                key={item.value}
+                onClick={() => setCategory(item.value)}
+                className={`flex min-h-24 flex-col items-center justify-center border p-2 text-center text-xs font-semibold transition ${category === item.value ? 'border-slate-950 bg-slate-50 text-slate-950' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-400'}`}
+              >
+                {item.image ? <img src={item.image} alt="" className="mb-2 h-12 w-12 object-contain" /> : <div className="mb-2 h-12 w-12 rounded-full bg-slate-100" />}
+                {item.label}
+              </button>
+            ))}
+          </div>
         </div>
 
         <select value={city} onChange={(e) => setCity(e.target.value)} className="h-10 border border-slate-300 bg-white px-3 text-sm">
