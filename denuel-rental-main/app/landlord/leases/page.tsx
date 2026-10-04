@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import Header from '../../../components/Header';
 
-type LeaseFilter = 'ALL' | 'DRAFT' | 'ACTIVE' | 'ENDED' | 'CANCELED';
+type LeaseFilter = 'ALL' | 'DRAFT' | 'PENDING_SIGNATURES' | 'ACTIVE' | 'EXPIRED' | 'TERMINATED';
 
 function money(value: number) {
   return 'K' + Number(value || 0).toLocaleString();
@@ -13,8 +13,9 @@ function money(value: number) {
 function statusClass(status: string) {
   if (status === 'ACTIVE') return 'border-emerald-200 bg-emerald-50 text-emerald-800';
   if (status === 'DRAFT') return 'border-amber-200 bg-amber-50 text-amber-800';
-  if (status === 'ENDED') return 'border-slate-200 bg-slate-50 text-slate-600';
-  if (status === 'CANCELED') return 'border-red-200 bg-red-50 text-red-800';
+  if (status === 'PENDING_SIGNATURES') return 'border-blue-200 bg-blue-50 text-blue-800';
+  if (status === 'EXPIRED') return 'border-slate-200 bg-slate-50 text-slate-600';
+  if (status === 'TERMINATED') return 'border-red-200 bg-red-50 text-red-800';
   return 'border-slate-200 bg-white text-slate-600';
 }
 
@@ -63,8 +64,9 @@ export default function LeasesPage() {
     ALL: leases.length,
     DRAFT: leases.filter((lease) => lease.status === 'DRAFT').length,
     ACTIVE: leases.filter((lease) => lease.status === 'ACTIVE').length,
-    ENDED: leases.filter((lease) => lease.status === 'ENDED').length,
-    CANCELED: leases.filter((lease) => lease.status === 'CANCELED').length,
+    PENDING_SIGNATURES: leases.filter((lease) => lease.status === 'PENDING_SIGNATURES').length,
+    EXPIRED: leases.filter((lease) => lease.status === 'EXPIRED').length,
+    TERMINATED: leases.filter((lease) => lease.status === 'TERMINATED').length,
   }), [leases]);
 
   const visible = useMemo(
@@ -99,9 +101,10 @@ export default function LeasesPage() {
           {([
             ['ALL', 'All'],
             ['ACTIVE', 'Active'],
+            ['PENDING_SIGNATURES', 'Awaiting signatures'],
             ['DRAFT', 'Draft'],
-            ['ENDED', 'Ended'],
-            ['CANCELED', 'Canceled'],
+            ['EXPIRED', 'Expired'],
+            ['TERMINATED', 'Terminated'],
           ] as const).map(([value, label]) => (
             <button
               key={value}
