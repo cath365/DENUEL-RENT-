@@ -337,30 +337,55 @@ export async function PUT(req: NextRequest) {
 
       const updateData: Record<string, unknown> = {};
 
-      if (isLandlord || isAdmin) {
+      if (isTenant) {
+        if (lease.tenantSigned) {
+          return NextResponse.json(
+            { error: 'Your signature is already recorded for this lease.' },
+            { status: 409 }
+          );
+        }
+
+        updateData.tenantSigned = true;
+        updateData.tenantSignedAt = new Date();
+      } else if (isLandlord || isAdmin) {
+        if (lease.landlordSigned) {
+          return NextResponse.json(
+            {
+              error:
+                'The property-manager signature is already recorded for this lease.',
+            },
+            { status: 409 }
+          );
+        }
+
         updateData.landlordSigned = true;
         updateData.landlordSignedAt = new Date();
       }
 
-      if (isTenant) {
-        updateData.tenantSigned = true;
-        updateData.tenantSignedAt = new Date();
-      }
-
-      const updatedLease = await prisma.leaseAgreement.update({
+      await prisma.leaseAgreement.update({
         where: { id: leaseId },
         data: updateData,
       });
 
-      const bothSigned =
-        (isLandlord || isAdmin ? true : lease.landlordSigned) &&
-        (isTenant ? true : lease.tenantSigned);
+      const signedLease = await prisma.leaseAgreement.findUnique({
+        where: { id: leaseId },
+      });
 
-      if (bothSigned) {
-        const activeLease = await prisma.leaseAgreement.update({
-          where: { id: leaseId },
-          data: { status: 'ACTIVE' },
-        });
+      if (!signedLease) {
+        return NextResponse.json(
+          { error: 'Lease not found after signature update.' },
+          { status: 404 }
+        );
+      }
+
+      if (signedLease.landlordSigned && signedLease.tenantSigned) {
+        const activeLease =
+          signedLease.status === 'ACTIVE'
+            ? signedLease
+            : await prisma.leaseAgreement.update({
+                where: { id: leaseId },
+                data: { status: 'ACTIVE' },
+              });
 
         const existingPayments = await prisma.rentPayment.count({
           where: { leaseId },
@@ -373,7 +398,7 @@ export async function PUT(req: NextRequest) {
         return NextResponse.json(activeLease);
       }
 
-      return NextResponse.json(updatedLease);
+      return NextResponse.json(signedLease);
     }
 
     if (!isLandlord && !isAdmin) {
