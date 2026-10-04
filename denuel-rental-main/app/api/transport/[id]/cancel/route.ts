@@ -5,7 +5,7 @@ import hub from '../../../../../lib/transport/realtime';
 
 export const dynamic = 'force-dynamic';
 
-const ALLOWED_ROLES = ['USER', 'LANDLORD', 'AGENT', 'ADMIN', 'SERVICE_PROVIDER'];
+const ALLOWED_ROLES = ['USER', 'LANDLORD', 'AGENT', 'ADMIN', 'DRIVER', 'SERVICE_PROVIDER'];
 
 export async function POST(
   req: NextRequest,
@@ -49,14 +49,22 @@ export async function POST(
       );
     }
 
-    const updated = await prisma.transportRequest.update({
-      where: { id },
-      data: { status: 'CANCELED' },
-      select: {
-        id: true,
-        status: true,
+    const canceled = await prisma.transportRequest.updateMany({
+      where: {
+        id,
+        status: {
+          in: ['REQUESTED', 'SEARCHING', 'DRIVER_ASSIGNED', 'DRIVER_ARRIVING'],
+        },
       },
+      data: { status: 'CANCELED' },
     });
+
+    if (canceled.count !== 1) {
+      return NextResponse.json(
+        { error: 'The trip status changed before cancellation could be completed. Refresh and try again.' },
+        { status: 409 },
+      );
+    }
 
     if (transportRequest.assignedDriver?.userId) {
       hub.sendToUser(
@@ -66,7 +74,7 @@ export async function POST(
       );
     }
 
-    return NextResponse.json({ ok: true, request: updated });
+    return NextResponse.json({ ok: true, request: { id, status: 'CANCELED' } });
   } catch (error) {
     if (error instanceof Response) return error;
     console.error('Transport cancellation error:', error);
