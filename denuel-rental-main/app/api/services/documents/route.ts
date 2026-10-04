@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth } from '@/lib/auth';
+import { publicServerError } from '@/lib/publicError';
 
 // GET - Get documents for a provider
 export async function GET(req: NextRequest) {
@@ -26,7 +27,8 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ documents: provider.documents });
   } catch (error) {
     console.error('Error fetching documents:', error);
-    return NextResponse.json({ message: 'Failed to fetch documents' }, { status: 500 });
+    const safe = publicServerError(error, 'Unable to load verification documents.');
+    return NextResponse.json({ message: safe.message }, { status: safe.status });
   }
 }
 
@@ -75,7 +77,8 @@ export async function POST(req: NextRequest) {
     });
   } catch (error) {
     console.error('Error uploading document:', error);
-    return NextResponse.json({ message: 'Failed to upload document' }, { status: 500 });
+    const safe = publicServerError(error, 'Unable to save the verification document.');
+    return NextResponse.json({ message: safe.message }, { status: safe.status });
   }
 }
 
@@ -118,6 +121,7 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ message: 'Document deleted' });
   } catch (error) {
     console.error('Error deleting document:', error);
-    return NextResponse.json({ message: 'Failed to delete document' }, { status: 500 });
+    const safe = publicServerError(error, 'Unable to remove the verification document.');
+    return NextResponse.json({ message: safe.message }, { status: safe.status });
   }
 }
