@@ -6,13 +6,13 @@ import Header from '../../../components/Header';
 import Link from 'next/link';
 
 const VEHICLE_TYPES = [
-  { id: 'MOTORBIKE', label: 'Motorbike', icon: '🏍️', description: 'Small deliveries & quick trips' },
-  { id: 'CAR', label: 'Car / Sedan', icon: '🚗', description: 'Up to 4 passengers' },
-  { id: 'SUV', label: 'SUV', icon: '🚙', description: 'Up to 6 passengers, more luggage space' },
-  { id: 'VAN', label: 'Van / Minibus', icon: '🚐', description: 'Up to 12 passengers or medium cargo' },
-  { id: 'TRUCK_SMALL', label: 'Small Truck', icon: '🛻', description: 'Small moving jobs, up to 1 ton' },
-  { id: 'TRUCK_MEDIUM', label: 'Medium Truck', icon: '🚚', description: 'Medium moving jobs, 1-3 tons' },
-  { id: 'TRUCK_LARGE', label: 'Large Truck', icon: '🚛', description: 'Large moving jobs, 3+ tons' },
+  { id: 'MOTORBIKE', label: 'Motorbike', image: '/transport/vehicles/motorbike.svg', description: 'Motorbike for eligible trips and deliveries' },
+  { id: 'CAR', label: 'Car / Sedan', image: '/transport/vehicles/car.svg', description: 'Passenger car / sedan' },
+  { id: 'SUV', label: 'SUV', image: '/transport/vehicles/suv.svg', description: 'SUV / larger passenger vehicle' },
+  { id: 'VAN', label: 'Van / Minibus', image: '/transport/vehicles/suv.svg', description: 'Van or minibus' },
+  { id: 'TRUCK_SMALL', label: 'Small Truck', image: '/transport/vehicles/truck-small.svg', description: 'Pickup or small moving truck' },
+  { id: 'TRUCK_MEDIUM', label: 'Medium Truck', image: '/transport/vehicles/truck-medium.svg', description: 'Medium moving / delivery truck' },
+  { id: 'TRUCK_LARGE', label: 'Large Truck', image: '/transport/vehicles/truck-large.svg', description: 'Large moving / freight truck' },
 ];
 
 const ZAMBIAN_CITIES = [
@@ -189,12 +189,16 @@ export default function DriverApplyPage() {
                         : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
                     }`}
                   >
-                    <div className="flex items-start gap-3">
-                      <span className="text-3xl">{vehicle.icon}</span>
-                      <div>
-                        <h3 className="font-semibold text-gray-900">{vehicle.label}</h3>
-                        <p className="text-sm text-gray-500 mt-1">{vehicle.description}</p>
-                      </div>
+                    <div className="overflow-hidden rounded-lg bg-slate-50">
+                      <img
+                        src={vehicle.image}
+                        alt={vehicle.label}
+                        className="h-28 w-full object-contain p-2"
+                      />
+                    </div>
+                    <div className="mt-3">
+                      <h3 className="font-semibold text-gray-900">{vehicle.label}</h3>
+                      <p className="text-sm text-gray-500 mt-1">{vehicle.description}</p>
                     </div>
                   </button>
                 ))}
