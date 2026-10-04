@@ -186,6 +186,7 @@ model User {
   favorites      Favorite[]
   messagesSent   Message[] @relation("sentMessages")
   messagesReceived Message[] @relation("receivedMessages")
+  clientMessageThreads MessageThread[] @relation("ClientMessageThreads")
   savedSearches  SavedSearch[]
   listingReports ListingReport[]
   payments       Payment[]
@@ -341,8 +342,13 @@ model MessageThread {
   id         String   @id @default(cuid())
   property   Property @relation(fields: [propertyId], references: [id])
   propertyId String
+  client     User?    @relation("ClientMessageThreads", fields: [clientId], references: [id])
+  clientId   String?
   createdAt  DateTime @default(now())
   messages   Message[]
+
+  @@unique([propertyId, clientId])
+  @@index([clientId])
 }
 
 model Message {
