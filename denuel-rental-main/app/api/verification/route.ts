@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { requireAuth, requireCsrf } from '@/lib/auth';
 import prisma from '@/lib/prisma';
 import { publicServerError } from '@/lib/publicError';
+import { verifyObject } from '@/lib/s3';
 
 const DOCUMENT_TYPES = new Set([
   'NATIONAL_ID',
@@ -140,25 +141,33 @@ export async function POST(req: NextRequest) {
       typeof body.documentType === 'string'
         ? body.documentType
         : '';
-    const documentUrl =
-      typeof body.documentUrl === 'string'
-        ? body.documentUrl.trim()
+    const documentKey =
+      typeof body.documentKey === 'string'
+        ? body.documentKey.trim()
         : '';
 
     if (
       !DOCUMENT_TYPES.has(documentType) ||
-      !documentUrl
+      !documentKey ||
+      !documentKey.startsWith(`verification/${user.id}/`)
     ) {
       return NextResponse.json(
-        { error: 'A valid document type and uploaded document are required.' },
+        { error: 'A valid privately uploaded verification document is required.' },
         { status: 400 }
       );
     }
 
-    const parsedUrl = z.string().url().safeParse(documentUrl);
-    if (!parsedUrl.success) {
+    const object = await verifyObject(documentKey);
+
+    const allowed =
+      object.contentType === 'application/pdf' ||
+      object.contentType === 'image/jpeg' ||
+      object.contentType === 'image/png' ||
+      object.contentType === 'image/webp';
+
+    if (!allowed || object.size <= 0 || object.size > 10 * 1024 * 1024) {
       return NextResponse.json(
-        { error: 'Invalid document URL.' },
+        { error: 'The uploaded verification file is invalid or too large.' },
         { status: 400 }
       );
     }
@@ -167,10 +176,16 @@ export async function POST(req: NextRequest) {
       data: {
         userId: user.id,
         documentType: documentType as any,
-        documentUrl,
-        metadata: body.metadata
-          ? JSON.stringify(body.metadata)
-          : null,
+        documentUrl: `s3-private:${documentKey}`,
+        metadata: JSON.stringify({
+          fileName:
+            typeof body.metadata?.fileName === 'string'
+              ? body.metadata.fileName
+              : null,
+          fileSize: object.size,
+          mimeType: object.contentType,
+          storage: 'S3_PRIVATE',
+        }),
       },
     });
 
