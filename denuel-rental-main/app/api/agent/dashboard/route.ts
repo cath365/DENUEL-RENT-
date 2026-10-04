@@ -365,7 +365,7 @@ export async function GET(req: NextRequest) {
         totalProperties: properties.length,
         approvedProperties: properties.filter((property) => property.status === 'APPROVED').length,
         pendingProperties: properties.filter((property) => property.status === 'PENDING').length,
-        uniqueViewers: new Set(viewRows.map((row) => row.propertyId + ':' + row.ip)).size,
+        uniqueViewers: new Set(viewRows.map((row) => row.ip)).size,
         totalSaves: properties.reduce((sum, property) => sum + Number(property.saveCount || 0), 0),
         pendingApplications: applications.filter((application) => application.status === 'PENDING').length,
         upcomingViewings: upcomingViewings.length,
