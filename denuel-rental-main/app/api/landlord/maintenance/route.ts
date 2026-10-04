@@ -3,6 +3,8 @@ import { prisma } from '@/lib/prisma';
 import { requireAuth } from '@/lib/auth';
 
 // GET - Get maintenance requests
+export const dynamic = 'force-dynamic';
+
 export async function GET(req: NextRequest) {
   try {
     const user = await requireAuth(req);
@@ -66,6 +68,7 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ requests, stats });
   } catch (error) {
+    if (error instanceof Response) return error;
     console.error('Fetch maintenance requests error:', error);
     return NextResponse.json({ error: 'Failed to fetch requests' }, { status: 500 });
   }
@@ -140,6 +143,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json(request, { status: 201 });
   } catch (error) {
+    if (error instanceof Response) return error;
     console.error('Create maintenance request error:', error);
     return NextResponse.json({ error: 'Failed to create request' }, { status: 500 });
   }
@@ -247,6 +251,7 @@ export async function PUT(req: NextRequest) {
 
     return NextResponse.json(updated);
   } catch (error) {
+    if (error instanceof Response) return error;
     console.error('Update maintenance request error:', error);
     return NextResponse.json({ error: 'Failed to update request' }, { status: 500 });
   }
