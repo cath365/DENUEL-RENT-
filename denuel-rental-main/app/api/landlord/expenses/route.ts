@@ -3,6 +3,8 @@ import { prisma } from '@/lib/prisma';
 import { requireAuth } from '@/lib/auth';
 
 // GET - Get landlord expenses
+export const dynamic = 'force-dynamic';
+
 export async function GET(req: NextRequest) {
   try {
     const user = await requireAuth(req);
@@ -80,6 +82,7 @@ export async function GET(req: NextRequest) {
       },
     });
   } catch (error) {
+    if (error instanceof Response) return error;
     console.error('Fetch expenses error:', error);
     return NextResponse.json({ error: 'Failed to fetch expenses' }, { status: 500 });
   }
@@ -139,6 +142,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json(expense, { status: 201 });
   } catch (error) {
+    if (error instanceof Response) return error;
     console.error('Create expense error:', error);
     return NextResponse.json({ error: 'Failed to create expense' }, { status: 500 });
   }
@@ -178,6 +182,7 @@ export async function PUT(req: NextRequest) {
 
     return NextResponse.json(updated);
   } catch (error) {
+    if (error instanceof Response) return error;
     console.error('Update expense error:', error);
     return NextResponse.json({ error: 'Failed to update expense' }, { status: 500 });
   }
@@ -204,6 +209,7 @@ export async function DELETE(req: NextRequest) {
 
     return NextResponse.json({ success: true });
   } catch (error) {
+    if (error instanceof Response) return error;
     console.error('Delete expense error:', error);
     return NextResponse.json({ error: 'Failed to delete expense' }, { status: 500 });
   }
