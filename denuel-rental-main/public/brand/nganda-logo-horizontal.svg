@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 320">
+<rect width="1200" height="320" fill="none" fill-opacity="0"/>
+<g transform="translate(30,25) scale(0.52)">
+<rect width="512" height="512" rx="96" fill="none" fill-opacity="0"/>
+<!-- house -->
+<path d="M88 242 L256 98 L424 242" fill="none" stroke="#0F2B46" stroke-width="42" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M126 230 V394 H214" fill="none" stroke="#0F2B46" stroke-width="42" stroke-linecap="round"/>
+<path d="M386 230 V394 H298" fill="none" stroke="#0F2B46" stroke-width="42" stroke-linecap="round"/>
+<path d="M350 140 V95 H395 V180" fill="#0F2B46"/>
+<!-- location/keyhole mark -->
+<path d="M256 195
+C204 195 166 234 166 283
+C166 348 256 420 256 420
+C256 420 346 348 346 283
+C346 234 308 195 256 195Z" fill="#16A34A"/>
+<circle cx="256" cy="277" r="28" fill="white"/>
+<rect x="246" y="298" width="20" height="52" rx="8" fill="white"/>
+</g>
+<text x="340" y="155" font-family="Arial, Helvetica, sans-serif" font-size="120" font-weight="700" fill="#0F2B46">Ng'</text>
+<text x="520" y="155" font-family="Arial, Helvetica, sans-serif" font-size="120" font-weight="700" fill="#16A34A">anda</text>
+<text x="345" y="220" font-family="Arial, Helvetica, sans-serif" font-size="38" font-weight="500" letter-spacing="1.2" fill="#374151">Find a place. Make it home.</text>
+</svg>
