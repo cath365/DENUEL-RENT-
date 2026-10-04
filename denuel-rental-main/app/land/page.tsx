@@ -2,6 +2,8 @@ import Header from '../../components/Header';
 import ListingCard from '../../components/ListingCard';
 import prisma from '../../lib/prisma';
 
+export const dynamic = 'force-dynamic';
+
 export const metadata = { title: 'Land for Sale & Rent in Zambia | DENUEL', description: 'Discover plots, farms and development land across Zambia.' };
 
 export default async function LandPage({ searchParams }: { searchParams?: { q?: string; priceMin?: string; priceMax?: string } }) {
