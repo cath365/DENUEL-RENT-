@@ -18,13 +18,19 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const propertyId = searchParams.get('propertyId');
     const status = searchParams.get('status');
+    const role = searchParams.get('role');
 
-    const where: any = {
-      OR: [
-        { landlordId: user.id },
-        { tenantId: user.id },
-      ],
-    };
+    const where: any =
+      role === 'tenant'
+        ? { tenantId: user.id }
+        : role === 'landlord'
+          ? { landlordId: user.id }
+          : {
+              OR: [
+                { landlordId: user.id },
+                { tenantId: user.id },
+              ],
+            };
 
     if (propertyId) where.propertyId = propertyId;
     if (status && LEASE_STATUSES.has(status)) where.status = status;
