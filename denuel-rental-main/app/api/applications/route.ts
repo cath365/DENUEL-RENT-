@@ -3,6 +3,8 @@ import prisma from '../../../lib/prisma';
 import { requireAuth, requireCsrf } from '../../../lib/auth';
 import { publicServerError } from '../../../lib/publicError';
 
+export const dynamic = 'force-dynamic';
+
 const APPLICATION_STATUSES = new Set(['PENDING', 'APPROVED', 'REJECTED']);
 
 export async function POST(req: NextRequest) {
