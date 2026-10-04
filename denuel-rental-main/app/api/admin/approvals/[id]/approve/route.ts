@@ -57,12 +57,13 @@ export async function POST(
       if (provider) {
         const required: string[] = [];
         if (provider.providerType === 'COMPANY') {
-          required.push('BUSINESS_LICENSE', 'TAX_CLEARANCE');
-          if (provider.category === 'SECURITY') required.push('LICENSE');
+          required.push('BUSINESS_LICENSE', 'TAX_CLEARANCE', 'NRC');
+          if (provider.category === 'SECURITY') required.push('LICENSE', 'BACKGROUND_CHECK');
           if (provider.insured) required.push('INSURANCE');
         } else {
           required.push('NRC');
           if (provider.category === 'SECURITY') required.push('LICENSE', 'BACKGROUND_CHECK');
+          if (provider.category === 'ELECTRICIAN') required.push('QUALIFICATION');
         }
 
         const missing = required.filter(
