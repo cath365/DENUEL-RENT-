@@ -73,8 +73,10 @@ export default function RegisterPage() {
       if (category === 'service') {
         if (serviceType === 'DRIVER') router.push('/driver/apply');
         else router.push('/services/apply?type=' + serviceType.toLowerCase());
-      } else if (accountType === 'LANDLORD' || accountType === 'AGENT') {
-        router.push('/dashboard/properties');
+      } else if (accountType === 'AGENT') {
+        router.push('/agent/profile');
+      } else if (accountType === 'LANDLORD') {
+        router.push('/landlord');
       } else {
         router.push('/dashboard');
       }
@@ -89,7 +91,7 @@ export default function RegisterPage() {
     <main className="min-h-screen bg-slate-50">
       <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6">
         <div className="flex items-center justify-between">
-          <Link href="/" className="text-xl font-bold tracking-[-0.03em] text-slate-950">DENUEL</Link>
+          <Link href="/" className="text-xl font-bold tracking-[-0.03em] text-slate-950">Ng'anda</Link>
           <Link href="/auth/login" className="text-sm font-semibold text-blue-700">Already have an account? Sign in</Link>
         </div>
 
@@ -105,7 +107,7 @@ export default function RegisterPage() {
 
           {step === 1 && (
             <section>
-              <h1 className="text-3xl font-bold tracking-[-0.035em] text-slate-950">Create your DENUEL account</h1>
+              <h1 className="text-3xl font-bold tracking-[-0.035em] text-slate-950">Create your Ng'anda account</h1>
               <p className="mt-2 text-sm text-slate-500">Choose how you plan to use the platform.</p>
 
               <div className="mt-7 grid gap-4 sm:grid-cols-2">
@@ -158,7 +160,7 @@ export default function RegisterPage() {
                 <input required type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="Email address" className="h-12 w-full border border-slate-300 bg-white px-4 text-sm outline-none focus:border-slate-950" />
                 <input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="Phone number" className="h-12 w-full border border-slate-300 bg-white px-4 text-sm outline-none focus:border-slate-950" />
                 <div className="relative">
-                  <input required minLength={6} type={showPassword ? 'text' : 'password'} value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder="Password" className="h-12 w-full border border-slate-300 bg-white px-4 pr-16 text-sm outline-none focus:border-slate-950" />
+                  <input required minLength={8} type={showPassword ? 'text' : 'password'} value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder="Password" className="h-12 w-full border border-slate-300 bg-white px-4 pr-16 text-sm outline-none focus:border-slate-950" />
                   <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium text-slate-500">{showPassword ? 'Hide' : 'Show'}</button>
                 </div>
 
