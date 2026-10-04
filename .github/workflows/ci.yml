@@ -25,9 +25,9 @@ jobs:
         run: npx prisma generate
       - name: Type check
         run: npx tsc --noEmit
-      - name: Build
+      - name: Build application
         env:
           DATABASE_URL: mysql://user:password@127.0.0.1:3306/denuel_ci
           JWT_SECRET: ci-only-secret-not-for-production
           NEXT_PUBLIC_MAPBOX_TOKEN: pk.ci-placeholder
-        run: npm run build
+        run: npx next build
