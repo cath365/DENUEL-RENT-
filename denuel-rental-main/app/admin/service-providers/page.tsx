@@ -10,6 +10,7 @@ type ServiceDocument = {
   type: string;
   name: string;
   fileAccessUrl: string;
+  storagePrivate?: boolean;
   isVerified: boolean;
   uploadedAt: string;
 };
@@ -215,7 +216,11 @@ export default function AdminServiceProvidersPage() {
 
   const checklist = selected ? requiredDocuments(selected) : [];
   const canApprove = selected
-    ? checklist.every((req) => selected.documents.some((doc) => doc.type === req.type && doc.isVerified))
+    ? checklist.every((req) =>
+        selected.documents.some(
+          (doc) => doc.type === req.type && doc.isVerified && doc.storagePrivate
+        )
+      )
     : false;
 
   return (
@@ -282,7 +287,11 @@ export default function AdminServiceProvidersPage() {
             <div className="divide-y divide-slate-100">
               {providers.map((provider) => {
                 const required = requiredDocuments(provider);
-                const verifiedRequired = required.filter((req) => provider.documents.some((doc) => doc.type === req.type && doc.isVerified)).length;
+                const verifiedRequired = required.filter((req) =>
+                  provider.documents.some(
+                    (doc) => doc.type === req.type && doc.isVerified && doc.storagePrivate
+                  )
+                ).length;
                 return (
                   <button key={provider.id} onClick={() => { setSelected(provider); setError(''); setRejectReason(''); }} className="grid w-full gap-4 px-5 py-5 text-left transition hover:bg-slate-50 md:grid-cols-[minmax(0,1.4fr)_150px_170px_160px] md:items-center">
                     <div>
@@ -382,7 +391,9 @@ export default function AdminServiceProvidersPage() {
                           {doc ? (
                             <>
                               <a href={doc.fileAccessUrl} target="_blank" rel="noreferrer" className="border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700">View</a>
-                              {doc.isVerified ? (
+                              {!doc.storagePrivate ? (
+                                <span className="bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">Secure re-upload required</span>
+                              ) : doc.isVerified ? (
                                 <span className="bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700">Verified</span>
                               ) : (
                                 <button disabled={processing === doc.id} onClick={() => verifyDocument(doc.id)} className="bg-slate-950 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">
@@ -408,7 +419,13 @@ export default function AdminServiceProvidersPage() {
                           <div><div className="text-sm font-medium text-slate-800">{doc.name}</div><div className="text-xs text-slate-400">{doc.type.replaceAll('_', ' ')}</div></div>
                           <div className="flex gap-2">
                             <a href={doc.fileAccessUrl} target="_blank" rel="noreferrer" className="border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700">View</a>
-                            {!doc.isVerified ? <button disabled={processing === doc.id} onClick={() => verifyDocument(doc.id)} className="bg-slate-950 px-3 py-2 text-xs font-semibold text-white">Verify</button> : <span className="bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700">Verified</span>}
+                            {!doc.storagePrivate ? (
+                              <span className="bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">Secure re-upload required</span>
+                            ) : !doc.isVerified ? (
+                              <button disabled={processing === doc.id} onClick={() => verifyDocument(doc.id)} className="bg-slate-950 px-3 py-2 text-xs font-semibold text-white">Verify</button>
+                            ) : (
+                              <span className="bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700">Verified</span>
+                            )}
                           </div>
                         </div>
                       ))}
