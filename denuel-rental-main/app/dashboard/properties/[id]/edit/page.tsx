@@ -190,7 +190,7 @@ export default function EditPropertyPage({ params }: { params: { id: string } })
           formData.append('file', file);
           formData.append('key', presign.key);
 
-          const uploadResponse = await fetch('/api/uploads/direct', {
+          const uploadResponse = await csrfFetch('/api/uploads/direct', {
             method: 'POST',
             body: formData,
           });
