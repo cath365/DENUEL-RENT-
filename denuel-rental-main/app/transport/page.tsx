@@ -436,8 +436,8 @@ export default function TransportPage() {
             </div>
 
             <div className="mt-7 flex flex-col gap-3 sm:flex-row">
-              <Link href="/dashboard" className="inline-flex justify-center bg-slate-950 px-5 py-3 text-sm font-semibold text-white">
-                Open my dashboard
+              <Link href="/transport/requests" className="inline-flex justify-center bg-slate-950 px-5 py-3 text-sm font-semibold text-white">
+                Track my request
               </Link>
               <button type="button" onClick={resetForm} className="border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700">
                 Create another request
