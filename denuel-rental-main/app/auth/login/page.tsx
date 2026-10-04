@@ -42,7 +42,8 @@ function LoginContent() {
       const role = res?.user?.role;
       if (role === 'DRIVER') window.location.href = '/driver';
       else if (role === 'SERVICE_PROVIDER') window.location.href = '/services/dashboard';
-      else if (role === 'LANDLORD' || role === 'AGENT') window.location.href = '/dashboard/properties';
+      else if (role === 'LANDLORD') window.location.href = '/landlord';
+      else if (role === 'AGENT') window.location.href = '/agent';
       else if (role === 'ADMIN') window.location.href = '/admin';
       else window.location.href = '/dashboard';
     } catch (err: any) {
@@ -56,9 +57,9 @@ function LoginContent() {
     <main className="min-h-screen bg-slate-50">
       <div className="mx-auto grid min-h-screen max-w-7xl lg:grid-cols-[1fr_480px]">
         <section className="hidden border-r border-slate-200 bg-white p-12 lg:flex lg:flex-col lg:justify-between">
-          <Link href="/" className="text-xl font-bold tracking-[-0.03em] text-slate-950">DENUEL</Link>
+          <Link href="/" className="text-xl font-bold tracking-[-0.03em] text-slate-950">Ng'anda</Link>
           <div className="max-w-xl">
-            <p className="text-sm font-semibold text-blue-700">Your property account</p>
+            <p className="text-sm font-semibold text-[#16A34A]">Your property account</p>
             <h1 className="mt-3 text-5xl font-bold leading-tight tracking-[-0.045em] text-slate-950">
               Keep your property search and management in one place.
             </h1>
@@ -66,13 +67,13 @@ function LoginContent() {
               Access saved properties, enquiries, applications, listings and account tools from one secure dashboard.
             </p>
           </div>
-          <p className="text-sm text-slate-400">DENUEL · Zambia</p>
+          <p className="text-sm text-slate-400">Ng'anda · Zambia</p>
         </section>
 
         <section className="flex items-center px-5 py-12 sm:px-10 lg:px-12">
           <div className="mx-auto w-full max-w-md">
             <div className="mb-8 lg:hidden">
-              <Link href="/" className="text-xl font-bold tracking-[-0.03em] text-slate-950">DENUEL</Link>
+              <Link href="/" className="text-xl font-bold tracking-[-0.03em] text-slate-950">Ng'anda</Link>
             </div>
 
             <h2 className="text-3xl font-bold tracking-[-0.035em] text-slate-950">Sign in</h2>
@@ -121,7 +122,7 @@ function LoginContent() {
             </form>
 
             <div className="mt-6 flex items-center justify-between text-sm">
-              <Link href="/auth/register" className="font-semibold text-blue-700 hover:underline">Create account</Link>
+              <Link href="/auth/register" className="font-semibold text-[#16A34A] hover:underline">Create account</Link>
               <Link href="/" className="text-slate-500 hover:text-slate-950">Back to home</Link>
             </div>
           </div>
