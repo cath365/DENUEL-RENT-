@@ -38,11 +38,17 @@ export default function ServiceProviderRegisterPage() {
 
     const form = new FormData(e.currentTarget);
 
-    const meRes = await fetch('/api/auth/me');
-    const me = await meRes.json().catch(() => ({ user: null }));
-    if (!me?.user) {
+    const meRes = await fetch('/api/auth/me', { credentials: 'same-origin' });
+    const meText = await meRes.text();
+    let me: any = { user: null };
+    try {
+      me = meText ? JSON.parse(meText) : { user: null };
+    } catch {
+      me = { user: null };
+    }
+    if (!meRes.ok || !me?.user) {
       setSaving(false);
-      setError('Sign in or create an account before registering a service profile.');
+      router.push('/auth/login?redirect=/services/register&reason=session');
       return;
     }
 
@@ -58,11 +64,28 @@ export default function ServiceProviderRegisterPage() {
       'key',
       'service-profiles/' + Date.now() + '-' + profileImage.name.replace(/\s+/g, '-')
     );
-    const imageRes = await fetch('/api/uploads/direct', { method: 'POST', body: imageForm });
-    const imageData = await imageRes.json().catch(() => ({}));
+    const imageRes = await fetch('/api/uploads/direct', {
+      method: 'POST',
+      credentials: 'same-origin',
+      body: imageForm,
+    });
+    const imageText = await imageRes.text();
+    let imageData: any = {};
+    try {
+      imageData = imageText ? JSON.parse(imageText) : {};
+    } catch {
+      imageData = {};
+    }
+
+    if (imageRes.status === 401) {
+      setSaving(false);
+      router.push('/auth/login?redirect=/services/register&reason=session');
+      return;
+    }
+
     if (!imageRes.ok || !imageData.publicUrl) {
       setSaving(false);
-      setError(imageData.error || 'Could not upload the profile image.');
+      setError(imageData.error || imageText || 'Could not upload the profile image.');
       return;
     }
     const services = String(form.get('servicesOffered') || '').split(',').map((x) => x.trim()).filter(Boolean);
@@ -129,14 +152,26 @@ export default function ServiceProviderRegisterPage() {
 
     const res = await fetch('/api/services', {
       method: 'POST',
+      credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
-    const data = await res.json().catch(() => ({}));
+    const responseText = await res.text();
+    let data: any = {};
+    try {
+      data = responseText ? JSON.parse(responseText) : {};
+    } catch {
+      data = {};
+    }
     setSaving(false);
 
+    if (res.status === 401) {
+      router.push('/auth/login?redirect=/services/register&reason=session');
+      return;
+    }
+
     if (!res.ok) {
-      setError(data.error || 'Unable to create the service profile.');
+      setError(data.error || responseText || 'Unable to create the service profile.');
       return;
     }
 
