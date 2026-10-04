@@ -147,7 +147,7 @@ export default function NewPropertyPage() {
           formData.append('file', file);
           formData.append('key', presignJson.key);
 
-          const uploadRes = await fetch('/api/uploads/direct', {
+          const uploadRes = await csrfFetch('/api/uploads/direct', {
             method: 'POST',
             body: formData,
           });
