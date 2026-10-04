@@ -127,8 +127,8 @@ export default function ServicesMarketplace({ defaultCategory, defaultCity = 'Lu
               className={`border px-3 py-2 text-sm font-medium ${category === item.value ? 'border-slate-950 bg-slate-950 text-white' : 'border-slate-300 text-slate-700'}`}
             >
               {item.label}
-            </Link>
-            ))}
+            </button>
+          ))}
         </div>
 
         <select value={city} onChange={(e) => setCity(e.target.value)} className="h-10 border border-slate-300 bg-white px-3 text-sm">
@@ -179,7 +179,7 @@ export default function ServicesMarketplace({ defaultCategory, defaultCity = 'Lu
                   {provider.priceRange ? <span>{provider.priceRange}</span> : null}
                   {provider.city ? <span>{provider.area ? provider.area + ', ' : ''}{provider.city}</span> : null}
                 </div>
-              </button>
+              </Link>
             ))}
           </div>
         ) : (
