@@ -960,6 +960,15 @@ model ServiceProvider {
   licenseNumber   String?
   nrcNumber       String?         // National Registration Card
   tpinNumber      String?         // Tax Payer ID
+  companyRegistrationNumber String?
+  teamSize        Int?
+  whatsappNumber  String?
+  emergencyService Boolean        @default(false)
+  backgroundCheckedStaff Boolean  @default(false)
+  insured         Boolean         @default(false)
+  insuranceProvider String?
+  responseTimeText String?
+  categoryDetails Json?           // Category-specific trust and capability details
   isVerified      Boolean         @default(false)
   isActive        Boolean         @default(true)
   isAvailable     Boolean         @default(true)
