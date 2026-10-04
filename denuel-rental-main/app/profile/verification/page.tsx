@@ -119,24 +119,42 @@ export default function VerificationPage() {
     setSuccess('');
 
     try {
-      const formData = new FormData();
-      formData.append('file', selectedFile);
-      formData.append(
-        'key',
-        `verification/${documentType.toLowerCase()}-${Date.now()}-${selectedFile.name.replace(/[^a-zA-Z0-9._-]/g, '-')}`
+      const prepareResponse = await csrfFetch(
+        '/api/verification/upload-url',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            filename: selectedFile.name,
+            contentType: selectedFile.type,
+            size: selectedFile.size,
+          }),
+        }
       );
 
-      const uploadResponse = await csrfFetch('/api/uploads/direct', {
-        method: 'POST',
-        body: formData,
+      const prepareData = await prepareResponse.json().catch(() => ({}));
+
+      if (
+        !prepareResponse.ok ||
+        !prepareData.uploadUrl ||
+        !prepareData.documentKey
+      ) {
+        throw new Error(
+          prepareData.error ||
+            'Unable to prepare private verification storage.'
+        );
+      }
+
+      const uploadResponse = await fetch(prepareData.uploadUrl, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': selectedFile.type,
+        },
+        body: selectedFile,
       });
 
-      const uploadData = await uploadResponse.json().catch(() => ({}));
-
-      if (!uploadResponse.ok || !uploadData.publicUrl) {
-        throw new Error(
-          uploadData.error || 'Unable to store the verification document.'
-        );
+      if (!uploadResponse.ok) {
+        throw new Error('Unable to upload the verification document.');
       }
 
       const submitResponse = await csrfFetch('/api/verification', {
@@ -144,11 +162,9 @@ export default function VerificationPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           documentType,
-          documentUrl: uploadData.publicUrl,
+          documentKey: prepareData.documentKey,
           metadata: {
             fileName: selectedFile.name,
-            fileSize: selectedFile.size,
-            mimeType: selectedFile.type || null,
           },
         }),
       });
@@ -353,9 +369,14 @@ export default function VerificationPage() {
                       <span className={`w-fit px-2.5 py-1 text-xs font-semibold ${statusTone(doc.status)}`}>
                         {doc.status}
                       </span>
-                      <a href={doc.documentUrl} target="_blank" rel="noreferrer" className="text-sm font-semibold text-[#16A34A]">
-                        Open file
-                      </a>
+                      <a
+                      href={'/api/verification/documents/' + doc.id}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-sm font-semibold text-[#16A34A]"
+                    >
+                      Open file
+                    </a>
                     </div>
                   ))}
                 </div>
