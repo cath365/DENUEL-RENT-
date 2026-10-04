@@ -5,7 +5,7 @@ import { z } from 'zod';
 
 export const dynamic = 'force-dynamic';
 
-const ALLOWED_ROLES = ['USER', 'LANDLORD', 'AGENT', 'SERVICE_PROVIDER'];
+const ALLOWED_ROLES = ['USER', 'LANDLORD', 'AGENT', 'ADMIN', 'DRIVER', 'SERVICE_PROVIDER'];
 const RatingSchema = z.object({
   stars: z.number().int().min(1).max(5),
   comment: z.string().trim().max(1000).optional(),
