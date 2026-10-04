@@ -35,12 +35,12 @@ function isNightHour(date: Date, nightStart: number, nightEnd: number) {
 async function getSettings() {
   const s = await prisma.transportSettings.findFirst();
   if (s) return s;
-  // defaults if not configured
+  // No implicit paid multipliers when transport settings have not been configured.
   return {
-    surgeEnabled: true,
-    maxSurgeMultiplier: 1.3,
-    maxNightMultiplier: 1.15,
-    maxWeatherMultiplier: 1.1,
+    surgeEnabled: false,
+    maxSurgeMultiplier: 1,
+    maxNightMultiplier: 1,
+    maxWeatherMultiplier: 1,
     nightStartHour: 21,
     nightEndHour: 5,
     surgeWindowMinutes: 5,
@@ -48,16 +48,38 @@ async function getSettings() {
   } as any;
 }
 
-export async function estimateDistanceAndDuration(pickupLat: number, pickupLng: number, dropLat: number, dropLng: number) {
-  const R = 6371; // km
-  const dLat = toRad(dropLat - pickupLat);
-  const dLon = toRad(dropLng - pickupLng);
-  const a = Math.sin(dLat/2) * Math.sin(dLat/2) + Math.cos(toRad(pickupLat)) * Math.cos(toRad(dropLat)) * Math.sin(dLon/2) * Math.sin(dLon/2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-  const distanceKm = R * c;
-  const speedKmh = 40;
-  const durationMin = Math.max(1, Math.round((distanceKm / speedKmh) * 60));
-  return { distanceKm, durationMin };
+export async function estimateDistanceAndDuration(
+  pickupLat: number,
+  pickupLng: number,
+  dropLat: number,
+  dropLng: number
+) {
+  const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
+  if (!token) {
+    throw new Error('ROUTING_NOT_CONFIGURED');
+  }
+
+  const coordinates = `${pickupLng},${pickupLat};${dropLng},${dropLat}`;
+  const url =
+    `https://api.mapbox.com/directions/v5/mapbox/driving/${coordinates}` +
+    `?access_token=${encodeURIComponent(token)}&overview=false&steps=false`;
+
+  const response = await fetch(url, { cache: 'no-store' });
+  if (!response.ok) {
+    throw new Error('ROUTING_UNAVAILABLE');
+  }
+
+  const data = await response.json();
+  const route = data?.routes?.[0];
+
+  if (!route || typeof route.distance !== 'number' || typeof route.duration !== 'number') {
+    throw new Error('ROUTE_NOT_FOUND');
+  }
+
+  return {
+    distanceKm: Number((route.distance / 1000).toFixed(1)),
+    durationMin: Math.max(1, Math.round(route.duration / 60)),
+  };
 }
 
 export async function calculatePrice(params: {
