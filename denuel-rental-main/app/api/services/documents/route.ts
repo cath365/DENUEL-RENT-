@@ -2,6 +2,25 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth } from '@/lib/auth';
 
+const ALLOWED_DOCUMENT_TYPES = new Set([
+  'NATIONAL_ID',
+  'PASSPORT',
+  'BUSINESS_LICENSE',
+  'PROOF_OF_ADDRESS',
+  'PROPERTY_TITLE',
+  'TAX_CLEARANCE',
+  'NRC',
+  'CERTIFICATE',
+  'LICENSE',
+  'INSURANCE',
+  'QUALIFICATION',
+  'REFERENCE',
+  'PORTFOLIO',
+  'ID_PHOTO',
+  'BACKGROUND_CHECK',
+  'OTHER',
+]);
+
 // GET - Get documents for a provider
 export const dynamic = 'force-dynamic';
 
@@ -59,6 +78,36 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    if (!ALLOWED_DOCUMENT_TYPES.has(type)) {
+      return NextResponse.json({ message: 'Unsupported document type' }, { status: 400 });
+    }
+
+    if (fileSize && Number(fileSize) > 10 * 1024 * 1024) {
+      return NextResponse.json({ message: 'Document must be 10MB or smaller' }, { status: 400 });
+    }
+
+    if (mimeType && !String(mimeType).startsWith('image/') && mimeType !== 'application/pdf') {
+      return NextResponse.json({ message: 'Only images and PDF documents are supported' }, { status: 400 });
+    }
+
+    const existing = await prisma.serviceDocument.findFirst({
+      where: { providerId: provider.id, type },
+      orderBy: { uploadedAt: 'desc' },
+    });
+
+    if (existing?.isVerified) {
+      return NextResponse.json(
+        { message: 'This verified document cannot be replaced. Contact support if it needs to be updated.' },
+        { status: 409 }
+      );
+    }
+
+    if (existing) {
+      await prisma.serviceDocument.deleteMany({
+        where: { providerId: provider.id, type, isVerified: false },
+      });
+    }
+
     const document = await prisma.serviceDocument.create({
       data: {
         providerId: provider.id,
@@ -113,6 +162,13 @@ export async function DELETE(req: NextRequest) {
 
     if (!document) {
       return NextResponse.json({ message: 'Document not found' }, { status: 404 });
+    }
+
+    if (document.isVerified) {
+      return NextResponse.json(
+        { message: 'Verified documents cannot be removed from the provider dashboard.' },
+        { status: 409 }
+      );
     }
 
     await prisma.serviceDocument.delete({
