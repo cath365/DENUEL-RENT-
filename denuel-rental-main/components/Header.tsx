@@ -26,6 +26,15 @@ export default function Header() {
       .catch(() => null);
   }, []);
 
+  const dashboardHref =
+    user?.role === 'ADMIN'
+      ? '/admin'
+      : user?.role === 'AGENT'
+        ? '/agent'
+        : user?.role === 'LANDLORD'
+          ? '/landlord'
+          : '/dashboard';
+
   const logout = async () => {
     await fetch('/api/auth/logout', { method: 'POST' });
     window.location.href = '/';
@@ -70,7 +79,7 @@ export default function Header() {
           {user ? (
             <>
               <Link
-                href={user.role === 'ADMIN' ? '/admin' : '/dashboard'}
+                href={dashboardHref}
                 className="text-sm font-medium text-slate-700 hover:text-[#0F2B46]"
               >
                 Dashboard
@@ -128,7 +137,7 @@ export default function Header() {
               List a property
             </Link>
             <Link
-              href={user ? '/dashboard' : '/auth/login'}
+              href={user ? dashboardHref : '/auth/login'}
               className="border border-slate-300 px-4 py-3 text-center text-sm font-semibold text-slate-800"
             >
               {user ? 'Dashboard' : 'Sign in'}
