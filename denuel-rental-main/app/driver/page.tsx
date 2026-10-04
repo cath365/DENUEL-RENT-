@@ -675,6 +675,7 @@ export default function DriverDashboardPage() {
                   ['Earnings', '/driver/earnings'],
                   ['Trip history', '/driver/history'],
                   ['Ratings', '/driver/ratings'],
+                  ['My customer transport requests', '/transport/requests'],
                 ].map(([label, href]) => (
                   <Link key={href} href={href} className="flex items-center justify-between py-3 text-sm font-medium text-slate-700 hover:text-blue-700">
                     {label}<span>→</span>
