@@ -512,8 +512,8 @@ model TransportRequest {
   bookingId             String?    
   tenant                User       @relation(fields: [tenantId], references: [id])
   tenantId              String
-  property              Property   @relation(fields: [propertyId], references: [id])
-  propertyId            String
+  property              Property?  @relation(fields: [propertyId], references: [id])
+  propertyId            String?
   pickupLat             Float
   pickupLng             Float
   pickupAddressText     String
