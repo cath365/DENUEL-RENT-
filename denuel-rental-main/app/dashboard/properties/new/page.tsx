@@ -80,12 +80,26 @@ export default function NewPropertyPage() {
         }
         const presignRes = await fetch('/api/uploads/presign', {
           method: 'POST',
+          credentials: 'same-origin',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ filename: file.name, contentType: file.type }),
         });
-        const presignJson = await presignRes.json();
-        if (!presignJson?.url) {
-          setError('Upload error: unable to get presigned url');
+        const presignText = await presignRes.text();
+        let presignJson: any = {};
+        try {
+          presignJson = presignText ? JSON.parse(presignText) : {};
+        } catch {
+          presignJson = {};
+        }
+
+        if (presignRes.status === 401) {
+          setError('Your session has expired. Please sign in again before uploading property photos.');
+          router.push('/auth/login?redirect=/dashboard/properties/new');
+          return;
+        }
+
+        if (!presignRes.ok || !presignJson?.url) {
+          setError(presignJson?.error || presignText || 'Upload error: unable to prepare the photo upload.');
           continue;
         }
 
@@ -98,14 +112,27 @@ export default function NewPropertyPage() {
           
           const uploadRes = await fetch('/api/uploads/direct', {
             method: 'POST',
+            credentials: 'same-origin',
             body: formData,
           });
-          const uploadJson = await uploadRes.json();
-          
-          if (uploadJson?.publicUrl) {
+          const uploadText = await uploadRes.text();
+          let uploadJson: any = {};
+          try {
+            uploadJson = uploadText ? JSON.parse(uploadText) : {};
+          } catch {
+            uploadJson = {};
+          }
+
+          if (uploadRes.status === 401) {
+            setError('Your session has expired. Please sign in again before uploading property photos.');
+            router.push('/auth/login?redirect=/dashboard/properties/new');
+            return;
+          }
+
+          if (uploadRes.ok && uploadJson?.publicUrl) {
             setImages((s) => [...s, { src: uploadJson.publicUrl, key: uploadJson.key }]);
           } else {
-            setError('Upload failed for ' + file.name);
+            setError(uploadJson?.error || uploadText || 'Upload failed for ' + file.name);
           }
         } else {
           // S3 presigned URL upload
@@ -119,9 +146,17 @@ export default function NewPropertyPage() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ key: presignJson.key }),
           });
-          const verifyJson = await verifyRes.json();
-          if (verifyJson?.publicUrl) {
+          const verifyText = await verifyRes.text();
+          let verifyJson: any = {};
+          try {
+            verifyJson = verifyText ? JSON.parse(verifyText) : {};
+          } catch {
+            verifyJson = {};
+          }
+          if (verifyRes.ok && verifyJson?.publicUrl) {
             setImages((s) => [...s, { src: verifyJson.publicUrl, key: presignJson.key }]);
+          } else {
+            setError(verifyJson?.error || verifyText || 'Could not verify the uploaded photo.');
           }
         }
       }
