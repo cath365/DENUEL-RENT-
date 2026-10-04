@@ -41,6 +41,9 @@ export default async function AdminPage() {
     totalProviders,
     pendingProviders,
     verifiedProviders,
+    totalDrivers,
+    pendingDrivers,
+    approvedDrivers,
     openReports,
     supportOpen,
     bookings,
@@ -52,6 +55,9 @@ export default async function AdminPage() {
     prisma.serviceProvider.count(),
     prisma.serviceProvider.count({ where: { verificationStatus: 'PENDING' } }),
     prisma.serviceProvider.count({ where: { verificationStatus: 'VERIFIED' } }),
+    prisma.driverProfile.count(),
+    prisma.driverProfile.count({ where: { verificationStatus: 'PENDING', isApproved: false } }),
+    prisma.driverProfile.count({ where: { verificationStatus: 'VERIFIED', isApproved: true } }),
     prisma.listingReport.count({ where: { status: 'OPEN' } }),
     prisma.supportMessage.count({ where: { isResolved: false } }),
     prisma.booking.count(),
@@ -71,7 +77,7 @@ export default async function AdminPage() {
     }),
   ]);
 
-  const reviewQueue = pendingProperties + pendingProviders + openReports;
+  const reviewQueue = pendingProperties + pendingProviders + pendingDrivers + openReports;
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -96,6 +102,7 @@ export default async function AdminPage() {
           <Metric label="Properties" value={totalProperties.toLocaleString()} note={pendingProperties + ' pending approval'} />
           <Metric label="Service providers" value={totalProviders.toLocaleString()} note={verifiedProviders + ' verified'} />
           <Metric label="Provider verification" value={pendingProviders} note="Waiting for review" />
+          <Metric label="Drivers" value={totalDrivers.toLocaleString()} note={approvedDrivers + ' approved · ' + pendingDrivers + ' pending'} />
           <Metric label="Open listing reports" value={openReports} />
           <Metric label="Open support work" value={supportOpen} />
           <Metric label="Bookings" value={bookings.toLocaleString()} />
@@ -111,7 +118,7 @@ export default async function AdminPage() {
                 </div>
               </div>
 
-              <div className="grid sm:grid-cols-3">
+              <div className="grid sm:grid-cols-2 xl:grid-cols-4">
                 <Link href="/admin/service-providers" className="border-b border-slate-200 p-5 transition hover:bg-slate-50 sm:border-b-0 sm:border-r">
                   <div className="text-3xl font-bold text-slate-950">{pendingProviders}</div>
                   <div className="mt-2 text-sm font-semibold text-slate-800">Provider verifications</div>
@@ -119,7 +126,14 @@ export default async function AdminPage() {
                   <div className="mt-4 text-sm font-semibold text-blue-700">Open queue →</div>
                 </Link>
 
-                <Link href="/admin/properties/pending" className="border-b border-slate-200 p-5 transition hover:bg-slate-50 sm:border-b-0 sm:border-r">
+                <Link href="/admin/drivers" className="border-b border-slate-200 p-5 transition hover:bg-slate-50 sm:border-r xl:border-b-0">
+                  <div className="text-3xl font-bold text-slate-950">{pendingDrivers}</div>
+                  <div className="mt-2 text-sm font-semibold text-slate-800">Driver verifications</div>
+                  <div className="mt-1 text-xs leading-5 text-slate-500">Review driver identity, vehicles and private documents.</div>
+                  <div className="mt-4 text-sm font-semibold text-blue-700">Open driver queue →</div>
+                </Link>
+
+                <Link href="/admin/properties/pending" className="border-b border-slate-200 p-5 transition hover:bg-slate-50 sm:border-r xl:border-b-0">
                   <div className="text-3xl font-bold text-slate-950">{pendingProperties}</div>
                   <div className="mt-2 text-sm font-semibold text-slate-800">Property approvals</div>
                   <div className="mt-1 text-xs leading-5 text-slate-500">Review listings before they become publicly approved.</div>
@@ -182,6 +196,8 @@ export default async function AdminPage() {
               <div className="mt-4 divide-y divide-slate-100 border-t border-slate-100">
                 {[
                   ['Service providers', '/admin/service-providers'],
+                  ['Driver management', '/admin/drivers'],
+                  ['Transport operations', '/admin/transport'],
                   ['User verification', '/admin/verifications'],
                   ['Property approvals', '/admin/properties/pending'],
                   ['Users', '/admin/users'],
