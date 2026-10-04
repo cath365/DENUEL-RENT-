@@ -12,6 +12,8 @@ import PriceAlertButton from '@/components/PriceAlertButton';
 import OpenHouseScheduler from '@/components/OpenHouseScheduler';
 import Panorama360Section from '@/components/Panorama360Section';
 
+export const dynamic = 'force-dynamic';
+
 function formatLocation(p: any) {
   return [p?.area, p?.city].filter(Boolean).join(', ') || p?.city || '';
 }
