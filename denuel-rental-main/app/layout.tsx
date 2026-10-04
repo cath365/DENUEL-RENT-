@@ -6,10 +6,17 @@ import BackToTop from '../components/BackToTop';
 import { SettingsProvider } from '../lib/SettingsContext';
 
 export const metadata = {
-  title: 'DENUEL | Zambia Property & Living Platform',
+  title: "Ng'anda | Find a place. Make it home.",
   description: 'Find, verify, rent, buy and manage property across Zambia.',
   keywords: 'Zambia property, Lusaka rentals, land for sale Zambia, commercial property Zambia, houses for rent, real estate Zambia',
-  openGraph: { title: 'DENUEL | Zambia Property & Living Platform', description: 'Find, verify, rent, buy and manage property across Zambia.', type: 'website' }
+  icons: {
+    icon: '/brand/nganda-logo-stacked.svg',
+  },
+  openGraph: {
+    title: "Ng'anda | Find a place. Make it home.",
+    description: 'Find, verify, rent, buy and manage property across Zambia.',
+    type: 'website',
+  }
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
