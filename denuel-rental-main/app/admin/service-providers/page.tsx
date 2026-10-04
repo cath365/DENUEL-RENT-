@@ -3,12 +3,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import Header from '@/components/Header';
+import { csrfFetch } from '@/lib/csrf';
 
 type ServiceDocument = {
   id: string;
   type: string;
   name: string;
-  fileUrl: string;
+  fileAccessUrl: string;
   isVerified: boolean;
   uploadedAt: string;
 };
@@ -143,7 +144,7 @@ export default function AdminServiceProvidersPage() {
     if (!selected) return;
     setProcessing(documentId);
     setError('');
-    const res = await fetch('/api/admin/service-documents/' + documentId + '/verify', { method: 'POST' });
+    const res = await csrfFetch('/api/admin/service-documents/' + documentId + '/verify', { method: 'POST' });
     const data = await res.json().catch(() => ({}));
 
     if (!res.ok) {
@@ -164,7 +165,7 @@ export default function AdminServiceProvidersPage() {
     if (!selected) return;
     setProcessing('approve');
     setError('');
-    const res = await fetch('/api/admin/approvals/' + selected.id + '/approve', { method: 'POST' });
+    const res = await csrfFetch('/api/admin/approvals/' + selected.id + '/approve', { method: 'POST' });
     const data = await res.json().catch(() => ({}));
 
     if (!res.ok) {
@@ -182,7 +183,7 @@ export default function AdminServiceProvidersPage() {
     if (!selected || !rejectReason.trim()) return;
     setProcessing('reject');
     setError('');
-    const res = await fetch('/api/admin/approvals/' + selected.id + '/reject', {
+    const res = await csrfFetch('/api/admin/approvals/' + selected.id + '/reject', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ reason: rejectReason.trim() }),
@@ -201,7 +202,7 @@ export default function AdminServiceProvidersPage() {
   }
 
   async function toggleActive(provider: ServiceProvider) {
-    const res = await fetch('/api/admin/service-providers/' + provider.id, {
+    const res = await csrfFetch('/api/admin/service-providers/' + provider.id, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ isActive: !provider.isActive }),
@@ -380,7 +381,7 @@ export default function AdminServiceProvidersPage() {
                         <div className="flex items-center gap-2">
                           {doc ? (
                             <>
-                              <a href={doc.fileUrl} target="_blank" rel="noreferrer" className="border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700">View</a>
+                              <a href={doc.fileAccessUrl} target="_blank" rel="noreferrer" className="border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700">View</a>
                               {doc.isVerified ? (
                                 <span className="bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700">Verified</span>
                               ) : (
@@ -406,7 +407,7 @@ export default function AdminServiceProvidersPage() {
                         <div key={doc.id} className="flex items-center justify-between gap-4 px-4 py-3">
                           <div><div className="text-sm font-medium text-slate-800">{doc.name}</div><div className="text-xs text-slate-400">{doc.type.replaceAll('_', ' ')}</div></div>
                           <div className="flex gap-2">
-                            <a href={doc.fileUrl} target="_blank" rel="noreferrer" className="border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700">View</a>
+                            <a href={doc.fileAccessUrl} target="_blank" rel="noreferrer" className="border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700">View</a>
                             {!doc.isVerified ? <button disabled={processing === doc.id} onClick={() => verifyDocument(doc.id)} className="bg-slate-950 px-3 py-2 text-xs font-semibold text-white">Verify</button> : <span className="bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700">Verified</span>}
                           </div>
                         </div>
