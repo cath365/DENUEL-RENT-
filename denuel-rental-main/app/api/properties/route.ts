@@ -52,7 +52,7 @@ const CreateSchema = z.object({
   ]),
   price: z.number().positive(),
   deposit: z.number().nonnegative().optional(),
-  listingType: z.enum(['RENT', 'SALE', 'BOTH']),
+  listingType: z.enum(['RENT', 'SALE']),
   country: z.string().trim().min(2).default('Zambia'),
   city: z.string().trim().min(2),
   area: z.string().trim().min(1).optional(),
