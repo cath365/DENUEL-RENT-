@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth } from '@/lib/auth';
+import { publicServerError } from '@/lib/publicError';
 
 // GET - Get current user's service provider profile
 export async function GET(req: NextRequest) {
@@ -65,9 +66,10 @@ export async function GET(req: NextRequest) {
     });
   } catch (error) {
     console.error('Error fetching provider profile:', error);
+    const safe = publicServerError(error, 'Unable to load your provider profile.');
     return NextResponse.json(
-      { message: 'Failed to fetch profile' },
-      { status: 500 }
+      { message: safe.message },
+      { status: safe.status }
     );
   }
 }
@@ -138,9 +140,10 @@ export async function PATCH(req: NextRequest) {
     });
   } catch (error) {
     console.error('Error updating provider profile:', error);
+    const safe = publicServerError(error, 'Unable to update your provider profile.');
     return NextResponse.json(
-      { message: 'Failed to update profile' },
-      { status: 500 }
+      { message: safe.message },
+      { status: safe.status }
     );
   }
 }
