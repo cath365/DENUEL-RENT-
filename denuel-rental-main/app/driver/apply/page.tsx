@@ -478,8 +478,8 @@ export default function DriverApplyPage() {
                         accept="application/pdf,image/jpeg,image/png,image/webp"
                         onChange={(e) => {
                           const file = e.target.files?.[0] || null;
-                          if (file && file.size > 10 * 1024 * 1024) {
-                            setError(label + ' must be 10MB or smaller.');
+                          if (file && file.size > 4 * 1024 * 1024) {
+                            setError(label + ' must be 4MB or smaller.');
                             e.currentTarget.value = '';
                             return;
                           }
@@ -488,7 +488,7 @@ export default function DriverApplyPage() {
                         className="block w-full border border-slate-300 p-2 text-xs"
                       />
                       <span className="mt-1 block text-xs text-slate-400">
-                        {documents[type]?.name || 'PDF, JPG, PNG or WEBP · max 10MB'}
+                        {documents[type]?.name || 'PDF, JPG, PNG or WEBP · max 4MB'}
                       </span>
                     </label>
                   </div>
