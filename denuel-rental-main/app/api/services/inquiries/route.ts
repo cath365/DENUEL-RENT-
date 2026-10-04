@@ -3,6 +3,8 @@ import prisma from '@/lib/prisma';
 import { requireAuth } from '@/lib/auth';
 
 // GET - Get inquiries for a service provider
+export const dynamic = 'force-dynamic';
+
 export async function GET(req: NextRequest) {
   try {
     const user = await requireAuth(req);
