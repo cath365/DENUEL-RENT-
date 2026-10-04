@@ -3,6 +3,8 @@ import { prisma } from '@/lib/prisma';
 import { requireAuth } from '@/lib/auth';
 
 // GET - Get screenings for landlord or applicant
+export const dynamic = 'force-dynamic';
+
 export async function GET(req: NextRequest) {
   try {
     const user = await requireAuth(req);
@@ -35,6 +37,7 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json(screenings);
   } catch (error) {
+    if (error instanceof Response) return error;
     console.error('Fetch tenant screenings error:', error);
     return NextResponse.json({ error: 'Failed to fetch screenings' }, { status: 500 });
   }
@@ -97,6 +100,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json(screening, { status: 201 });
   } catch (error) {
+    if (error instanceof Response) return error;
     console.error('Create tenant screening error:', error);
     return NextResponse.json({ error: 'Failed to create screening request' }, { status: 500 });
   }
@@ -161,6 +165,7 @@ export async function PUT(req: NextRequest) {
 
     return NextResponse.json(updated);
   } catch (error) {
+    if (error instanceof Response) return error;
     console.error('Update tenant screening error:', error);
     return NextResponse.json({ error: 'Failed to update screening' }, { status: 500 });
   }
