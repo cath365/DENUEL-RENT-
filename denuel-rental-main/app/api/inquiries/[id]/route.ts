@@ -1,77 +1,282 @@
 import { NextResponse } from 'next/server';
 import prisma from '../../../../lib/prisma';
-import { requireAuth } from '../../../../lib/auth';
+import { requireAuth, requireCsrf } from '../../../../lib/auth';
+import { publicServerError } from '../../../../lib/publicError';
+import { z } from 'zod';
 
-export async function GET(req: Request, { params }: { params: { id: string } }) {
+const ReplySchema = z.object({
+  message: z.string().trim().min(1).max(1200),
+});
+
+async function loadThreadForUser(threadId: string, userId: string, role: string) {
+  const thread = await prisma.messageThread.findUnique({
+    where: { id: threadId },
+    include: {
+      property: {
+        select: {
+          id: true,
+          title: true,
+          price: true,
+          listingType: true,
+          status: true,
+          city: true,
+          area: true,
+          addressText: true,
+          ownerId: true,
+          images: {
+            orderBy: { sortOrder: 'asc' },
+            take: 1,
+            select: { url: true },
+          },
+          owner: {
+            select: {
+              id: true,
+              name: true,
+              companyName: true,
+              profileImage: true,
+              phone: true,
+              isPhoneVerified: true,
+              isIdVerified: true,
+              isBusinessVerified: true,
+            },
+          },
+        },
+      },
+      messages: {
+        orderBy: { createdAt: 'asc' },
+        include: {
+          sender: {
+            select: {
+              id: true,
+              name: true,
+              companyName: true,
+              profileImage: true,
+            },
+          },
+          receiver: {
+            select: {
+              id: true,
+              name: true,
+              companyName: true,
+              profileImage: true,
+            },
+          },
+        },
+      },
+    },
+  });
+
+  if (!thread) return null;
+
+  const isParticipant = thread.messages.some(
+    (message) =>
+      message.senderId === userId || message.receiverId === userId
+  );
+
+  const isAdmin = role === 'ADMIN';
+
+  if (!isParticipant && !isAdmin) {
+    return null;
+  }
+
+  return thread;
+}
+
+export async function GET(
+  req: Request,
+  { params }: { params: { id: string } }
+) {
   try {
     const user = await requireAuth(req);
-    const { id } = params;
-    const thread = await prisma.messageThread.findUnique({ where: { id }, include: { messages: { orderBy: { createdAt: 'asc' } }, property: true } });
-    if (!thread) return NextResponse.json({ error: 'Not found' }, { status: 404 });
-    // ensure ownership or participant
-    const owns = thread.property.ownerId === user.id || user.role === 'ADMIN';
-    if (!owns && !thread.messages.some((m) => m.senderId === user.id || m.receiverId === user.id)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    const thread = await loadThreadForUser(params.id, user.id, user.role);
 
-    return NextResponse.json({ thread });
-  } catch (e: any) {
-    if (e instanceof Response) return e;
-    return NextResponse.json({ error: e?.message || 'Invalid request' }, { status: 400 });
+    if (!thread) {
+      return NextResponse.json(
+        { error: 'Conversation not found.' },
+        { status: 404 }
+      );
+    }
+
+    await prisma.message.updateMany({
+      where: {
+        threadId: thread.id,
+        receiverId: user.id,
+        isRead: false,
+      },
+      data: { isRead: true },
+    });
+
+    const counterpartCandidates = thread.messages.flatMap((message) => [
+      message.sender,
+      message.receiver,
+    ]);
+
+    const counterpart =
+      counterpartCandidates.find(
+        (participant) => participant.id !== user.id
+      ) || thread.property.owner;
+
+    return NextResponse.json({
+      thread: {
+        id: thread.id,
+        property: thread.property,
+        counterpart,
+        messages: thread.messages.map((message) => ({
+          id: message.id,
+          body: message.body,
+          createdAt: message.createdAt,
+          senderId: message.senderId,
+          receiverId: message.receiverId,
+          isRead:
+            message.receiverId === user.id ? true : message.isRead,
+          sender: message.sender,
+        })),
+        createdAt: thread.createdAt,
+      },
+      viewer: {
+        id: user.id,
+        role: user.role,
+      },
+    });
+  } catch (error) {
+    if (error instanceof Response) return error;
+
+    console.error('Conversation lookup failed', error);
+    const safe = publicServerError(
+      error,
+      'Unable to load this conversation.'
+    );
+
+    return NextResponse.json(
+      { error: safe.message },
+      { status: safe.status }
+    );
   }
 }
 
-export async function POST(req: Request, { params }: { params: { id: string } }) {
+export async function POST(
+  req: Request,
+  { params }: { params: { id: string } }
+) {
   try {
+    const ip =
+      req.headers.get('x-forwarded-for') ||
+      req.headers.get('x-real-ip') ||
+      'anon';
+
+    const { checkRate } = await import('../../../../lib/rateLimiter');
+
+    if (!(await checkRate(ip))) {
+      return NextResponse.json(
+        { error: 'Too many requests.' },
+        { status: 429 }
+      );
+    }
+
     const user = await requireAuth(req);
-    // CSRF double-submit check
-    const { requireCsrf } = await import('../../../../lib/auth');
     requireCsrf(req);
-    const { id } = params;
-    const thread = await prisma.messageThread.findUnique({ where: { id }, include: { property: true } });
-    if (!thread) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
-    // only property owner or any participant can reply
-    const body = await req.json();
-    const { message } = body;
-    if (!message) return NextResponse.json({ error: 'Message required' }, { status: 400 });
+    const thread = await loadThreadForUser(params.id, user.id, user.role);
 
-    // determine receiver: if user is owner, receiver is the last sender in thread; else receiver is owner
-    let receiverId: string | null = null;
-    if (thread.property.ownerId === user.id) {
-      // find last message where sender != owner
-      const lastNonOwner = await prisma.message.findFirst({ where: { threadId: id, senderId: { not: user.id } }, orderBy: { createdAt: 'desc' } });
-      if (lastNonOwner) receiverId = lastNonOwner.senderId; else return NextResponse.json({ error: 'No tenant to reply to' }, { status: 400 });
+    if (!thread) {
+      return NextResponse.json(
+        { error: 'Conversation not found.' },
+        { status: 404 }
+      );
+    }
+
+    const parsed = ReplySchema.parse(await req.json());
+
+    const otherParticipantIds = Array.from(
+      new Set(
+        thread.messages.flatMap((message) => [
+          message.senderId,
+          message.receiverId,
+        ])
+      )
+    ).filter((id) => id !== user.id);
+
+    let receiverId: string | undefined;
+
+    if (user.id === thread.property.ownerId) {
+      receiverId = otherParticipantIds.find(
+        (id) => id !== thread.property.ownerId
+      );
     } else {
       receiverId = thread.property.ownerId;
     }
 
-    const msg = await prisma.message.create({ data: { threadId: id, senderId: user.id, receiverId, body: message } });
-    return NextResponse.json({ message: msg });
-  } catch (e: any) {
-    if (e instanceof Response) return e;
-    return NextResponse.json({ error: e?.message || 'Invalid request' }, { status: 400 });
-  }
-}
-
-export async function PATCH(req: Request, { params }: { params: { id: string } }) {
-  try {
-    const user = await requireAuth(req);
-    // CSRF double-submit check
-    const { requireCsrf } = await import('../../../../lib/auth');
-    requireCsrf(req);
-    const { id } = params;
-    const body = await req.json();
-    const { action } = body;
-    if (!action) return NextResponse.json({ error: 'action required' }, { status: 400 });
-
-    if (action === 'mark-read') {
-      // mark all messages for this thread where receiver is user as read
-      await prisma.message.updateMany({ where: { threadId: id, receiverId: user.id }, data: { isRead: true } });
-      return NextResponse.json({ ok: true });
+    if (!receiverId) {
+      return NextResponse.json(
+        { error: 'The other participant could not be determined.' },
+        { status: 409 }
+      );
     }
 
-    return NextResponse.json({ error: 'Unknown action' }, { status: 400 });
-  } catch (e: any) {
-    if (e instanceof Response) return e;
-    return NextResponse.json({ error: e?.message || 'Invalid request' }, { status: 400 });
+    const message = await prisma.message.create({
+      data: {
+        threadId: thread.id,
+        senderId: user.id,
+        receiverId,
+        body: parsed.message,
+      },
+      include: {
+        sender: {
+          select: {
+            id: true,
+            name: true,
+            companyName: true,
+            profileImage: true,
+          },
+        },
+      },
+    });
+
+    try {
+      const { createNotification } = await import('../../../../lib/notifications');
+
+      await createNotification(receiverId, 'inquiry', {
+        message: parsed.message,
+        threadId: thread.id,
+        propertyId: thread.property.id,
+      });
+    } catch {
+      // The conversation remains valid if notification delivery fails.
+    }
+
+    return NextResponse.json(
+      {
+        message: {
+          id: message.id,
+          body: message.body,
+          createdAt: message.createdAt,
+          senderId: message.senderId,
+          receiverId: message.receiverId,
+          isRead: message.isRead,
+          sender: message.sender,
+        },
+      },
+      { status: 201 }
+    );
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return NextResponse.json(
+        { error: error.errors[0]?.message || 'Invalid message.' },
+        { status: 422 }
+      );
+    }
+
+    if (error instanceof Response) return error;
+
+    console.error('Conversation reply failed', error);
+    const safe = publicServerError(
+      error,
+      'Unable to send your message right now.'
+    );
+
+    return NextResponse.json(
+      { error: safe.message },
+      { status: safe.status }
+    );
   }
 }
