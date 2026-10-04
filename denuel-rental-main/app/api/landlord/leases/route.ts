@@ -1,45 +1,66 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { requireAuth } from '@/lib/auth';
+import { requireAuth, requireCsrf } from '@/lib/auth';
+import { publicServerError } from '@/lib/publicError';
 
-// GET - Get lease agreements
+const LEASE_STATUSES = new Set([
+  'DRAFT',
+  'PENDING_SIGNATURES',
+  'ACTIVE',
+  'EXPIRED',
+  'TERMINATED',
+]);
+
 export async function GET(req: NextRequest) {
   try {
     const user = await requireAuth(req);
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
 
     const { searchParams } = new URL(req.url);
     const propertyId = searchParams.get('propertyId');
     const status = searchParams.get('status');
 
-    const where: Record<string, unknown> = {
+    const where: any = {
       OR: [
         { landlordId: user.id },
         { tenantId: user.id },
       ],
     };
 
-    if (propertyId) {
-      where.propertyId = propertyId;
-    }
-
-    if (status) {
-      where.status = status;
-    }
+    if (propertyId) where.propertyId = propertyId;
+    if (status && LEASE_STATUSES.has(status)) where.status = status;
 
     const leases = await prisma.leaseAgreement.findMany({
       where,
       include: {
         property: {
-          select: { id: true, title: true, addressText: true, city: true },
+          select: {
+            id: true,
+            title: true,
+            addressText: true,
+            city: true,
+            area: true,
+            images: {
+              orderBy: { sortOrder: 'asc' },
+              take: 1,
+              select: { url: true },
+            },
+          },
         },
         landlord: {
-          select: { id: true, name: true, email: true },
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            phone: true,
+            companyName: true,
+          },
         },
         tenant: {
-          select: { id: true, name: true, email: true },
+          select: {
+            id: true,
+            name: true,
+            email: true,
+          },
         },
         rentPayments: {
           orderBy: { dueDate: 'desc' },
@@ -51,18 +72,17 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json(leases);
   } catch (error) {
+    if (error instanceof Response) return error;
     console.error('Fetch leases error:', error);
-    return NextResponse.json({ error: 'Failed to fetch leases' }, { status: 500 });
+    const safe = publicServerError(error, 'Unable to load lease records right now.');
+    return NextResponse.json({ error: safe.message }, { status: safe.status });
   }
 }
 
-// POST - Create lease agreement
 export async function POST(req: NextRequest) {
   try {
-    const user = await requireAuth(req);
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const user = await requireAuth(req, ['LANDLORD', 'AGENT', 'ADMIN']);
+    requireCsrf(req);
 
     const body = await req.json();
     const {
@@ -77,36 +97,86 @@ export async function POST(req: NextRequest) {
       terms,
     } = body;
 
-    if (!propertyId || !tenantId || !monthlyRent || !startDate || !endDate) {
+    const rentAmount = Number(monthlyRent);
+    const depositAmount =
+      deposit === null || deposit === undefined || deposit === ''
+        ? null
+        : Number(deposit);
+    const start = startDate ? new Date(startDate) : null;
+    const end = endDate ? new Date(endDate) : null;
+
+    if (
+      !propertyId ||
+      !tenantId ||
+      !Number.isFinite(rentAmount) ||
+      rentAmount <= 0 ||
+      !start ||
+      !end ||
+      Number.isNaN(start.getTime()) ||
+      Number.isNaN(end.getTime()) ||
+      start >= end
+    ) {
       return NextResponse.json(
-        { error: 'Property, tenant, rent amount, and dates are required' },
+        { error: 'Property, tenant, monthly rent, and valid lease dates are required.' },
         { status: 400 }
       );
     }
 
-    // Verify property ownership
-    const property = await prisma.property.findUnique({
-      where: { id: propertyId },
-    });
-
-    if (!property || (property.ownerId !== user.id && user.role !== 'ADMIN')) {
-      return NextResponse.json({ error: 'Property not found or unauthorized' }, { status: 404 });
+    if (
+      depositAmount !== null &&
+      (!Number.isFinite(depositAmount) || depositAmount < 0)
+    ) {
+      return NextResponse.json({ error: 'Deposit must be a valid amount.' }, { status: 400 });
     }
 
-    // Get template content if using template
-    let leaseContent = content;
-    if (templateId && !content) {
+    const property = await prisma.property.findUnique({
+      where: { id: propertyId },
+      select: {
+        id: true,
+        title: true,
+        ownerId: true,
+        status: true,
+      },
+    });
+
+    if (
+      !property ||
+      property.ownerId !== user.id &&
+      user.role !== 'ADMIN'
+    ) {
+      return NextResponse.json(
+        { error: 'Property not found or you do not manage it.' },
+        { status: 404 }
+      );
+    }
+
+    const tenant = await prisma.user.findUnique({
+      where: { id: tenantId },
+      select: { id: true },
+    });
+
+    if (!tenant || tenant.id === user.id) {
+      return NextResponse.json({ error: 'Select a valid tenant.' }, { status: 400 });
+    }
+
+    let leaseContent =
+      typeof content === 'string' ? content : '';
+
+    if (templateId && !leaseContent) {
       const template = await prisma.leaseTemplate.findUnique({
         where: { id: templateId },
       });
+
       if (template) {
         leaseContent = template.content;
-        // Replace variables
+
         const variables = template.variables as Record<string, string> | null;
         if (variables) {
           Object.entries(variables).forEach(([key, defaultValue]) => {
-            // Simple variable replacement
-            leaseContent = leaseContent.replace(new RegExp(`{{${key}}}`, 'g'), defaultValue);
+            leaseContent = leaseContent.replace(
+              new RegExp(`{{${key}}}`, 'g'),
+              defaultValue
+            );
           });
         }
       }
@@ -115,16 +185,16 @@ export async function POST(req: NextRequest) {
     const lease = await prisma.leaseAgreement.create({
       data: {
         propertyId,
-        landlordId: user.id,
+        landlordId: property.ownerId,
         tenantId,
-        templateId,
-        content: leaseContent || '',
-        monthlyRent,
-        deposit,
-        startDate: new Date(startDate),
-        endDate: new Date(endDate),
-        terms,
-        status: 'DRAFT',
+        templateId: templateId || null,
+        content: leaseContent,
+        monthlyRent: rentAmount,
+        deposit: depositAmount,
+        startDate: start,
+        endDate: end,
+        terms: terms ?? undefined,
+        status: 'PENDING_SIGNATURES',
       },
       include: {
         property: { select: { title: true } },
@@ -132,40 +202,43 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    // Notify tenant
-    await prisma.notification.create({
-      data: {
-        userId: tenantId,
-        type: 'LEASE_CREATED',
+    try {
+      await prisma.notification.create({
         data: {
-          leaseId: lease.id,
-          propertyTitle: lease.property.title,
-          landlordName: user.name,
-          monthlyRent,
+          userId: tenantId,
+          type: 'LEASE_CREATED',
+          data: {
+            leaseId: lease.id,
+            propertyTitle: lease.property.title,
+            landlordName: user.name,
+            monthlyRent: rentAmount,
+          },
         },
-      },
-    });
+      });
+    } catch {
+      // Lease creation remains valid if notification delivery fails.
+    }
 
     return NextResponse.json(lease, { status: 201 });
   } catch (error) {
+    if (error instanceof Response) return error;
     console.error('Create lease error:', error);
-    return NextResponse.json({ error: 'Failed to create lease' }, { status: 500 });
+    const safe = publicServerError(error, 'Unable to create the lease right now.');
+    return NextResponse.json({ error: safe.message }, { status: safe.status });
   }
 }
 
-// PUT - Update lease (sign, update status, etc.)
 export async function PUT(req: NextRequest) {
   try {
     const user = await requireAuth(req);
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    requireCsrf(req);
 
     const body = await req.json();
-    const { leaseId, action, ...updates } = body;
+    const leaseId = typeof body.leaseId === 'string' ? body.leaseId : '';
+    const action = typeof body.action === 'string' ? body.action : '';
 
     if (!leaseId) {
-      return NextResponse.json({ error: 'Lease ID is required' }, { status: 400 });
+      return NextResponse.json({ error: 'Lease ID is required.' }, { status: 400 });
     }
 
     const lease = await prisma.leaseAgreement.findUnique({
@@ -173,65 +246,99 @@ export async function PUT(req: NextRequest) {
     });
 
     if (!lease) {
-      return NextResponse.json({ error: 'Lease not found' }, { status: 404 });
+      return NextResponse.json({ error: 'Lease not found.' }, { status: 404 });
     }
 
-    // Check authorization
     const isLandlord = lease.landlordId === user.id;
     const isTenant = lease.tenantId === user.id;
+    const isAdmin = user.role === 'ADMIN';
 
-    if (!isLandlord && !isTenant && user.role !== 'ADMIN') {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    if (!isLandlord && !isTenant && !isAdmin) {
+      return NextResponse.json({ error: 'Forbidden.' }, { status: 403 });
     }
 
-    // Handle signing
     if (action === 'sign') {
+      if (!['DRAFT', 'PENDING_SIGNATURES'].includes(lease.status)) {
+        return NextResponse.json(
+          { error: 'This lease is not waiting for signatures.' },
+          { status: 400 }
+        );
+      }
+
       const updateData: Record<string, unknown> = {};
-      if (isLandlord) {
+
+      if (isLandlord || isAdmin) {
         updateData.landlordSigned = true;
         updateData.landlordSignedAt = new Date();
-      } else if (isTenant) {
+      }
+
+      if (isTenant) {
         updateData.tenantSigned = true;
         updateData.tenantSignedAt = new Date();
       }
 
-      // Check if both signed
       const updatedLease = await prisma.leaseAgreement.update({
         where: { id: leaseId },
         data: updateData,
       });
 
-      // If both signed, activate lease
-      if (
-        (isLandlord && lease.tenantSigned) ||
-        (isTenant && lease.landlordSigned)
-      ) {
-        await prisma.leaseAgreement.update({
+      const bothSigned =
+        (isLandlord || isAdmin ? true : lease.landlordSigned) &&
+        (isTenant ? true : lease.tenantSigned);
+
+      if (bothSigned) {
+        const activeLease = await prisma.leaseAgreement.update({
           where: { id: leaseId },
           data: { status: 'ACTIVE' },
         });
 
-        // Generate rent payment schedule
-        await generateRentSchedule(leaseId);
+        const existingPayments = await prisma.rentPayment.count({
+          where: { leaseId },
+        });
+
+        if (existingPayments === 0) {
+          await generateRentSchedule(leaseId);
+        }
+
+        return NextResponse.json(activeLease);
       }
 
       return NextResponse.json(updatedLease);
     }
 
-    // Regular update
+    if (!isLandlord && !isAdmin) {
+      return NextResponse.json(
+        { error: 'Tenants can only sign their own lease.' },
+        { status: 403 }
+      );
+    }
+
+    const requestedStatus =
+      typeof body.status === 'string' && LEASE_STATUSES.has(body.status)
+        ? body.status
+        : null;
+
+    if (!requestedStatus) {
+      return NextResponse.json(
+        { error: 'No permitted lease update was provided.' },
+        { status: 400 }
+      );
+    }
+
     const updated = await prisma.leaseAgreement.update({
       where: { id: leaseId },
-      data: updates,
+      data: { status: requestedStatus },
     });
 
     return NextResponse.json(updated);
   } catch (error) {
+    if (error instanceof Response) return error;
     console.error('Update lease error:', error);
-    return NextResponse.json({ error: 'Failed to update lease' }, { status: 500 });
+    const safe = publicServerError(error, 'Unable to update the lease right now.');
+    return NextResponse.json({ error: safe.message }, { status: safe.status });
   }
 }
 
-// Helper to generate rent payment schedule
 async function generateRentSchedule(leaseId: string) {
   const lease = await prisma.leaseAgreement.findUnique({
     where: { id: leaseId },
@@ -243,7 +350,8 @@ async function generateRentSchedule(leaseId: string) {
   const endDate = new Date(lease.endDate);
   const payments = [];
 
-  let currentDate = new Date(startDate);
+  const currentDate = new Date(startDate);
+
   while (currentDate < endDate) {
     payments.push({
       leaseId,
@@ -252,10 +360,11 @@ async function generateRentSchedule(leaseId: string) {
       dueDate: new Date(currentDate),
       status: 'PENDING',
     });
+
     currentDate.setMonth(currentDate.getMonth() + 1);
   }
 
-  await prisma.rentPayment.createMany({
-    data: payments,
-  });
+  if (payments.length) {
+    await prisma.rentPayment.createMany({ data: payments });
+  }
 }
