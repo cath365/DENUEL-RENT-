@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import Stripe from 'stripe';
+
+export const dynamic = 'force-dynamic';
 
 export async function POST(req: NextRequest) {
   try {
@@ -12,13 +13,15 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const { default: Stripe } = await import('stripe');
     const stripe = new Stripe(stripeSecretKey, {
       apiVersion: '2024-06-20' as any,
     });
 
     const { amount, description } = await req.json();
+    const numericAmount = Number(amount);
 
-    if (!amount || Number(amount) <= 0) {
+    if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
       return NextResponse.json(
         { error: 'A valid payment amount is required.' },
         { status: 400 }
@@ -26,7 +29,7 @@ export async function POST(req: NextRequest) {
     }
 
     const paymentIntent = await stripe.paymentIntents.create({
-      amount: Math.round(Number(amount) * 100),
+      amount: Math.round(numericAmount * 100),
       currency: 'zmw',
       description,
     });
