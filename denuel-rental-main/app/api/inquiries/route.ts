@@ -9,16 +9,35 @@ export async function GET(req: Request) {
 
     const threads = await prisma.messageThread.findMany({
       where: {
-        messages: {
-          some: {
-            OR: [
-              { senderId: user.id },
-              { receiverId: user.id },
+        OR: [
+          { clientId: user.id },
+          { property: { ownerId: user.id } },
+          {
+            AND: [
+              { clientId: null },
+              {
+                messages: {
+                  some: {
+                    OR: [
+                      { senderId: user.id },
+                      { receiverId: user.id },
+                    ],
+                  },
+                },
+              },
             ],
           },
-        },
+        ],
       },
       include: {
+        client: {
+          select: {
+            id: true,
+            name: true,
+            companyName: true,
+            profileImage: true,
+          },
+        },
         property: {
           select: {
             id: true,
@@ -45,12 +64,6 @@ export async function GET(req: Request) {
           },
         },
         messages: {
-          where: {
-            OR: [
-              { senderId: user.id },
-              { receiverId: user.id },
-            ],
-          },
           orderBy: { createdAt: 'desc' },
           include: {
             sender: {
@@ -75,23 +88,38 @@ export async function GET(req: Request) {
     });
 
     const items = threads
-      .filter((thread) => thread.messages.length > 0)
       .map((thread) => {
-        const visibleMessages = thread.messages;
+        let visibleMessages = thread.messages;
+
+        if (!thread.clientId) {
+          visibleMessages = thread.messages.filter(
+            (message) =>
+              message.senderId === user.id ||
+              message.receiverId === user.id
+          );
+        }
+
+        if (visibleMessages.length === 0) return null;
+
         const lastMessage = visibleMessages[0];
 
-        const participantCandidates = visibleMessages.flatMap((message) => [
-          message.sender,
-          message.receiver,
-        ]);
+        const fallbackCandidates = visibleMessages.flatMap(
+          (message) => [message.sender, message.receiver]
+        );
 
         const counterpart =
-          participantCandidates.find(
-            (participant) => participant.id !== user.id
-          ) || thread.property.owner;
+          user.id === thread.property.ownerId
+            ? thread.client ||
+              fallbackCandidates.find(
+                (participant) =>
+                  participant.id !== user.id
+              )
+            : thread.property.owner;
 
         const unreadCount = visibleMessages.filter(
-          (message) => message.receiverId === user.id && !message.isRead
+          (message) =>
+            message.receiverId === user.id &&
+            !message.isRead
         ).length;
 
         return {
@@ -111,8 +139,9 @@ export async function GET(req: Request) {
           lastMessageAt: lastMessage.createdAt,
         };
       })
+      .filter(Boolean)
       .sort(
-        (a, b) =>
+        (a: any, b: any) =>
           new Date(b.lastMessageAt).getTime() -
           new Date(a.lastMessageAt).getTime()
       );
