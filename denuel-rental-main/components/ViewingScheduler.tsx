@@ -1,297 +1,217 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useMemo, useState } from 'react';
 
-interface ViewingSlot {
+type RawViewingSlot = {
   id: string;
-  propertyId: string;
-  date: string;
+  dayOfWeek?: number | null;
+  date?: string | Date | null;
   startTime: string;
   endTime: string;
-  available: boolean;
-}
+  slotDuration?: number | null;
+  isRecurring?: boolean;
+  isActive?: boolean;
+};
 
 interface ViewingSchedulerProps {
   propertyId: string;
   propertyTitle: string;
+  slots: RawViewingSlot[];
   className?: string;
+}
+
+type BookableSlot = {
+  key: string;
+  label: string;
+  scheduledAt: string;
+};
+
+function toMinutes(value: string) {
+  const [hours, minutes] = value.split(':').map(Number);
+  return (hours || 0) * 60 + (minutes || 0);
+}
+
+function fromMinutes(value: number) {
+  const hours = Math.floor(value / 60);
+  const minutes = value % 60;
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+}
+
+function dateKey(date: Date) {
+  return [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, '0'),
+    String(date.getDate()).padStart(2, '0'),
+  ].join('-');
 }
 
 export default function ViewingScheduler({
   propertyId,
   propertyTitle,
+  slots,
   className = '',
 }: ViewingSchedulerProps) {
-  const [slots, setSlots] = useState<ViewingSlot[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [selectedSlot, setSelectedSlot] = useState<string | null>(null);
-  const [selectedDate, setSelectedDate] = useState<string>('');
-  const [bookingData, setBookingData] = useState({
-    name: '',
-    email: '',
-    phone: '',
-    notes: '',
-  });
+  const [selectedSlot, setSelectedSlot] = useState<string>('');
+  const [notes, setNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [booked, setBooked] = useState(false);
+  const [error, setError] = useState('');
 
-  useEffect(() => {
-    fetchSlots();
-  }, [propertyId]);
+  const bookableSlots = useMemo<BookableSlot[]>(() => {
+    const now = new Date();
+    const next14Days = Array.from({ length: 14 }, (_, index) => {
+      const date = new Date(now);
+      date.setDate(now.getDate() + index);
+      date.setHours(0, 0, 0, 0);
+      return date;
+    });
 
-  const fetchSlots = async () => {
-    setLoading(true);
-    try {
-      const response = await fetch(`/api/viewings?propertyId=${propertyId}`);
-      if (response.ok) {
-        const data = await response.json();
-        setSlots(data.slots || []);
-        
-        // Set initial selected date
-        const dates = [...new Set(data.slots?.map((s: ViewingSlot) => s.date) || [])];
-        if (dates.length > 0) {
-          setSelectedDate(dates[0] as string);
+    const options: BookableSlot[] = [];
+
+    for (const slot of slots || []) {
+      if (slot.isActive === false) continue;
+
+      const dates: Date[] = [];
+      if (slot.date) {
+        const specific = new Date(slot.date);
+        if (!Number.isNaN(specific.getTime())) {
+          specific.setHours(0, 0, 0, 0);
+          if (specific >= next14Days[0]) dates.push(specific);
+        }
+      } else if (slot.isRecurring && typeof slot.dayOfWeek === 'number') {
+        dates.push(...next14Days.filter((date) => date.getDay() === slot.dayOfWeek));
+      }
+
+      const start = toMinutes(slot.startTime);
+      const end = toMinutes(slot.endTime);
+      const duration = Math.max(15, Number(slot.slotDuration || 30));
+
+      for (const date of dates) {
+        for (let minute = start; minute + duration <= end; minute += duration) {
+          const time = fromMinutes(minute);
+          const scheduled = new Date(`${dateKey(date)}T${time}:00`);
+          if (scheduled <= now) continue;
+
+          options.push({
+            key: `${slot.id}-${scheduled.toISOString()}`,
+            scheduledAt: scheduled.toISOString(),
+            label: scheduled.toLocaleString('en-ZM', {
+              weekday: 'short',
+              day: 'numeric',
+              month: 'short',
+              hour: '2-digit',
+              minute: '2-digit',
+            }),
+          });
         }
       }
-    } catch (error) {
-      console.error('Failed to fetch slots:', error);
-    } finally {
-      setLoading(false);
     }
-  };
 
-  const bookViewing = async () => {
+    return options
+      .sort((a, b) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime())
+      .slice(0, 40);
+  }, [slots]);
+
+  async function bookViewing() {
     if (!selectedSlot) return;
 
     setSubmitting(true);
+    setError('');
+
     try {
       const response = await fetch('/api/viewings', {
         method: 'POST',
+        credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          slotId: selectedSlot,
           propertyId,
-          ...bookingData,
+          scheduledAt: selectedSlot,
+          notes: notes.trim() || undefined,
         }),
       });
 
-      if (response.ok) {
-        setBooked(true);
+      const text = await response.text();
+      let data: any = {};
+      try {
+        data = text ? JSON.parse(text) : {};
+      } catch {
+        data = {};
       }
-    } catch (error) {
-      console.error('Failed to book viewing:', error);
+
+      if (response.status === 401) {
+        window.location.href = '/auth/login?redirect=/property/' + propertyId;
+        return;
+      }
+
+      if (!response.ok) {
+        throw new Error(data?.error || text || 'Unable to book this viewing.');
+      }
+
+      setBooked(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to book this viewing.');
     } finally {
       setSubmitting(false);
     }
-  };
-
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', {
-      weekday: 'short',
-      month: 'short',
-      day: 'numeric',
-    });
-  };
-
-  const formatTime = (timeString: string) => {
-    return new Date(`2000-01-01T${timeString}`).toLocaleTimeString('en-US', {
-      hour: 'numeric',
-      minute: '2-digit',
-      hour12: true,
-    });
-  };
-
-  // Get unique dates
-  const dates = [...new Set(slots.map((s) => s.date))].sort();
-  
-  // Get slots for selected date
-  const dateSlots = slots.filter((s) => s.date === selectedDate);
-
-  if (loading) {
-    return (
-      <div className={`bg-white rounded-xl shadow-lg p-6 ${className}`}>
-        <div className="animate-pulse space-y-4">
-          <div className="h-6 bg-gray-200 rounded w-1/2" />
-          <div className="flex gap-2">
-            {[1, 2, 3, 4, 5].map((i) => (
-              <div key={i} className="h-10 w-16 bg-gray-200 rounded" />
-            ))}
-          </div>
-          <div className="grid grid-cols-3 gap-2">
-            {[1, 2, 3, 4, 5, 6].map((i) => (
-              <div key={i} className="h-12 bg-gray-200 rounded" />
-            ))}
-          </div>
-        </div>
-      </div>
-    );
   }
 
   if (booked) {
     return (
-      <div className={`bg-white rounded-xl shadow-lg p-6 ${className}`}>
-        <div className="text-center py-8">
-          <div className="w-16 h-16 mx-auto rounded-full bg-green-100 text-green-600 flex items-center justify-center text-3xl mb-4">
-            ✓
-          </div>
-          <h3 className="text-xl font-bold text-gray-900">Viewing Booked!</h3>
-          <p className="text-gray-600 mt-2">
-            You'll receive a confirmation email shortly with the viewing details.
-          </p>
-          <button
-            onClick={() => {
-              setBooked(false);
-              setSelectedSlot(null);
-              fetchSlots();
-            }}
-            className="mt-4 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
-          >
-            Book Another
-          </button>
-        </div>
+      <div className={`border border-emerald-200 bg-emerald-50 p-5 ${className}`}>
+        <div className="font-semibold text-emerald-900">Viewing request sent</div>
+        <p className="mt-1 text-sm leading-6 text-emerald-800">
+          The property owner will be able to review your request.
+        </p>
+      </div>
+    );
+  }
+
+  if (!bookableSlots.length) {
+    return (
+      <div className={`border border-slate-200 bg-slate-50 p-4 ${className}`}>
+        <div className="text-sm font-semibold text-slate-900">No viewing times are currently available</div>
+        <p className="mt-1 text-sm text-slate-500">Use the enquiry form to ask the owner for another time.</p>
       </div>
     );
   }
 
   return (
-    <div className={`bg-white rounded-xl shadow-lg overflow-hidden ${className}`}>
-      <div className="p-6 border-b bg-blue-50">
-        <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
-          <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-          </svg>
-          Schedule a Viewing
-        </h3>
-        <p className="text-sm text-gray-600 mt-1">
-          Select a time to visit {propertyTitle}
-        </p>
+    <div className={`space-y-4 ${className}`}>
+      <div>
+        <label className="mb-2 block text-sm font-medium text-slate-700">Choose a viewing time</label>
+        <select
+          value={selectedSlot}
+          onChange={(e) => setSelectedSlot(e.target.value)}
+          className="h-11 w-full border border-slate-300 bg-white px-3 text-sm outline-none focus:border-slate-950"
+        >
+          <option value="">Select date and time</option>
+          {bookableSlots.map((slot) => (
+            <option key={slot.key} value={slot.scheduledAt}>{slot.label}</option>
+          ))}
+        </select>
       </div>
 
-      {dates.length > 0 ? (
-        <div className="p-6">
-          {/* Date Selection */}
-          <div className="mb-6">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Select Date
-            </label>
-            <div className="flex gap-2 overflow-x-auto pb-2">
-              {dates.map((date) => (
-                <button
-                  key={date}
-                  onClick={() => {
-                    setSelectedDate(date);
-                    setSelectedSlot(null);
-                  }}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition ${
-                    selectedDate === date
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                  }`}
-                >
-                  {formatDate(date)}
-                </button>
-              ))}
-            </div>
-          </div>
+      <div>
+        <label className="mb-2 block text-sm font-medium text-slate-700">Notes (optional)</label>
+        <textarea
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          rows={3}
+          placeholder={`Anything the owner should know before the viewing of ${propertyTitle}?`}
+          className="w-full border border-slate-300 p-3 text-sm outline-none focus:border-slate-950"
+        />
+      </div>
 
-          {/* Time Selection */}
-          <div className="mb-6">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Select Time
-            </label>
-            <div className="grid grid-cols-3 gap-2">
-              {dateSlots.map((slot) => (
-                <button
-                  key={slot.id}
-                  onClick={() => setSelectedSlot(slot.id)}
-                  disabled={!slot.available}
-                  className={`py-3 rounded-lg text-sm font-medium transition ${
-                    selectedSlot === slot.id
-                      ? 'bg-blue-600 text-white'
-                      : slot.available
-                      ? 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                      : 'bg-gray-100 text-gray-400 cursor-not-allowed line-through'
-                  }`}
-                >
-                  {formatTime(slot.startTime)}
-                </button>
-              ))}
-            </div>
-            {dateSlots.length === 0 && (
-              <p className="text-center text-gray-500 py-4">
-                No available slots for this date
-              </p>
-            )}
-          </div>
+      {error && <div className="text-sm text-red-700">{error}</div>}
 
-          {/* Contact Form */}
-          {selectedSlot && (
-            <div className="border-t pt-6 space-y-4">
-              <h4 className="font-medium text-gray-900">Your Details</h4>
-              <div className="grid md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm text-gray-600 mb-1">Name</label>
-                  <input
-                    type="text"
-                    value={bookingData.name}
-                    onChange={(e) => setBookingData({ ...bookingData, name: e.target.value })}
-                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm text-gray-600 mb-1">Phone</label>
-                  <input
-                    type="tel"
-                    value={bookingData.phone}
-                    onChange={(e) => setBookingData({ ...bookingData, phone: e.target.value })}
-                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                    required
-                  />
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm text-gray-600 mb-1">Email</label>
-                <input
-                  type="email"
-                  value={bookingData.email}
-                  onChange={(e) => setBookingData({ ...bookingData, email: e.target.value })}
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-sm text-gray-600 mb-1">
-                  Notes (optional)
-                </label>
-                <textarea
-                  value={bookingData.notes}
-                  onChange={(e) => setBookingData({ ...bookingData, notes: e.target.value })}
-                  rows={2}
-                  placeholder="Any questions or special requirements?"
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
-              <button
-                onClick={bookViewing}
-                disabled={submitting || !bookingData.name || !bookingData.email || !bookingData.phone}
-                className="w-full py-3 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {submitting ? 'Booking...' : 'Confirm Viewing'}
-              </button>
-            </div>
-          )}
-        </div>
-      ) : (
-        <div className="p-6 text-center">
-          <p className="text-gray-500">No viewing slots available</p>
-          <p className="text-sm text-gray-400 mt-1">
-            Contact the agent to arrange a viewing
-          </p>
-        </div>
-      )}
+      <button
+        type="button"
+        onClick={bookViewing}
+        disabled={submitting || !selectedSlot}
+        className="w-full bg-slate-950 px-4 py-3 text-sm font-semibold text-white disabled:opacity-50"
+      >
+        {submitting ? 'Sending request…' : 'Request viewing'}
+      </button>
     </div>
   );
 }
