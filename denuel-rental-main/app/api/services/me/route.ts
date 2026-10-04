@@ -3,6 +3,8 @@ import { prisma } from '@/lib/prisma';
 import { requireAuth } from '@/lib/auth';
 import { publicServerError } from '@/lib/publicError';
 
+export const dynamic = 'force-dynamic';
+
 // GET - Get current user's service provider profile
 export async function GET(req: NextRequest) {
   try {
@@ -65,6 +67,7 @@ export async function GET(req: NextRequest) {
       },
     });
   } catch (error) {
+    if (error instanceof Response) return error;
     console.error('Error fetching provider profile:', error);
     const safe = publicServerError(error, 'Unable to load your provider profile.');
     return NextResponse.json(
@@ -139,6 +142,7 @@ export async function PATCH(req: NextRequest) {
       provider: updatedProvider,
     });
   } catch (error) {
+    if (error instanceof Response) return error;
     console.error('Error updating provider profile:', error);
     const safe = publicServerError(error, 'Unable to update your provider profile.');
     return NextResponse.json(
