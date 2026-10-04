@@ -206,15 +206,22 @@ export async function PUT(req: NextRequest) {
   try {
     const user = await requireAuth(req);
     requireCsrf(req);
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
 
     const body = await req.json();
-    const { appointmentId, status, feedback, rating, scheduledAt } = body;
+    const appointmentId =
+      typeof body.appointmentId === 'string' ? body.appointmentId : '';
+    const requestedStatus =
+      typeof body.status === 'string' ? body.status : '';
+    const feedback =
+      typeof body.feedback === 'string' ? body.feedback.trim().slice(0, 1500) : '';
+    const rating = Number(body.rating);
+    const rescheduledAt = body.scheduledAt ? new Date(body.scheduledAt) : null;
 
     if (!appointmentId) {
-      return NextResponse.json({ error: 'Appointment ID is required' }, { status: 400 });
+      return NextResponse.json(
+        { error: 'Appointment ID is required.' },
+        { status: 400 }
+      );
     }
 
     const appointment = await prisma.viewingAppointment.findUnique({
@@ -223,35 +230,67 @@ export async function PUT(req: NextRequest) {
     });
 
     if (!appointment) {
-      return NextResponse.json({ error: 'Appointment not found' }, { status: 404 });
+      return NextResponse.json({ error: 'Appointment not found.' }, { status: 404 });
     }
 
-    // Check authorization
     const isOwner = appointment.property.ownerId === user.id;
     const isVisitor = appointment.visitorId === user.id;
+    const isAdmin = user.role === 'ADMIN';
 
-    if (!isOwner && !isVisitor && user.role !== 'ADMIN') {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    if (!isOwner && !isVisitor && !isAdmin) {
+      return NextResponse.json({ error: 'Forbidden.' }, { status: 403 });
     }
 
     const updateData: Record<string, unknown> = {};
 
-    // Owner can confirm, cancel, mark as no-show
-    if (isOwner && status) {
-      updateData.status = status;
+    if (requestedStatus) {
+      if (isVisitor && requestedStatus !== 'CANCELED' && !isAdmin) {
+        return NextResponse.json(
+          { error: 'Visitors can only cancel their own viewing request.' },
+          { status: 403 }
+        );
+      }
+
+      if (
+        (isOwner || isAdmin) &&
+        !['PENDING', 'CONFIRMED', 'COMPLETED', 'CANCELED', 'NO_SHOW'].includes(requestedStatus)
+      ) {
+        return NextResponse.json(
+          { error: 'Invalid viewing status.' },
+          { status: 400 }
+        );
+      }
+
+      updateData.status = requestedStatus;
     }
 
-    // Visitor can cancel or add feedback/rating
-    if (isVisitor) {
-      if (status === 'CANCELED') updateData.status = status;
-      if (feedback) updateData.feedback = feedback;
-      if (rating) updateData.rating = rating;
-    }
+    if (rescheduledAt) {
+      if (Number.isNaN(rescheduledAt.getTime()) || rescheduledAt.getTime() <= Date.now()) {
+        return NextResponse.json(
+          { error: 'Choose a valid future viewing time.' },
+          { status: 400 }
+        );
+      }
 
-    // Reschedule
-    if (scheduledAt && (isOwner || isVisitor)) {
-      updateData.scheduledAt = new Date(scheduledAt);
+      updateData.scheduledAt = rescheduledAt;
       updateData.status = 'PENDING';
+    }
+
+    if (isVisitor) {
+      if (feedback) updateData.feedback = feedback;
+      if (Number.isFinite(rating)) {
+        if (rating < 1 || rating > 5) {
+          return NextResponse.json({ error: 'Rating must be from 1 to 5.' }, { status: 400 });
+        }
+        updateData.rating = Math.round(rating);
+      }
+    }
+
+    if (Object.keys(updateData).length === 0) {
+      return NextResponse.json(
+        { error: 'No permitted viewing update was provided.' },
+        { status: 400 }
+      );
     }
 
     const updated = await prisma.viewingAppointment.update({
@@ -259,55 +298,58 @@ export async function PUT(req: NextRequest) {
       data: updateData,
     });
 
-    // Notify relevant party
-    if (status === 'CONFIRMED') {
-      await prisma.notification.create({
-        data: {
-          userId: appointment.visitorId,
-          type: 'VIEWING_CONFIRMED',
+    if (requestedStatus === 'CONFIRMED') {
+      try {
+        await prisma.notification.create({
           data: {
-            appointmentId,
-            propertyTitle: appointment.property.title,
-            scheduledAt: appointment.scheduledAt,
+            userId: appointment.visitorId,
+            type: 'VIEWING_CONFIRMED',
+            data: {
+              appointmentId,
+              propertyTitle: appointment.property.title,
+              scheduledAt: updated.scheduledAt,
+            },
           },
-        },
-      });
+        });
+      } catch {
+        // Status update remains valid if notification delivery fails.
+      }
     }
 
     return NextResponse.json(updated);
   } catch (error) {
+    if (error instanceof Response) return error;
     console.error('Update viewing appointment error:', error);
-    return NextResponse.json({ error: 'Failed to update appointment' }, { status: 500 });
+    return NextResponse.json(
+      { error: 'Unable to update the viewing request right now.' },
+      { status: 500 }
+    );
   }
 }
 
-// DELETE - Cancel appointment
+// DELETE - Permanently remove a viewing record (admin only)
 export async function DELETE(req: NextRequest) {
   try {
-    const user = await requireAuth(req);
+    const user = await requireAuth(req, ['ADMIN']);
     requireCsrf(req);
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
 
     const { searchParams } = new URL(req.url);
     const appointmentId = searchParams.get('id');
 
     if (!appointmentId) {
-      return NextResponse.json({ error: 'Appointment ID is required' }, { status: 400 });
+      return NextResponse.json(
+        { error: 'Appointment ID is required.' },
+        { status: 400 }
+      );
     }
 
     const appointment = await prisma.viewingAppointment.findUnique({
       where: { id: appointmentId },
-      include: { property: true },
+      select: { id: true },
     });
 
     if (!appointment) {
-      return NextResponse.json({ error: 'Appointment not found' }, { status: 404 });
-    }
-
-    if (appointment.visitorId !== user.id && appointment.property.ownerId !== user.id && user.role !== 'ADMIN') {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+      return NextResponse.json({ error: 'Appointment not found.' }, { status: 404 });
     }
 
     await prisma.viewingAppointment.delete({
@@ -316,7 +358,11 @@ export async function DELETE(req: NextRequest) {
 
     return NextResponse.json({ success: true });
   } catch (error) {
+    if (error instanceof Response) return error;
     console.error('Delete viewing appointment error:', error);
-    return NextResponse.json({ error: 'Failed to delete appointment' }, { status: 500 });
+    return NextResponse.json(
+      { error: 'Unable to delete the viewing record.' },
+      { status: 500 }
+    );
   }
 }
