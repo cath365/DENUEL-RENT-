@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import prisma from '../../../../lib/prisma';
-import { requireAuth } from '../../../../lib/auth';
+import { requireAuth, requireCsrf } from '../../../../lib/auth';
 import { publicServerError } from '../../../../lib/publicError';
 import { z } from 'zod';
 
@@ -57,6 +57,7 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   try {
     const user = await requireAuth(req);
+    requireCsrf(req);
     const body = await req.json();
     const parsed = CreateDriverSchema.parse(body);
 
@@ -130,6 +131,7 @@ export async function POST(req: Request) {
 export async function PUT(req: Request) {
   try {
     const user = await requireAuth(req);
+    requireCsrf(req);
     const body = await req.json();
     const parsed = UpdateDriverSchema.parse(body);
 
