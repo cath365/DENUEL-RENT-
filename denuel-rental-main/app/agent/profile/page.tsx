@@ -38,6 +38,9 @@ export default function AgentProfileEditorPage() {
     facebookUrl: '',
     linkedinUrl: '',
     instagramUrl: '',
+    publicEmail: '',
+    publicPhone: '',
+    whatsappNumber: '',
   });
   const [completion, setCompletion] = useState(0);
   const [verification, setVerification] = useState<any>(null);
@@ -80,6 +83,9 @@ export default function AgentProfileEditorPage() {
           facebookUrl: agent.facebookUrl || '',
           linkedinUrl: agent.linkedinUrl || '',
           instagramUrl: agent.instagramUrl || '',
+          publicEmail: agent.publicEmail || '',
+          publicPhone: agent.publicPhone || '',
+          whatsappNumber: agent.whatsappNumber || '',
         });
       } else if (profileResponse.status !== 404) {
         const data = await profileResponse.json().catch(() => ({}));
@@ -179,6 +185,9 @@ export default function AgentProfileEditorPage() {
           facebookUrl: form.facebookUrl.trim() || null,
           linkedinUrl: form.linkedinUrl.trim() || null,
           instagramUrl: form.instagramUrl.trim() || null,
+          publicEmail: form.publicEmail.trim() || null,
+          publicPhone: form.publicPhone.trim() || null,
+          whatsappNumber: form.whatsappNumber.trim() || null,
         }),
       });
 
@@ -304,6 +313,43 @@ export default function AgentProfileEditorPage() {
                   placeholder="English, Nyanja, Bemba"
                   className="h-11 w-full border border-slate-300 px-3 text-sm outline-none focus:border-[#16A34A]"
                 />
+              </div>
+
+              <div className="sm:col-span-2 border-t border-slate-100 pt-5">
+                <div className="text-sm font-semibold text-slate-900">Public contact details</div>
+                <p className="mt-1 text-xs leading-5 text-slate-500">
+                  Only these contact details are shown publicly. Your account login email and private account phone are not exposed by the agent directory.
+                </p>
+                <div className="mt-4 grid gap-4 sm:grid-cols-3">
+                  <div>
+                    <label className="mb-2 block text-sm font-semibold text-slate-700">Public email</label>
+                    <input
+                      type="email"
+                      value={form.publicEmail}
+                      onChange={(event) => setForm({ ...form, publicEmail: event.target.value })}
+                      placeholder="work@example.com"
+                      className="h-11 w-full border border-slate-300 px-3 text-sm outline-none focus:border-[#16A34A]"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-2 block text-sm font-semibold text-slate-700">Public phone</label>
+                    <input
+                      value={form.publicPhone}
+                      onChange={(event) => setForm({ ...form, publicPhone: event.target.value })}
+                      placeholder="+260..."
+                      className="h-11 w-full border border-slate-300 px-3 text-sm outline-none focus:border-[#16A34A]"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-2 block text-sm font-semibold text-slate-700">WhatsApp number</label>
+                    <input
+                      value={form.whatsappNumber}
+                      onChange={(event) => setForm({ ...form, whatsappNumber: event.target.value })}
+                      placeholder="+260..."
+                      className="h-11 w-full border border-slate-300 px-3 text-sm outline-none focus:border-[#16A34A]"
+                    />
+                  </div>
+                </div>
               </div>
 
               <div className="sm:col-span-2">
