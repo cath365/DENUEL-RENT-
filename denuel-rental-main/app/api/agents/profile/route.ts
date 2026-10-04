@@ -17,6 +17,9 @@ const ProfileSchema = z.object({
   facebookUrl: z.string().url().optional().nullable(),
   linkedinUrl: z.string().url().optional().nullable(),
   instagramUrl: z.string().url().optional().nullable(),
+  publicEmail: z.string().email().optional().nullable(),
+  publicPhone: z.string().trim().max(80).optional().nullable(),
+  whatsappNumber: z.string().trim().max(80).optional().nullable(),
 });
 
 function completion(profile: any) {
@@ -27,6 +30,7 @@ function completion(profile: any) {
     profile?.yearsExperience !== null && profile?.yearsExperience !== undefined,
     Array.isArray(profile?.languages) && profile.languages.length > 0,
     profile?.profilePhotoUrl,
+    profile?.publicEmail || profile?.publicPhone || profile?.whatsappNumber,
   ];
   return Math.round((checks.filter(Boolean).length / checks.length) * 100);
 }
@@ -199,6 +203,9 @@ export async function POST(req: NextRequest) {
         facebookUrl: parsed.facebookUrl ?? null,
         linkedinUrl: parsed.linkedinUrl ?? null,
         instagramUrl: parsed.instagramUrl ?? null,
+        publicEmail: parsed.publicEmail ?? null,
+        publicPhone: parsed.publicPhone ?? null,
+        whatsappNumber: parsed.whatsappNumber ?? null,
       },
       create: {
         userId: user.id,
@@ -214,6 +221,9 @@ export async function POST(req: NextRequest) {
         facebookUrl: parsed.facebookUrl ?? null,
         linkedinUrl: parsed.linkedinUrl ?? null,
         instagramUrl: parsed.instagramUrl ?? null,
+        publicEmail: parsed.publicEmail ?? null,
+        publicPhone: parsed.publicPhone ?? null,
+        whatsappNumber: parsed.whatsappNumber ?? null,
       },
     });
 
