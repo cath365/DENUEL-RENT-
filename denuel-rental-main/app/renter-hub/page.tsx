@@ -597,6 +597,22 @@ export default function RenterHub() {
                               Open lease document ↗
                             </a>
                           )}
+
+                          {lease.content && (
+                            <details className="mt-4 border border-slate-200 bg-slate-50">
+                              <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-slate-800">
+                                Review agreement text before signing
+                              </summary>
+                              <div className="border-t border-slate-200 bg-white p-4">
+                                <p className="mb-3 text-xs leading-5 text-slate-500">
+                                  This is the exact lease text stored on Ng&apos;anda for this agreement.
+                                </p>
+                                <div className="max-h-80 overflow-y-auto whitespace-pre-wrap text-sm leading-6 text-slate-700">
+                                  {lease.content}
+                                </div>
+                              </div>
+                            </details>
+                          )}
                         </div>
 
                         <div className="lg:text-right">
