@@ -13,6 +13,9 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const verified = searchParams.get('verified');
     const category = searchParams.get('category');
+    const providerType = searchParams.get('providerType');
+    const status = searchParams.get('status');
+    const q = searchParams.get('q')?.trim();
     const page = parseInt(searchParams.get('page') || '1');
     const limit = parseInt(searchParams.get('limit') || '50');
 
@@ -26,6 +29,27 @@ export async function GET(req: NextRequest) {
 
     if (category) {
       where.category = category;
+    }
+
+    if (providerType === 'COMPANY' || providerType === 'INDIVIDUAL') {
+      where.providerType = providerType;
+    }
+
+    if (status === 'VERIFIED') {
+      where.verificationStatus = 'VERIFIED';
+    } else if (status === 'REJECTED') {
+      where.verificationStatus = 'REJECTED';
+    } else if (status === 'PENDING') {
+      where.verificationStatus = 'PENDING';
+    }
+
+    if (q) {
+      where.OR = [
+        { businessName: { contains: q } },
+        { email: { contains: q } },
+        { phone: { contains: q } },
+        { city: { contains: q } },
+      ];
     }
 
     const [providers, total] = await Promise.all([
