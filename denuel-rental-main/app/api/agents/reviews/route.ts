@@ -1,42 +1,48 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
-import { requireAuth } from '@/lib/auth';
+import { requireAuth, requireCsrf } from '@/lib/auth';
+import { publicServerError } from '@/lib/publicError';
 
-// GET - Get reviews for an agent
+const ReviewSchema = z.object({
+  agentId: z.string().min(1),
+  propertyId: z.string().optional().nullable(),
+  rating: z.number().int().min(1).max(5),
+  title: z.string().trim().max(120).optional().nullable(),
+  review: z.string().trim().min(5).max(2500),
+  wouldRecommend: z.boolean().optional(),
+});
+
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
     const agentId = searchParams.get('agentId');
-    const page = parseInt(searchParams.get('page') || '1');
-    const limit = parseInt(searchParams.get('limit') || '10');
+    const page = Math.max(1, Number(searchParams.get('page') || 1) || 1);
+    const limit = Math.min(50, Math.max(1, Number(searchParams.get('limit') || 10) || 10));
     const sortBy = searchParams.get('sortBy') || 'recent';
 
     if (!agentId) {
-      return NextResponse.json({ error: 'Agent ID is required' }, { status: 400 });
+      return NextResponse.json(
+        { error: 'Agent ID is required.' },
+        { status: 400 }
+      );
     }
 
-    const orderBy: Record<string, string> = {};
-    switch (sortBy) {
-      case 'recent':
-        orderBy.createdAt = 'desc';
-        break;
-      case 'highest':
-        orderBy.rating = 'desc';
-        break;
-      case 'lowest':
-        orderBy.rating = 'asc';
-        break;
-      case 'helpful':
-        orderBy.helpfulness = 'desc';
-        break;
-    }
+    let orderBy: any = { createdAt: 'desc' };
+    if (sortBy === 'highest') orderBy = { rating: 'desc' };
+    else if (sortBy === 'lowest') orderBy = { rating: 'asc' };
+    else if (sortBy === 'helpful') orderBy = { helpfulness: 'desc' };
 
-    const [reviews, total, stats] = await Promise.all([
+    const [reviews, total, stats, recommendationCount] = await Promise.all([
       prisma.agentReview.findMany({
         where: { agentId },
         include: {
           reviewer: {
-            select: { id: true, name: true },
+            select: {
+              id: true,
+              name: true,
+              profileImage: true,
+            },
           },
         },
         orderBy,
@@ -49,26 +55,27 @@ export async function GET(req: NextRequest) {
         _avg: { rating: true },
         _count: { rating: true },
       }),
+      prisma.agentReview.count({
+        where: { agentId, wouldRecommend: true },
+      }),
     ]);
 
-    // Calculate rating distribution
     const ratingDistribution = await prisma.agentReview.groupBy({
       by: ['rating'],
       where: { agentId },
       _count: { rating: true },
     });
 
-    const distribution = [1, 2, 3, 4, 5].reduce((acc, rating) => {
-      const found = ratingDistribution.find((r) => r.rating === rating);
-      acc[rating] = found?._count.rating || 0;
-      return acc;
-    }, {} as Record<number, number>);
-
-    // Calculate recommendation percentage
-    const wouldRecommendCount = await prisma.agentReview.count({
-      where: { agentId, wouldRecommend: true },
-    });
-    const recommendationRate = total > 0 ? (wouldRecommendCount / total) * 100 : 0;
+    const distribution = [1, 2, 3, 4, 5].reduce(
+      (acc, rating) => {
+        const found = ratingDistribution.find(
+          (row) => row.rating === rating
+        );
+        acc[rating] = found?._count.rating || 0;
+        return acc;
+      },
+      {} as Record<number, number>
+    );
 
     return NextResponse.json({
       reviews,
@@ -82,98 +89,147 @@ export async function GET(req: NextRequest) {
         averageRating: stats._avg.rating || 0,
         totalReviews: stats._count.rating || 0,
         distribution,
-        recommendationRate: Math.round(recommendationRate),
+        recommendationRate:
+          total > 0
+            ? Math.round((recommendationCount / total) * 100)
+            : 0,
       },
     });
   } catch (error) {
     console.error('Fetch agent reviews error:', error);
-    return NextResponse.json({ error: 'Failed to fetch reviews' }, { status: 500 });
+    const safe = publicServerError(error, 'Unable to load agent reviews.');
+    return NextResponse.json({ error: safe.message }, { status: safe.status });
   }
 }
 
-// POST - Create a review for an agent
 export async function POST(req: NextRequest) {
   try {
     const user = await requireAuth(req);
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    requireCsrf(req);
 
-    const body = await req.json();
-    const {
-      agentId,
-      propertyId,
-      rating,
-      title,
-      review,
-      wouldRecommend,
-    } = body;
+    const parsed = ReviewSchema.parse(await req.json());
 
-    if (!agentId || !rating || !review) {
-      return NextResponse.json(
-        { error: 'Agent ID, rating, and review are required' },
-        { status: 400 }
-      );
-    }
-
-    if (rating < 1 || rating > 5) {
-      return NextResponse.json(
-        { error: 'Rating must be between 1 and 5' },
-        { status: 400 }
-      );
-    }
-
-    // Check if agent exists
     const agent = await prisma.agentProfile.findUnique({
-      where: { id: agentId },
+      where: { id: parsed.agentId },
+      include: {
+        user: {
+          select: {
+            id: true,
+          },
+        },
+      },
     });
 
     if (!agent) {
-      return NextResponse.json({ error: 'Agent not found' }, { status: 404 });
+      return NextResponse.json(
+        { error: 'Agent not found.' },
+        { status: 404 }
+      );
     }
 
-    // Check if user already reviewed this agent
+    if (agent.userId === user.id) {
+      return NextResponse.json(
+        { error: 'You cannot review your own agent profile.' },
+        { status: 400 }
+      );
+    }
+
     const existingReview = await prisma.agentReview.findFirst({
       where: {
-        agentId,
+        agentId: parsed.agentId,
         reviewerId: user.id,
       },
     });
 
     if (existingReview) {
       return NextResponse.json(
-        { error: 'You have already reviewed this agent' },
-        { status: 400 }
+        { error: 'You have already reviewed this agent.' },
+        { status: 409 }
       );
     }
 
-    // Create review
+    if (parsed.propertyId) {
+      const property = await prisma.property.findUnique({
+        where: { id: parsed.propertyId },
+        select: {
+          id: true,
+          ownerId: true,
+        },
+      });
+
+      if (!property || property.ownerId !== agent.userId) {
+        return NextResponse.json(
+          { error: 'The selected property is not managed by this agent.' },
+          { status: 400 }
+        );
+      }
+    }
+
+    const [completedViewing, tenantLease] = await Promise.all([
+      prisma.viewingAppointment.findFirst({
+        where: {
+          visitorId: user.id,
+          status: 'COMPLETED',
+          property: {
+            ownerId: agent.userId,
+            ...(parsed.propertyId
+              ? { id: parsed.propertyId }
+              : {}),
+          },
+        },
+        select: { id: true },
+      }),
+      prisma.leaseAgreement.findFirst({
+        where: {
+          tenantId: user.id,
+          property: {
+            ownerId: agent.userId,
+            ...(parsed.propertyId
+              ? { id: parsed.propertyId }
+              : {}),
+          },
+          status: {
+            in: ['ACTIVE', 'EXPIRED', 'TERMINATED'],
+          },
+        },
+        select: { id: true },
+      }),
+    ]);
+
+    const verifiedInteraction = Boolean(
+      completedViewing || tenantLease
+    );
+
     const newReview = await prisma.agentReview.create({
       data: {
-        agentId,
+        agentId: parsed.agentId,
         reviewerId: user.id,
-        propertyId,
-        rating,
-        title,
-        review,
-        wouldRecommend: wouldRecommend ?? true,
+        propertyId: parsed.propertyId || null,
+        rating: parsed.rating,
+        title: parsed.title || null,
+        review: parsed.review,
+        wouldRecommend: parsed.wouldRecommend ?? true,
+        isVerified: verifiedInteraction,
       },
       include: {
         reviewer: {
-          select: { id: true, name: true },
+          select: {
+            id: true,
+            name: true,
+            profileImage: true,
+          },
         },
       },
     });
 
-    // Update agent's average rating
     const stats = await prisma.agentReview.aggregate({
-      where: { agentId },
+      where: { agentId: parsed.agentId },
       _avg: { rating: true },
       _count: { rating: true },
     });
 
     await prisma.agentProfile.update({
-      where: { id: agentId },
+      where: { id: parsed.agentId },
       data: {
         ratingAvg: stats._avg.rating || 0,
         ratingCount: stats._count.rating || 0,
@@ -182,7 +238,16 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json(newReview, { status: 201 });
   } catch (error) {
+    if (error instanceof z.ZodError) {
+      return NextResponse.json(
+        { error: error.errors[0]?.message || 'Check the review details.' },
+        { status: 422 }
+      );
+    }
+    if (error instanceof Response) return error;
+
     console.error('Create agent review error:', error);
-    return NextResponse.json({ error: 'Failed to create review' }, { status: 500 });
+    const safe = publicServerError(error, 'Unable to submit this review.');
+    return NextResponse.json({ error: safe.message }, { status: safe.status });
   }
 }
