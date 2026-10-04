@@ -1,39 +1,12 @@
 'use client';
 
-import { useState, useEffect, useRef, Suspense } from 'react';
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import Header from '@/components/Header';
+import { csrfFetch } from '@/lib/csrf';
 
-interface ServiceProvider {
-  id: string;
-  providerType?: string;
-  verificationStatus?: string;
-  rejectionReason?: string | null;
-  businessName: string;
-  category: string;
-  description: string;
-  phone: string;
-  email: string;
-  city: string;
-  area: string;
-  profilePhotoUrl: string;
-  logoUrl: string;
-  priceRange: string;
-  hourlyRate: number;
-  minimumCharge: number;
-  yearsInBusiness: number;
-  isVerified: boolean;
-  isActive: boolean;
-  isAvailable: boolean;
-  ratingAvg: number;
-  ratingCount: number;
-  completedJobs: number;
-  serviceAreas: string[];
-  documents: ServiceDocument[];
-  portfolio: PortfolioItem[];
-  bookings: Booking[];
-}
+type DashboardTab = 'overview' | 'leads' | 'messages' | 'bookings' | 'portfolio' | 'analytics' | 'profile';
 
 interface ServiceDocument {
   id: string;
@@ -47,54 +20,83 @@ interface ServiceDocument {
 interface PortfolioItem {
   id: string;
   title: string;
-  description: string;
+  description?: string | null;
   imageUrl: string;
-  category: string;
-  projectDate: string;
+  category?: string | null;
+  projectDate?: string | null;
 }
 
 interface Booking {
   id: string;
-  customerName: string;
-  customerPhone: string;
+  customerName?: string | null;
+  customerPhone?: string | null;
   serviceType: string;
   scheduledAt: string;
   status: string;
-  estimatedPrice: number;
-  notes: string;
+  estimatedPrice?: number | null;
+  finalPrice?: number | null;
+  notes?: string | null;
   createdAt: string;
   customer?: {
-    name: string;
-    email: string;
-    phone: string;
+    name?: string | null;
+    email?: string | null;
+    phone?: string | null;
   };
+}
+
+interface ServiceProvider {
+  id: string;
+  providerType?: string;
+  verificationStatus?: string;
+  rejectionReason?: string | null;
+  profileCompletion?: number;
+  businessName: string;
+  category: string;
+  description?: string | null;
+  phone: string;
+  email: string;
+  city: string;
+  area?: string | null;
+  website?: string | null;
+  profilePhotoUrl?: string | null;
+  logoUrl?: string | null;
+  coverPhotoUrl?: string | null;
+  priceRange?: string | null;
+  hourlyRate?: number | null;
+  minimumCharge?: number | null;
+  yearsInBusiness?: number | null;
+  isVerified: boolean;
+  isActive: boolean;
+  isAvailable: boolean;
+  ratingAvg: number;
+  ratingCount: number;
+  completedJobs: number;
+  serviceAreas?: any;
+  documents: ServiceDocument[];
+  portfolio: PortfolioItem[];
+  bookings: Booking[];
 }
 
 interface ProfileView {
   id: string;
-  viewerId: string | null;
-  viewerName: string | null;
-  viewerEmail: string | null;
-  viewerPhone: string | null;
-  viewerCity: string | null;
-  source: string | null;
-  searchQuery: string | null;
+  source?: string | null;
+  searchQuery?: string | null;
   createdAt: string;
 }
 
 interface Inquiry {
   id: string;
   customerName: string;
-  customerEmail: string | null;
+  customerEmail?: string | null;
   customerPhone: string;
   serviceNeeded: string;
-  description: string | null;
-  preferredDate: string | null;
-  budget: string | null;
-  propertyAddress: string | null;
-  city: string | null;
+  description?: string | null;
+  preferredDate?: string | null;
+  budget?: string | null;
+  propertyAddress?: string | null;
+  city?: string | null;
   status: string;
-  notes: string | null;
+  notes?: string | null;
   createdAt: string;
 }
 
@@ -102,10 +104,10 @@ interface Conversation {
   id: string;
   customerId: string;
   customerName: string;
-  customerPhone: string | null;
-  customerEmail: string | null;
-  lastMessage: string | null;
-  lastMessageAt: string | null;
+  customerPhone?: string | null;
+  customerEmail?: string | null;
+  lastMessage?: string | null;
+  lastMessageAt?: string | null;
   unreadProvider: number;
   status: string;
 }
@@ -121,65 +123,83 @@ interface Message {
   createdAt: string;
 }
 
-const STATUS_COLORS: Record<string, string> = {
-  PENDING: 'bg-yellow-100 text-yellow-800',
-  CONFIRMED: 'bg-blue-100 text-blue-800',
-  COMPLETED: 'bg-green-100 text-green-800',
-  CANCELED: 'bg-red-100 text-red-800',
-  NEW: 'bg-purple-100 text-purple-800',
-  CONTACTED: 'bg-blue-100 text-blue-800',
-  QUOTED: 'bg-orange-100 text-orange-800',
-  CONVERTED: 'bg-green-100 text-green-800',
-  CLOSED: 'bg-gray-100 text-gray-800',
-};
-
 const CATEGORY_LABELS: Record<string, string> = {
-  GARDENER: 'Garden & Landscaping',
-  LANDSCAPER: 'Landscaping',
-  PEST_CONTROL: 'Pest Control',
-  MOVER: 'Moving Services',
+  HOME_INSPECTOR: 'Home inspection',
+  MOVER: 'Moving',
   CLEANER: 'Cleaning',
-  MAID: 'Maid Services',
-  PAINTER: 'Painting',
-  PLUMBER: 'Plumbing',
-  SECURITY: 'Security',
-  INTERIOR_DESIGNER: 'Interior Design',
+  PHOTOGRAPHER: 'Property photography',
+  CONTRACTOR: 'Construction / contractor',
   ELECTRICIAN: 'Electrical',
-  CONTRACTOR: 'Contractor',
-  HOME_INSPECTOR: 'Home Inspection',
+  PLUMBER: 'Plumbing',
+  PAINTER: 'Painting',
+  LANDSCAPER: 'Gardening & landscaping',
+  PEST_CONTROL: 'Pest control',
+  HOME_INSURANCE: 'Home insurance',
+  HOME_WARRANTY: 'Home warranty',
+  LEGAL: 'Legal',
+  MORTGAGE_BROKER: 'Mortgage broker',
+  INTERIOR_DESIGNER: 'Interior design',
+  SECURITY: 'Security',
   HVAC: 'HVAC',
   ROOFING: 'Roofing',
   FLOORING: 'Flooring',
-  PHOTOGRAPHER: 'Photography',
-  OTHER: 'Other Services',
+  OTHER: 'Other services',
 };
+
+const INQUIRY_STATUSES = ['NEW', 'CONTACTED', 'QUOTED', 'CONVERTED', 'CLOSED'] as const;
+
+function money(value?: number | null) {
+  return 'K' + Number(value || 0).toLocaleString();
+}
+
+function humanize(value?: string | null) {
+  if (!value) return 'Not specified';
+  return value.replaceAll('_', ' ').toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function statusClass(status: string) {
+  if (status === 'COMPLETED' || status === 'CONVERTED') return 'border-emerald-200 bg-emerald-50 text-emerald-800';
+  if (status === 'CONFIRMED' || status === 'CONTACTED') return 'border-blue-200 bg-blue-50 text-blue-800';
+  if (status === 'QUOTED') return 'border-violet-200 bg-violet-50 text-violet-800';
+  if (status === 'CANCELED' || status === 'CLOSED') return 'border-slate-200 bg-slate-50 text-slate-600';
+  return 'border-amber-200 bg-amber-50 text-amber-800';
+}
+
+async function readResponse(res: Response) {
+  const text = await res.text();
+  let data: any = {};
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    data = {};
+  }
+  return { text, data };
+}
 
 function ServiceProviderDashboardContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [provider, setProvider] = useState<ServiceProvider | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('overview');
-  const [showSuccessMessage, setShowSuccessMessage] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Profile Views
+  const [provider, setProvider] = useState<ServiceProvider | null>(null);
   const [profileViews, setProfileViews] = useState<ProfileView[]>([]);
   const [viewStats, setViewStats] = useState<any>(null);
-
-  // Inquiries
   const [inquiries, setInquiries] = useState<Inquiry[]>([]);
   const [inquiryCounts, setInquiryCounts] = useState<Record<string, number>>({});
-  const [selectedInquiryStatus, setSelectedInquiryStatus] = useState('ALL');
-
-  // Conversations/Chat
   const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [totalUnread, setTotalUnread] = useState(0);
+
+  const [activeTab, setActiveTab] = useState<DashboardTab>('overview');
+  const [selectedInquiryStatus, setSelectedInquiryStatus] = useState('ALL');
   const [activeConversation, setActiveConversation] = useState<Conversation | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
-  const [totalUnread, setTotalUnread] = useState(0);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // For portfolio upload
+  const [loading, setLoading] = useState(true);
+  const [actionLoading, setActionLoading] = useState('');
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+
   const [showPortfolioModal, setShowPortfolioModal] = useState(false);
   const [portfolioForm, setPortfolioForm] = useState({
     title: '',
@@ -188,845 +208,1274 @@ function ServiceProviderDashboardContent() {
     image: null as File | null,
   });
 
+  const [profileForm, setProfileForm] = useState({
+    businessName: '',
+    description: '',
+    phone: '',
+    email: '',
+    website: '',
+    city: '',
+    area: '',
+    priceRange: '',
+    yearsInBusiness: '',
+  });
+
+  const syncProfileForm = (nextProvider: ServiceProvider) => {
+    setProfileForm({
+      businessName: nextProvider.businessName || '',
+      description: nextProvider.description || '',
+      phone: nextProvider.phone || '',
+      email: nextProvider.email || '',
+      website: nextProvider.website || '',
+      city: nextProvider.city || '',
+      area: nextProvider.area || '',
+      priceRange: nextProvider.priceRange || '',
+      yearsInBusiness: nextProvider.yearsInBusiness != null ? String(nextProvider.yearsInBusiness) : '',
+    });
+  };
+
+  const redirectToLogin = () => {
+    router.push('/auth/login?redirect=/services/dashboard&reason=session');
+  };
+
+  async function loadProfile() {
+    const res = await fetch('/api/services/me', { credentials: 'same-origin' });
+    const { text, data } = await readResponse(res);
+
+    if (res.status === 401) {
+      redirectToLogin();
+      return null;
+    }
+    if (res.status === 404) {
+      router.push('/services/register');
+      return null;
+    }
+    if (!res.ok || !data?.provider) {
+      throw new Error(data?.message || text || 'Unable to load your service profile.');
+    }
+
+    setProvider(data.provider);
+    syncProfileForm(data.provider);
+    return data.provider as ServiceProvider;
+  }
+
+  async function loadViews() {
+    const res = await fetch('/api/services/views?days=30', { credentials: 'same-origin' });
+    const { text, data } = await readResponse(res);
+    if (res.status === 401) {
+      redirectToLogin();
+      return;
+    }
+    if (!res.ok) throw new Error(data?.error || text || 'Unable to load profile analytics.');
+    setProfileViews(Array.isArray(data.views) ? data.views : []);
+    setViewStats(data.stats || null);
+  }
+
+  async function loadInquiries() {
+    const res = await fetch('/api/services/inquiries', { credentials: 'same-origin' });
+    const { text, data } = await readResponse(res);
+    if (res.status === 401) {
+      redirectToLogin();
+      return;
+    }
+    if (!res.ok) throw new Error(data?.error || text || 'Unable to load service inquiries.');
+    setInquiries(Array.isArray(data.inquiries) ? data.inquiries : []);
+    setInquiryCounts(data.counts || {});
+  }
+
+  async function loadConversations() {
+    const res = await fetch('/api/services/conversations', { credentials: 'same-origin' });
+    const { text, data } = await readResponse(res);
+    if (res.status === 401) {
+      redirectToLogin();
+      return;
+    }
+    if (!res.ok) throw new Error(data?.error || text || 'Unable to load conversations.');
+    setConversations(Array.isArray(data.conversations) ? data.conversations : []);
+    setTotalUnread(Number(data.totalUnread || 0));
+  }
+
+  async function loadDashboard() {
+    setLoading(true);
+    setError('');
+
+    try {
+      const currentProvider = await loadProfile();
+      if (!currentProvider) return;
+
+      const results = await Promise.allSettled([
+        loadViews(),
+        loadInquiries(),
+        loadConversations(),
+      ]);
+
+      const rejected = results.find((result) => result.status === 'rejected') as PromiseRejectedResult | undefined;
+      if (rejected) {
+        setError(rejected.reason instanceof Error ? rejected.reason.message : 'Some dashboard data could not be loaded.');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to load your provider dashboard.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
   useEffect(() => {
     if (searchParams.get('registered') === 'true') {
-      setShowSuccessMessage(true);
-      setTimeout(() => setShowSuccessMessage(false), 5000);
+      setNotice('Your service provider profile has been created. Complete verification before it is published.');
     }
-    fetchProviderProfile();
+    loadDashboard();
   }, []);
 
   useEffect(() => {
-    if (provider) {
-      if (activeTab === 'views') fetchProfileViews();
-      if (activeTab === 'leads') fetchInquiries();
-      if (activeTab === 'messages') fetchConversations();
-    }
-  }, [activeTab, provider]);
-
-  useEffect(() => {
-    scrollToBottom();
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  };
+  const visibleInquiries = useMemo(
+    () => selectedInquiryStatus === 'ALL'
+      ? inquiries
+      : inquiries.filter((inquiry) => inquiry.status === selectedInquiryStatus),
+    [inquiries, selectedInquiryStatus],
+  );
 
-  const fetchProviderProfile = async () => {
+  const pendingBookings = useMemo(
+    () => provider?.bookings?.filter((booking) => booking.status === 'PENDING').length || 0,
+    [provider],
+  );
+
+  const completedBookings = useMemo(
+    () => provider?.bookings?.filter((booking) => booking.status === 'COMPLETED').length || 0,
+    [provider],
+  );
+
+  async function fetchMessages(conversation: Conversation) {
+    setActionLoading('conversation');
+    setError('');
+
     try {
-      const res = await fetch('/api/services/me');
-      if (res.ok) {
-        const data = await res.json();
-        setProvider(data.provider);
-      } else if (res.status === 401) {
-        // Not logged in - redirect to login
-        router.push('/auth/login?redirect=/services/dashboard');
-      } else if (res.status === 404) {
-        // Logged in but no provider profile - redirect to register
-        router.push('/services/register');
-      } else {
-        router.push('/services/register');
+      const res = await fetch('/api/services/conversations/' + conversation.id, {
+        credentials: 'same-origin',
+      });
+      const { text, data } = await readResponse(res);
+
+      if (res.status === 401) {
+        redirectToLogin();
+        return;
       }
-    } catch (error) {
-      console.error('Error fetching profile:', error);
-      router.push('/auth/login?redirect=/services/dashboard');
-    }
-    setLoading(false);
-  };
+      if (!res.ok) throw new Error(data?.error || text || 'Unable to load messages.');
 
-  const fetchProfileViews = async () => {
-    try {
-      const res = await fetch('/api/services/views?days=30');
-      if (res.ok) {
-        const data = await res.json();
-        setProfileViews(data.views);
-        setViewStats(data.stats);
-      }
-    } catch (error) {
-      console.error('Error fetching views:', error);
+      setActiveConversation(data.conversation || conversation);
+      setMessages(Array.isArray(data.messages) ? data.messages : []);
+      await loadConversations();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to load messages.');
+    } finally {
+      setActionLoading('');
     }
-  };
+  }
 
-  const fetchInquiries = async () => {
-    try {
-      const status = selectedInquiryStatus === 'ALL' ? '' : `?status=${selectedInquiryStatus}`;
-      const res = await fetch(`/api/services/inquiries${status}`);
-      if (res.ok) {
-        const data = await res.json();
-        setInquiries(data.inquiries);
-        setInquiryCounts(data.counts);
-      }
-    } catch (error) {
-      console.error('Error fetching inquiries:', error);
-    }
-  };
+  async function sendMessage() {
+    if (!activeConversation || !newMessage.trim()) return;
 
-  const fetchConversations = async () => {
-    try {
-      const res = await fetch('/api/services/conversations');
-      if (res.ok) {
-        const data = await res.json();
-        setConversations(data.conversations);
-        setTotalUnread(data.totalUnread);
-      }
-    } catch (error) {
-      console.error('Error fetching conversations:', error);
-    }
-  };
-
-  const fetchMessages = async (conversationId: string) => {
-    try {
-      const res = await fetch(`/api/services/conversations/${conversationId}`);
-      if (res.ok) {
-        const data = await res.json();
-        setMessages(data.messages);
-        setActiveConversation(data.conversation);
-        fetchConversations();
-      }
-    } catch (error) {
-      console.error('Error fetching messages:', error);
-    }
-  };
-
-  const sendMessage = async () => {
-    if (!newMessage.trim() || !activeConversation) return;
+    setActionLoading('message');
+    setError('');
 
     try {
-      const res = await fetch(`/api/services/conversations/${activeConversation.id}`, {
+      const res = await csrfFetch('/api/services/conversations/' + activeConversation.id, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: newMessage }),
+        body: JSON.stringify({ content: newMessage.trim() }),
       });
+      const { text, data } = await readResponse(res);
 
-      if (res.ok) {
-        const data = await res.json();
-        setMessages(prev => [...prev, data.message]);
-        setNewMessage('');
-        fetchConversations();
+      if (res.status === 401) {
+        redirectToLogin();
+        return;
       }
-    } catch (error) {
-      console.error('Error sending message:', error);
-    }
-  };
+      if (!res.ok || !data?.message) {
+        throw new Error(data?.error || text || 'Unable to send message.');
+      }
 
-  const updateInquiryStatus = async (inquiryId: string, status: string) => {
+      setMessages((current) => [...current, data.message]);
+      setNewMessage('');
+      await loadConversations();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to send message.');
+    } finally {
+      setActionLoading('');
+    }
+  }
+
+  async function updateInquiryStatus(inquiryId: string, status: string) {
+    setActionLoading('inquiry-' + inquiryId);
+    setError('');
+
     try {
-      const res = await fetch('/api/services/inquiries', {
+      const res = await csrfFetch('/api/services/inquiries', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ inquiryId, status }),
       });
+      const { text, data } = await readResponse(res);
 
-      if (res.ok) {
-        fetchInquiries();
+      if (res.status === 401) {
+        redirectToLogin();
+        return;
       }
-    } catch (error) {
-      console.error('Error updating inquiry:', error);
-    }
-  };
+      if (!res.ok) throw new Error(data?.error || text || 'Unable to update this inquiry.');
 
-  const updateAvailability = async (isAvailable: boolean) => {
+      await loadInquiries();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to update this inquiry.');
+    } finally {
+      setActionLoading('');
+    }
+  }
+
+  async function updateAvailability(nextAvailable: boolean) {
+    setActionLoading('availability');
+    setError('');
+
     try {
-      const res = await fetch('/api/services/me', {
+      const res = await csrfFetch('/api/services/me', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ isAvailable }),
+        body: JSON.stringify({ isAvailable: nextAvailable }),
       });
-      if (res.ok) {
-        setProvider(prev => prev ? { ...prev, isAvailable } : null);
-      }
-    } catch (error) {
-      console.error('Error updating availability:', error);
-    }
-  };
+      const { text, data } = await readResponse(res);
 
-  const updateBookingStatus = async (bookingId: string, status: string) => {
+      if (res.status === 401) {
+        redirectToLogin();
+        return;
+      }
+      if (!res.ok || !data?.provider) {
+        throw new Error(data?.message || text || 'Unable to update availability.');
+      }
+
+      setProvider((current) => current ? { ...current, isAvailable: nextAvailable } : current);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to update availability.');
+    } finally {
+      setActionLoading('');
+    }
+  }
+
+  async function updateBookingStatus(bookingId: string, status: string) {
+    setActionLoading('booking-' + bookingId);
+    setError('');
+
     try {
-      const res = await fetch(`/api/services/bookings/${bookingId}`, {
+      const res = await csrfFetch('/api/services/bookings/' + bookingId, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status }),
       });
-      if (res.ok) {
-        fetchProviderProfile();
-      }
-    } catch (error) {
-      console.error('Error updating booking:', error);
-    }
-  };
+      const { text, data } = await readResponse(res);
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('en-ZM', {
-      year: 'numeric',
-      month: 'short',
+      if (res.status === 401) {
+        redirectToLogin();
+        return;
+      }
+      if (!res.ok) {
+        throw new Error(data?.message || text || 'Unable to update the booking.');
+      }
+
+      await loadProfile();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to update the booking.');
+    } finally {
+      setActionLoading('');
+    }
+  }
+
+  async function uploadImage(file: File) {
+    const presignRes = await fetch('/api/uploads/presign', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filename: file.name, contentType: file.type }),
+    });
+    const presign = await readResponse(presignRes);
+
+    if (presignRes.status === 401) {
+      redirectToLogin();
+      return null;
+    }
+    if (!presignRes.ok) {
+      throw new Error(presign.data?.error || presign.text || 'Unable to prepare image upload.');
+    }
+
+    if (presign.data.useDirectUpload) {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('key', presign.data.key);
+
+      const uploadRes = await fetch('/api/uploads/direct', {
+        method: 'POST',
+        credentials: 'same-origin',
+        body: formData,
+      });
+      const upload = await readResponse(uploadRes);
+
+      if (uploadRes.status === 401) {
+        redirectToLogin();
+        return null;
+      }
+      if (!uploadRes.ok || !upload.data?.publicUrl) {
+        throw new Error(upload.data?.error || upload.text || 'Unable to upload portfolio image.');
+      }
+      return upload.data.publicUrl as string;
+    }
+
+    if (!presign.data.url) throw new Error('Upload URL was not returned.');
+
+    const putRes = await fetch(presign.data.url, {
+      method: 'PUT',
+      body: file,
+      headers: { 'Content-Type': file.type },
+    });
+    if (!putRes.ok) throw new Error('Unable to upload portfolio image.');
+
+    const verifyRes = await fetch('/api/uploads/verify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key: presign.data.key }),
+    });
+    const verify = await readResponse(verifyRes);
+    if (!verifyRes.ok || !verify.data?.publicUrl) {
+      throw new Error(verify.data?.error || verify.text || 'Unable to verify uploaded image.');
+    }
+
+    return verify.data.publicUrl as string;
+  }
+
+  async function addPortfolioItem() {
+    if (!portfolioForm.title.trim() || !portfolioForm.image) {
+      setError('Add a title and image before saving portfolio work.');
+      return;
+    }
+
+    setActionLoading('portfolio');
+    setError('');
+
+    try {
+      const imageUrl = await uploadImage(portfolioForm.image);
+      if (!imageUrl) return;
+
+      const res = await csrfFetch('/api/services/portfolio', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: portfolioForm.title.trim(),
+          description: portfolioForm.description.trim() || undefined,
+          category: portfolioForm.category.trim() || undefined,
+          imageUrl,
+        }),
+      });
+      const { text, data } = await readResponse(res);
+
+      if (res.status === 401) {
+        redirectToLogin();
+        return;
+      }
+      if (!res.ok || !data?.item) {
+        throw new Error(data?.message || text || 'Unable to add portfolio work.');
+      }
+
+      setProvider((current) => current ? {
+        ...current,
+        portfolio: [data.item, ...(current.portfolio || [])],
+      } : current);
+      setPortfolioForm({ title: '', description: '', category: '', image: null });
+      setShowPortfolioModal(false);
+      setNotice('Portfolio work added.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to add portfolio work.');
+    } finally {
+      setActionLoading('');
+    }
+  }
+
+  async function deletePortfolioItem(itemId: string) {
+    if (!window.confirm('Remove this portfolio item?')) return;
+
+    setActionLoading('portfolio-' + itemId);
+    setError('');
+
+    try {
+      const res = await csrfFetch('/api/services/portfolio?id=' + encodeURIComponent(itemId), {
+        method: 'DELETE',
+      });
+      const { text, data } = await readResponse(res);
+
+      if (res.status === 401) {
+        redirectToLogin();
+        return;
+      }
+      if (!res.ok) {
+        throw new Error(data?.message || text || 'Unable to remove portfolio item.');
+      }
+
+      setProvider((current) => current ? {
+        ...current,
+        portfolio: current.portfolio.filter((item) => item.id !== itemId),
+      } : current);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to remove portfolio item.');
+    } finally {
+      setActionLoading('');
+    }
+  }
+
+  async function saveProfile() {
+    setActionLoading('profile');
+    setError('');
+    setNotice('');
+
+    try {
+      const payload = {
+        businessName: profileForm.businessName.trim(),
+        description: profileForm.description.trim(),
+        phone: profileForm.phone.trim(),
+        email: profileForm.email.trim(),
+        website: profileForm.website.trim() || null,
+        city: profileForm.city.trim(),
+        area: profileForm.area.trim() || null,
+        priceRange: profileForm.priceRange.trim() || null,
+        yearsInBusiness: profileForm.yearsInBusiness ? Number(profileForm.yearsInBusiness) : null,
+      };
+
+      const res = await csrfFetch('/api/services/me', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const { text, data } = await readResponse(res);
+
+      if (res.status === 401) {
+        redirectToLogin();
+        return;
+      }
+      if (!res.ok || !data?.provider) {
+        throw new Error(data?.message || text || 'Unable to update profile.');
+      }
+
+      setProvider((current) => current ? { ...current, ...data.provider } : data.provider);
+      syncProfileForm({ ...(provider as ServiceProvider), ...data.provider });
+      setNotice('Profile changes saved.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to update profile.');
+    } finally {
+      setActionLoading('');
+    }
+  }
+
+  const formatDate = (value?: string | null) =>
+    value ? new Date(value).toLocaleString('en-ZM', {
       day: 'numeric',
+      month: 'short',
+      year: 'numeric',
       hour: '2-digit',
       minute: '2-digit',
-    });
-  };
+    }) : 'Not recorded';
 
-  const formatTimeAgo = (dateString: string) => {
-    const date = new Date(dateString);
-    const now = new Date();
-    const seconds = Math.floor((now.getTime() - date.getTime()) / 1000);
-
+  const formatTimeAgo = (value?: string | null) => {
+    if (!value) return '';
+    const date = new Date(value);
+    const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
     if (seconds < 60) return 'Just now';
-    if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
-    if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
-    if (seconds < 604800) return `${Math.floor(seconds / 86400)}d ago`;
-    return formatDate(dateString);
+    if (seconds < 3600) return Math.floor(seconds / 60) + 'm ago';
+    if (seconds < 86400) return Math.floor(seconds / 3600) + 'h ago';
+    if (seconds < 604800) return Math.floor(seconds / 86400) + 'd ago';
+    return date.toLocaleDateString('en-ZM');
   };
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-orange-600"></div>
+      <div className="min-h-screen bg-slate-50">
+        <Header />
+        <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
+          <div className="h-32 animate-pulse border border-slate-200 bg-white" />
+          <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {Array.from({ length: 4 }).map((_, index) => (
+              <div key={index} className="h-28 animate-pulse border border-slate-200 bg-white" />
+            ))}
+          </div>
+        </main>
       </div>
     );
   }
 
   if (!provider) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <h2 className="text-xl font-semibold text-gray-800 mb-4">No Provider Profile Found</h2>
-          <Link href="/services/register" className="text-orange-600 hover:underline">
-            Register as a Service Provider
+      <div className="min-h-screen bg-slate-50">
+        <Header />
+        <main className="mx-auto max-w-3xl px-4 py-20 text-center sm:px-6">
+          <h1 className="text-2xl font-bold">No service provider profile found</h1>
+          <p className="mt-2 text-sm text-slate-500">Complete provider registration before opening this workspace.</p>
+          <Link href="/services/register" className="mt-5 inline-flex bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white">
+            Register provider profile
           </Link>
-        </div>
+        </main>
       </div>
     );
   }
 
+  const tabs: { id: DashboardTab; label: string; badge?: number }[] = [
+    { id: 'overview', label: 'Overview' },
+    { id: 'leads', label: 'Leads', badge: inquiryCounts.NEW || 0 },
+    { id: 'messages', label: 'Messages', badge: totalUnread },
+    { id: 'bookings', label: 'Bookings', badge: pendingBookings },
+    { id: 'portfolio', label: 'Portfolio' },
+    { id: 'analytics', label: 'Analytics' },
+    { id: 'profile', label: 'Profile' },
+  ];
+
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-slate-50 text-slate-950">
       <Header />
-      
-      {showSuccessMessage && (
+
+      {notice && (
         <div className="border-b border-emerald-200 bg-emerald-50 px-4 py-3 text-center text-sm font-medium text-emerald-800">
-          Your service provider profile has been created.
+          {notice}
         </div>
       )}
 
-      <div className="max-w-7xl mx-auto px-4 py-6">
+      <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
         {!provider.isVerified && (
-          <div className={`mb-6 border p-5 ${provider.verificationStatus === 'REJECTED' ? 'border-red-200 bg-red-50' : 'border-amber-200 bg-amber-50'}`}>
+          <section className={
+            'mb-6 border p-5 ' +
+            (provider.verificationStatus === 'REJECTED'
+              ? 'border-red-200 bg-red-50'
+              : 'border-amber-200 bg-amber-50')
+          }>
             <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
               <div>
-                <h2 className="font-semibold text-slate-950">
-                  {provider.verificationStatus === 'REJECTED' ? 'Verification needs attention' : 'Complete DENUEL verification'}
+                <h2 className="font-semibold">
+                  {provider.verificationStatus === 'REJECTED'
+                    ? 'Verification needs attention'
+                    : 'Verification is required before marketplace publication'}
                 </h2>
-                <p className="mt-1 text-sm leading-6 text-slate-600">
+                <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-600">
                   {provider.verificationStatus === 'REJECTED' && provider.rejectionReason
                     ? provider.rejectionReason
-                    : 'Upload the required documents so the admin can review your profile and issue the verified badge.'}
+                    : 'Upload the required documents for admin review. Sensitive documents remain private; customers only see verification status.'}
                 </p>
               </div>
               <Link href="/services/verification" className="shrink-0 bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white">
                 Open verification
               </Link>
             </div>
-          </div>
+          </section>
         )}
-        {/* Profile Header */}
-        <div className="bg-white rounded-xl shadow-lg p-6 mb-6">
-          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-            <div className="flex items-center gap-4">
-              <div className="w-16 h-16 rounded-full bg-orange-100 flex items-center justify-center text-2xl">
-                {provider.profilePhotoUrl ? (
-                  <img src={provider.profilePhotoUrl} alt="" className="w-full h-full rounded-full object-cover" />
+
+        {error && (
+          <section className="mb-6 border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+            <div>{error}</div>
+            <button type="button" onClick={loadDashboard} className="mt-3 font-semibold underline underline-offset-4">
+              Reload dashboard
+            </button>
+          </section>
+        )}
+
+        <section className="border border-slate-200 bg-white">
+          {provider.coverPhotoUrl && (
+            <div className="h-36 overflow-hidden border-b border-slate-200 sm:h-44">
+              <img src={provider.coverPhotoUrl} alt="" className="h-full w-full object-cover" />
+            </div>
+          )}
+
+          <div className="flex flex-col justify-between gap-5 p-5 sm:p-6 lg:flex-row lg:items-center">
+            <div className="flex min-w-0 items-center gap-4">
+              <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-full border border-slate-200 bg-slate-100 text-xl font-bold text-slate-500">
+                {provider.logoUrl || provider.profilePhotoUrl ? (
+                  <img src={provider.logoUrl || provider.profilePhotoUrl || ''} alt="" className="h-full w-full object-cover" />
                 ) : (
-                  '👷'
+                  provider.businessName.slice(0, 2).toUpperCase()
                 )}
               </div>
-              <div>
-                <h1 className="text-2xl font-bold text-gray-900">{provider.businessName}</h1>
-                <p className="text-gray-600">{CATEGORY_LABELS[provider.category] || provider.category}</p>
-                <div className="flex items-center gap-2 mt-1">
-                  <span className="text-yellow-500">⭐</span>
-                  <span className="font-medium">{provider.ratingAvg.toFixed(1)}</span>
-                  <span className="text-gray-500">({provider.ratingCount} reviews)</span>
+
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h1 className="truncate text-2xl font-bold tracking-[-0.03em]">{provider.businessName}</h1>
                   {provider.isVerified && (
-                    <span className="bg-green-100 text-green-800 text-xs px-2 py-0.5 rounded-full">✓ Verified</span>
+                    <span className="border border-blue-200 bg-blue-50 px-2 py-1 text-xs font-semibold text-blue-700">
+                      Verified
+                    </span>
                   )}
                 </div>
+                <p className="mt-1 text-sm text-slate-500">
+                  {CATEGORY_LABELS[provider.category] || humanize(provider.category)}
+                  {' · '}
+                  {[provider.area, provider.city].filter(Boolean).join(', ') || 'Location not specified'}
+                </p>
+                <p className="mt-1 text-xs text-slate-400">
+                  Profile completion: {Number(provider.profileCompletion || 0)}%
+                  {!provider.isActive ? ' · Not yet visible in the marketplace' : ''}
+                </p>
               </div>
             </div>
 
-            <div className="flex items-center gap-4">
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-gray-600">Available</span>
-                <button
-                  onClick={() => updateAvailability(!provider.isAvailable)}
-                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                    provider.isAvailable ? 'bg-green-500' : 'bg-gray-300'
-                  }`}
-                >
-                  <span
-                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                      provider.isAvailable ? 'translate-x-6' : 'translate-x-1'
-                    }`}
-                  />
-                </button>
-              </div>
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                onClick={() => updateAvailability(!provider.isAvailable)}
+                disabled={actionLoading === 'availability'}
+                className={
+                  'border px-4 py-2.5 text-sm font-semibold ' +
+                  (provider.isAvailable
+                    ? 'border-emerald-300 bg-emerald-50 text-emerald-800'
+                    : 'border-slate-300 bg-white text-slate-600')
+                }
+              >
+                {actionLoading === 'availability'
+                  ? 'Updating…'
+                  : provider.isAvailable ? 'Available for work' : 'Not available'}
+              </button>
 
               <Link
-                href={`/services/${provider.id}`}
-                className="bg-orange-600 text-white px-4 py-2 rounded-lg hover:bg-orange-700 transition"
+                href={'/services/' + provider.id}
+                className="border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700"
               >
-                View Public Profile
+                View public profile
               </Link>
             </div>
           </div>
+        </section>
 
-          {/* Quick Stats */}
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mt-6 pt-6 border-t">
-            <div className="text-center">
-              <div className="text-2xl font-bold text-gray-900">{viewStats?.totalViews || 0}</div>
-              <div className="text-sm text-gray-500">Profile Views</div>
+        <section className="mt-6 grid grid-cols-2 border-l border-t border-slate-200 bg-white sm:grid-cols-3 lg:grid-cols-6">
+          {[
+            ['Views · 30 days', Number(viewStats?.totalViews || 0)],
+            ['New leads', Number(inquiryCounts.NEW || 0)],
+            ['Unread messages', totalUnread],
+            ['Pending bookings', pendingBookings],
+            ['Completed jobs', Number(provider.completedJobs || completedBookings)],
+            ['Rating', provider.ratingCount ? Number(provider.ratingAvg || 0).toFixed(1) : 'No reviews'],
+          ].map(([label, value]) => (
+            <div key={String(label)} className="border-b border-r border-slate-200 p-4">
+              <div className="text-xs text-slate-500">{label}</div>
+              <div className="mt-2 text-xl font-bold">{value}</div>
             </div>
-            <div className="text-center">
-              <div className="text-2xl font-bold text-gray-900">{inquiryCounts.NEW || 0}</div>
-              <div className="text-sm text-gray-500">New Leads</div>
-            </div>
-            <div className="text-center">
-              <div className="text-2xl font-bold text-orange-600">{totalUnread}</div>
-              <div className="text-sm text-gray-500">Unread Messages</div>
-            </div>
-            <div className="text-center">
-              <div className="text-2xl font-bold text-gray-900">{provider.completedJobs}</div>
-              <div className="text-sm text-gray-500">Completed Jobs</div>
-            </div>
-            <div className="text-center">
-              <div className="text-2xl font-bold text-gray-900">
-                {provider.bookings?.filter(b => b.status === 'PENDING').length || 0}
-              </div>
-              <div className="text-sm text-gray-500">Pending Bookings</div>
-            </div>
-          </div>
-        </div>
+          ))}
+        </section>
 
-        {/* Navigation Tabs */}
-        <div className="bg-white rounded-xl shadow-lg mb-6">
-          <div className="flex overflow-x-auto">
-            {[
-              { id: 'overview', label: 'Overview', icon: '📊' },
-              { id: 'leads', label: 'Leads & Inquiries', icon: '📋', badge: inquiryCounts.NEW },
-              { id: 'views', label: 'Profile Views', icon: '👁️' },
-              { id: 'messages', label: 'Messages', icon: '💬', badge: totalUnread },
-              { id: 'bookings', label: 'Bookings', icon: '📅' },
-              { id: 'portfolio', label: 'Portfolio', icon: '📸' },
-              { id: 'settings', label: 'Settings', icon: '⚙️' },
-            ].map(tab => (
+        <nav className="mt-6 overflow-x-auto border border-slate-200 bg-white">
+          <div className="flex min-w-max">
+            {tabs.map((tab) => (
               <button
                 key={tab.id}
+                type="button"
                 onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center gap-2 px-6 py-4 border-b-2 whitespace-nowrap transition ${
-                  activeTab === tab.id
-                    ? 'border-orange-600 text-orange-600 bg-orange-50'
-                    : 'border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-50'
-                }`}
+                className={
+                  'border-r border-slate-200 px-4 py-3 text-sm font-semibold transition ' +
+                  (activeTab === tab.id
+                    ? 'bg-slate-950 text-white'
+                    : 'bg-white text-slate-600 hover:bg-slate-50')
+                }
               >
-                <span>{tab.icon}</span>
-                <span>{tab.label}</span>
-                {tab.badge && tab.badge > 0 && (
-                  <span className="bg-red-500 text-white text-xs px-2 py-0.5 rounded-full">
-                    {tab.badge}
-                  </span>
-                )}
+                {tab.label}
+                {tab.badge ? <span className="ml-2 opacity-75">({tab.badge})</span> : null}
               </button>
             ))}
           </div>
-        </div>
+        </nav>
 
-        {/* Tab Content */}
-        <div className="bg-white rounded-xl shadow-lg p-6">
-          {/* Overview Tab */}
+        <section className="mt-6">
           {activeTab === 'overview' && (
-            <div className="space-y-6">
-              <h2 className="text-xl font-bold text-gray-900">Dashboard Overview</h2>
-              
-              <div className="grid md:grid-cols-2 gap-6">
-                <div className="border rounded-lg p-4">
-                  <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                    <span>📋</span> Recent Leads
-                  </h3>
-                  {inquiries.slice(0, 3).map(inquiry => (
-                    <div key={inquiry.id} className="flex items-center justify-between py-2 border-b last:border-0">
-                      <div>
-                        <p className="font-medium">{inquiry.customerName}</p>
-                        <p className="text-sm text-gray-500">{inquiry.serviceNeeded}</p>
-                      </div>
-                      <span className={`px-2 py-1 rounded text-xs ${STATUS_COLORS[inquiry.status]}`}>
-                        {inquiry.status}
-                      </span>
-                    </div>
-                  ))}
-                  {inquiries.length === 0 && (
-                    <p className="text-gray-500 text-center py-4">No inquiries yet</p>
-                  )}
-                  <button onClick={() => setActiveTab('leads')} className="w-full mt-4 text-orange-600 hover:underline text-sm">
-                    View All Leads →
+            <div className="grid gap-6 lg:grid-cols-2">
+              <section className="border border-slate-200 bg-white">
+                <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+                  <div>
+                    <h2 className="font-semibold">Recent leads</h2>
+                    <p className="mt-1 text-xs text-slate-500">Latest customer enquiries.</p>
+                  </div>
+                  <button type="button" onClick={() => setActiveTab('leads')} className="text-sm font-semibold text-blue-700">
+                    View all
                   </button>
                 </div>
-
-                <div className="border rounded-lg p-4">
-                  <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                    <span>💬</span> Recent Messages
-                  </h3>
-                  {conversations.slice(0, 3).map(conv => (
-                    <div 
-                      key={conv.id} 
-                      className="flex items-center justify-between py-2 border-b last:border-0 cursor-pointer hover:bg-gray-50"
-                      onClick={() => { setActiveTab('messages'); setActiveConversation(conv); fetchMessages(conv.id); }}
-                    >
-                      <div>
-                        <p className="font-medium">{conv.customerName}</p>
-                        <p className="text-sm text-gray-500 truncate max-w-[200px]">{conv.lastMessage}</p>
+                {inquiries.length ? (
+                  <div className="divide-y divide-slate-100">
+                    {inquiries.slice(0, 4).map((inquiry) => (
+                      <div key={inquiry.id} className="flex items-start justify-between gap-4 px-5 py-4">
+                        <div className="min-w-0">
+                          <div className="truncate text-sm font-semibold">{inquiry.customerName}</div>
+                          <div className="mt-1 truncate text-sm text-slate-500">{inquiry.serviceNeeded}</div>
+                        </div>
+                        <span className={'shrink-0 border px-2 py-1 text-xs font-semibold ' + statusClass(inquiry.status)}>
+                          {humanize(inquiry.status)}
+                        </span>
                       </div>
-                      {conv.unreadProvider > 0 && (
-                        <span className="bg-red-500 text-white text-xs px-2 py-1 rounded-full">{conv.unreadProvider}</span>
-                      )}
-                    </div>
-                  ))}
-                  {conversations.length === 0 && (
-                    <p className="text-gray-500 text-center py-4">No messages yet</p>
-                  )}
-                  <button onClick={() => setActiveTab('messages')} className="w-full mt-4 text-orange-600 hover:underline text-sm">
-                    View All Messages →
+                    ))}
+                  </div>
+                ) : (
+                  <p className="px-5 py-8 text-sm text-slate-500">No enquiries recorded yet.</p>
+                )}
+              </section>
+
+              <section className="border border-slate-200 bg-white">
+                <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+                  <div>
+                    <h2 className="font-semibold">Recent messages</h2>
+                    <p className="mt-1 text-xs text-slate-500">Customer conversations that reached your profile.</p>
+                  </div>
+                  <button type="button" onClick={() => setActiveTab('messages')} className="text-sm font-semibold text-blue-700">
+                    Open inbox
                   </button>
                 </div>
-              </div>
+                {conversations.length ? (
+                  <div className="divide-y divide-slate-100">
+                    {conversations.slice(0, 4).map((conversation) => (
+                      <button
+                        key={conversation.id}
+                        type="button"
+                        onClick={() => {
+                          setActiveTab('messages');
+                          fetchMessages(conversation);
+                        }}
+                        className="flex w-full items-start justify-between gap-4 px-5 py-4 text-left hover:bg-slate-50"
+                      >
+                        <div className="min-w-0">
+                          <div className="truncate text-sm font-semibold">{conversation.customerName}</div>
+                          <div className="mt-1 truncate text-sm text-slate-500">{conversation.lastMessage || 'No message preview'}</div>
+                        </div>
+                        {conversation.unreadProvider > 0 && (
+                          <span className="shrink-0 bg-blue-600 px-2 py-1 text-xs font-semibold text-white">
+                            {conversation.unreadProvider}
+                          </span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="px-5 py-8 text-sm text-slate-500">No customer conversations yet.</p>
+                )}
+              </section>
 
-              <div className="border rounded-lg p-4">
-                <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                  <span>👁️</span> Profile Views (Last 30 Days)
-                </h3>
-                <div className="h-40 flex items-center justify-center bg-gray-50 rounded">
-                  <div className="text-center">
-                    <p className="text-3xl font-bold text-orange-600">{viewStats?.totalViews || 0}</p>
-                    <p className="text-gray-500">Total Views</p>
+              <section className="border border-slate-200 bg-white p-5 lg:col-span-2">
+                <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
+                  <div>
+                    <h2 className="font-semibold">Verification and profile readiness</h2>
+                    <p className="mt-1 text-sm text-slate-500">
+                      {provider.documents?.filter((document) => document.isVerified).length || 0} of {provider.documents?.length || 0} uploaded documents are verified.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Link href="/services/verification" className="border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700">
+                      Verification
+                    </Link>
+                    <button type="button" onClick={() => setActiveTab('profile')} className="bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white">
+                      Edit profile
+                    </button>
                   </div>
                 </div>
-              </div>
+              </section>
             </div>
           )}
 
-          {/* Leads Tab */}
           {activeTab === 'leads' && (
-            <div className="space-y-6">
-              <div className="flex items-center justify-between flex-wrap gap-4">
-                <h2 className="text-xl font-bold text-gray-900">Leads & Inquiries</h2>
-                <div className="flex flex-wrap gap-2">
-                  {['ALL', 'NEW', 'CONTACTED', 'QUOTED', 'CONVERTED', 'CLOSED'].map(status => (
-                    <button
-                      key={status}
-                      onClick={() => { setSelectedInquiryStatus(status); fetchInquiries(); }}
-                      className={`px-3 py-1 rounded text-sm ${
-                        selectedInquiryStatus === status ? 'bg-orange-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                      }`}
-                    >
-                      {status} {inquiryCounts[status] ? `(${inquiryCounts[status]})` : ''}
-                    </button>
+            <section className="border border-slate-200 bg-white">
+              <div className="flex flex-col justify-between gap-4 border-b border-slate-200 p-5 sm:flex-row sm:items-center">
+                <div>
+                  <h2 className="font-semibold">Leads and enquiries</h2>
+                  <p className="mt-1 text-sm text-slate-500">Track real customer enquiries from first contact to closed work.</p>
+                </div>
+                <select
+                  value={selectedInquiryStatus}
+                  onChange={(e) => setSelectedInquiryStatus(e.target.value)}
+                  className="h-10 border border-slate-300 bg-white px-3 text-sm"
+                >
+                  <option value="ALL">All statuses</option>
+                  {INQUIRY_STATUSES.map((status) => (
+                    <option key={status} value={status}>{humanize(status)}</option>
                   ))}
+                </select>
+              </div>
+
+              {visibleInquiries.length ? (
+                <div className="divide-y divide-slate-100">
+                  {visibleInquiries.map((inquiry) => (
+                    <article key={inquiry.id} className="p-5">
+                      <div className="flex flex-col justify-between gap-4 lg:flex-row">
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <h3 className="font-semibold">{inquiry.customerName}</h3>
+                            <span className={'border px-2 py-1 text-xs font-semibold ' + statusClass(inquiry.status)}>
+                              {humanize(inquiry.status)}
+                            </span>
+                          </div>
+                          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-slate-500">
+                            <span>{inquiry.serviceNeeded}</span>
+                            {inquiry.city && <span>{inquiry.city}</span>}
+                            <span>{formatDate(inquiry.createdAt)}</span>
+                          </div>
+                          {inquiry.description && (
+                            <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-700">{inquiry.description}</p>
+                          )}
+                          <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">
+                            {inquiry.budget && <span>Budget: {inquiry.budget}</span>}
+                            {inquiry.preferredDate && <span>Preferred: {formatDate(inquiry.preferredDate)}</span>}
+                            {inquiry.propertyAddress && <span>Address: {inquiry.propertyAddress}</span>}
+                          </div>
+                        </div>
+
+                        <div className="shrink-0">
+                          <div className="flex flex-wrap gap-2 lg:max-w-[280px] lg:justify-end">
+                            {inquiry.customerPhone && (
+                              <a href={'tel:' + inquiry.customerPhone} className="border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700">
+                                Call
+                              </a>
+                            )}
+                            {inquiry.customerEmail && (
+                              <a href={'mailto:' + inquiry.customerEmail} className="border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700">
+                                Email
+                              </a>
+                            )}
+                            {INQUIRY_STATUSES.filter((status) => status !== inquiry.status).map((status) => (
+                              <button
+                                key={status}
+                                type="button"
+                                disabled={actionLoading === 'inquiry-' + inquiry.id}
+                                onClick={() => updateInquiryStatus(inquiry.id, status)}
+                                className="border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-600 disabled:opacity-50"
+                              >
+                                {humanize(status)}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              ) : (
+                <div className="p-10 text-center text-sm text-slate-500">No enquiries match this status.</div>
+              )}
+            </section>
+          )}
+
+          {activeTab === 'messages' && (
+            <section className="grid min-h-[560px] overflow-hidden border border-slate-200 bg-white lg:grid-cols-[320px_minmax(0,1fr)]">
+              <div className="border-b border-slate-200 lg:border-b-0 lg:border-r">
+                <div className="border-b border-slate-200 px-4 py-3 font-semibold">Conversations</div>
+                <div className="max-h-[560px] overflow-y-auto">
+                  {conversations.length ? conversations.map((conversation) => (
+                    <button
+                      key={conversation.id}
+                      type="button"
+                      onClick={() => fetchMessages(conversation)}
+                      className={
+                        'block w-full border-b border-slate-100 p-4 text-left hover:bg-slate-50 ' +
+                        (activeConversation?.id === conversation.id ? 'bg-slate-50' : '')
+                      }
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="truncate text-sm font-semibold">{conversation.customerName}</span>
+                        {conversation.unreadProvider > 0 && (
+                          <span className="bg-blue-600 px-2 py-0.5 text-xs font-semibold text-white">{conversation.unreadProvider}</span>
+                        )}
+                      </div>
+                      <div className="mt-1 truncate text-sm text-slate-500">{conversation.lastMessage || 'No preview'}</div>
+                      <div className="mt-1 text-xs text-slate-400">{formatTimeAgo(conversation.lastMessageAt)}</div>
+                    </button>
+                  )) : (
+                    <div className="p-6 text-sm text-slate-500">No conversations yet.</div>
+                  )}
                 </div>
               </div>
 
-              <div className="space-y-4">
-                {inquiries.map(inquiry => (
-                  <div key={inquiry.id} className="border rounded-lg p-4">
-                    <div className="flex flex-col md:flex-row items-start justify-between gap-4">
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <h3 className="font-semibold text-gray-900">{inquiry.customerName}</h3>
-                          <span className={`px-2 py-0.5 rounded text-xs ${STATUS_COLORS[inquiry.status]}`}>{inquiry.status}</span>
-                        </div>
-                        <p className="text-orange-600 font-medium mt-1">{inquiry.serviceNeeded}</p>
-                        {inquiry.description && <p className="text-gray-600 mt-2">{inquiry.description}</p>}
-                        <div className="flex flex-wrap gap-4 mt-3 text-sm text-gray-500">
-                          <span>📞 {inquiry.customerPhone}</span>
-                          {inquiry.customerEmail && <span>✉️ {inquiry.customerEmail}</span>}
-                          {inquiry.city && <span>📍 {inquiry.city}</span>}
-                          {inquiry.budget && <span>💰 {inquiry.budget}</span>}
+              <div className="flex min-h-[420px] flex-col">
+                {activeConversation ? (
+                  <>
+                    <div className="flex items-center justify-between gap-4 border-b border-slate-200 p-4">
+                      <div className="min-w-0">
+                        <div className="truncate font-semibold">{activeConversation.customerName}</div>
+                        <div className="mt-1 truncate text-xs text-slate-500">
+                          {activeConversation.customerPhone || activeConversation.customerEmail || 'Customer contact not provided'}
                         </div>
                       </div>
-                      <div className="text-right">
-                        <p className="text-sm text-gray-500">{formatTimeAgo(inquiry.createdAt)}</p>
-                        <div className="flex gap-2 mt-2">
-                          <a href={`tel:${inquiry.customerPhone}`} className="bg-green-600 text-white px-3 py-1 rounded text-sm hover:bg-green-700">Call</a>
+                      <div className="flex gap-2">
+                        {activeConversation.customerPhone && (
+                          <a href={'tel:' + activeConversation.customerPhone} className="border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700">
+                            Call
+                          </a>
+                        )}
+                        {activeConversation.customerPhone && (
                           <a
-                            href={`https://wa.me/${inquiry.customerPhone.replace(/[^0-9]/g, '')}?text=Hi ${inquiry.customerName}, regarding your inquiry about ${inquiry.serviceNeeded}...`}
+                            href={'https://wa.me/' + activeConversation.customerPhone.replace(/[^0-9]/g, '')}
                             target="_blank"
-                            className="bg-green-500 text-white px-3 py-1 rounded text-sm hover:bg-green-600"
+                            rel="noreferrer"
+                            className="border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700"
                           >
                             WhatsApp
                           </a>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="flex flex-wrap gap-2 mt-4 pt-4 border-t">
-                      {inquiry.status === 'NEW' && (
-                        <button onClick={() => updateInquiryStatus(inquiry.id, 'CONTACTED')} className="bg-blue-100 text-blue-800 px-3 py-1 rounded text-sm hover:bg-blue-200">Mark Contacted</button>
-                      )}
-                      {(inquiry.status === 'NEW' || inquiry.status === 'CONTACTED') && (
-                        <button onClick={() => updateInquiryStatus(inquiry.id, 'QUOTED')} className="bg-orange-100 text-orange-800 px-3 py-1 rounded text-sm hover:bg-orange-200">Quote Sent</button>
-                      )}
-                      {inquiry.status !== 'CONVERTED' && inquiry.status !== 'CLOSED' && (
-                        <>
-                          <button onClick={() => updateInquiryStatus(inquiry.id, 'CONVERTED')} className="bg-green-100 text-green-800 px-3 py-1 rounded text-sm hover:bg-green-200">Won Job</button>
-                          <button onClick={() => updateInquiryStatus(inquiry.id, 'CLOSED')} className="bg-gray-100 text-gray-800 px-3 py-1 rounded text-sm hover:bg-gray-200">Close</button>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                ))}
-
-                {inquiries.length === 0 && (
-                  <div className="text-center py-12 text-gray-500">
-                    <p className="text-4xl mb-4">📋</p>
-                    <p className="text-lg">No inquiries yet</p>
-                    <p className="text-sm mt-2">When customers contact you, their inquiries will appear here</p>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Profile Views Tab */}
-          {activeTab === 'views' && (
-            <div className="space-y-6">
-              <h2 className="text-xl font-bold text-gray-900">Who's Viewing Your Profile</h2>
-              
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div className="bg-orange-50 rounded-lg p-4 text-center">
-                  <p className="text-3xl font-bold text-orange-600">{viewStats?.totalViews || 0}</p>
-                  <p className="text-sm text-gray-600">Total Views (30 days)</p>
-                </div>
-                <div className="bg-blue-50 rounded-lg p-4 text-center">
-                  <p className="text-3xl font-bold text-blue-600">{viewStats?.uniqueViewers || 0}</p>
-                  <p className="text-sm text-gray-600">Unique Visitors</p>
-                </div>
-                <div className="bg-green-50 rounded-lg p-4 text-center">
-                  <p className="text-3xl font-bold text-green-600">{profileViews.filter(v => v.viewerId).length}</p>
-                  <p className="text-sm text-gray-600">Logged-in Users</p>
-                </div>
-                <div className="bg-purple-50 rounded-lg p-4 text-center">
-                  <p className="text-3xl font-bold text-purple-600">{viewStats?.searchQueries?.length || 0}</p>
-                  <p className="text-sm text-gray-600">Search Queries</p>
-                </div>
-              </div>
-
-              {viewStats?.searchQueries?.length > 0 && (
-                <div className="border rounded-lg p-4">
-                  <h3 className="font-semibold text-gray-900 mb-4">Top Search Queries</h3>
-                  <div className="flex flex-wrap gap-2">
-                    {viewStats.searchQueries.map((q: any, i: number) => (
-                      <span key={i} className="bg-gray-100 px-3 py-1 rounded-full text-sm">"{q.query}" ({q.count})</span>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              <div className="border rounded-lg">
-                <div className="p-4 border-b">
-                  <h3 className="font-semibold text-gray-900">Recent Profile Visitors</h3>
-                </div>
-                <div className="divide-y">
-                  {profileViews.map(view => (
-                    <div key={view.id} className="p-4 flex items-center justify-between hover:bg-gray-50">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center">
-                          {view.viewerName ? view.viewerName.charAt(0).toUpperCase() : '👤'}
-                        </div>
-                        <div>
-                          <p className="font-medium text-gray-900">{view.viewerName || 'Anonymous Visitor'}</p>
-                          <div className="flex items-center gap-2 text-sm text-gray-500">
-                            {view.viewerCity && <span>📍 {view.viewerCity}</span>}
-                            {view.source && <span>via {view.source}</span>}
-                          </div>
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-sm text-gray-500">{formatTimeAgo(view.createdAt)}</p>
-                        {view.viewerPhone && (
-                          <a href={`tel:${view.viewerPhone}`} className="text-sm text-orange-600 hover:underline">Contact →</a>
                         )}
                       </div>
                     </div>
-                  ))}
 
-                  {profileViews.length === 0 && (
-                    <div className="p-8 text-center text-gray-500">
-                      <p className="text-4xl mb-4">👁️</p>
-                      <p>No profile views yet</p>
-                      <p className="text-sm mt-2">Share your profile to get more visibility</p>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Messages Tab */}
-          {activeTab === 'messages' && (
-            <div className="flex h-[600px] border rounded-lg overflow-hidden">
-              <div className="w-1/3 border-r overflow-y-auto">
-                <div className="p-4 border-b bg-gray-50">
-                  <h3 className="font-semibold text-gray-900">Conversations</h3>
-                </div>
-                {conversations.map(conv => (
-                  <div
-                    key={conv.id}
-                    onClick={() => { setActiveConversation(conv); fetchMessages(conv.id); }}
-                    className={`p-4 border-b cursor-pointer hover:bg-gray-50 ${activeConversation?.id === conv.id ? 'bg-orange-50' : ''}`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <p className="font-medium text-gray-900">{conv.customerName}</p>
-                      {conv.unreadProvider > 0 && (
-                        <span className="bg-red-500 text-white text-xs px-2 py-0.5 rounded-full">{conv.unreadProvider}</span>
-                      )}
-                    </div>
-                    <p className="text-sm text-gray-500 truncate">{conv.lastMessage}</p>
-                    <p className="text-xs text-gray-400 mt-1">{conv.lastMessageAt && formatTimeAgo(conv.lastMessageAt)}</p>
-                  </div>
-                ))}
-
-                {conversations.length === 0 && (
-                  <div className="p-8 text-center text-gray-500">
-                    <p className="text-4xl mb-4">💬</p>
-                    <p>No conversations yet</p>
-                  </div>
-                )}
-              </div>
-
-              <div className="flex-1 flex flex-col">
-                {activeConversation ? (
-                  <>
-                    <div className="p-4 border-b flex items-center justify-between bg-gray-50">
-                      <div>
-                        <h3 className="font-semibold text-gray-900">{activeConversation.customerName}</h3>
-                        <p className="text-sm text-gray-500">{activeConversation.customerPhone}</p>
-                      </div>
-                      <div className="flex gap-2">
-                        <a href={`tel:${activeConversation.customerPhone}`} className="p-2 bg-green-100 text-green-600 rounded-full hover:bg-green-200">📞</a>
-                        <a href={`https://wa.me/${activeConversation.customerPhone?.replace(/[^0-9]/g, '')}`} target="_blank" className="p-2 bg-green-100 text-green-600 rounded-full hover:bg-green-200">💬</a>
-                      </div>
-                    </div>
-
-                    <div className="flex-1 overflow-y-auto p-4 space-y-4">
-                      {messages.map(msg => (
-                        <div key={msg.id} className={`flex ${msg.senderType === 'PROVIDER' ? 'justify-end' : 'justify-start'}`}>
-                          <div className={`max-w-[70%] p-3 rounded-lg ${msg.senderType === 'PROVIDER' ? 'bg-orange-600 text-white' : 'bg-gray-100 text-gray-900'}`}>
-                            <p>{msg.content}</p>
-                            <p className={`text-xs mt-1 ${msg.senderType === 'PROVIDER' ? 'text-orange-200' : 'text-gray-500'}`}>
-                              {formatTimeAgo(msg.createdAt)}
-                            </p>
+                    <div className="flex-1 space-y-3 overflow-y-auto p-4">
+                      {actionLoading === 'conversation' && !messages.length ? (
+                        <div className="text-sm text-slate-500">Loading messages…</div>
+                      ) : messages.length ? messages.map((message) => (
+                        <div key={message.id} className={message.senderType === 'PROVIDER' ? 'flex justify-end' : 'flex justify-start'}>
+                          <div className={
+                            'max-w-[85%] px-4 py-3 text-sm sm:max-w-[70%] ' +
+                            (message.senderType === 'PROVIDER'
+                              ? 'bg-slate-950 text-white'
+                              : 'bg-slate-100 text-slate-900')
+                          }>
+                            <div className="whitespace-pre-wrap">{message.content}</div>
+                            <div className={'mt-1 text-xs ' + (message.senderType === 'PROVIDER' ? 'text-slate-300' : 'text-slate-400')}>
+                              {formatTimeAgo(message.createdAt)}
+                            </div>
                           </div>
                         </div>
-                      ))}
+                      )) : (
+                        <div className="text-sm text-slate-500">No messages in this conversation.</div>
+                      )}
                       <div ref={messagesEndRef} />
                     </div>
 
-                    <div className="p-4 border-t">
+                    <div className="border-t border-slate-200 p-4">
                       <div className="flex gap-2">
                         <input
-                          type="text"
                           value={newMessage}
                           onChange={(e) => setNewMessage(e.target.value)}
-                          onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
-                          placeholder="Type a message..."
-                          className="flex-1 p-3 border rounded-lg focus:ring-2 focus:ring-orange-500 focus:outline-none"
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' && !e.shiftKey) {
+                              e.preventDefault();
+                              sendMessage();
+                            }
+                          }}
+                          placeholder="Write a message"
+                          className="h-11 flex-1 border border-slate-300 px-3 text-sm outline-none focus:border-slate-950"
                         />
-                        <button onClick={sendMessage} disabled={!newMessage.trim()} className="bg-orange-600 text-white px-6 py-3 rounded-lg hover:bg-orange-700 disabled:opacity-50">Send</button>
+                        <button
+                          type="button"
+                          onClick={sendMessage}
+                          disabled={!newMessage.trim() || actionLoading === 'message'}
+                          className="bg-slate-950 px-5 text-sm font-semibold text-white disabled:opacity-50"
+                        >
+                          {actionLoading === 'message' ? 'Sending…' : 'Send'}
+                        </button>
                       </div>
                     </div>
                   </>
                 ) : (
-                  <div className="flex-1 flex items-center justify-center text-gray-500">
-                    <div className="text-center">
-                      <p className="text-4xl mb-4">💬</p>
-                      <p>Select a conversation to start chatting</p>
-                    </div>
+                  <div className="flex flex-1 items-center justify-center p-8 text-center text-sm text-slate-500">
+                    Choose a conversation to read and reply.
                   </div>
                 )}
               </div>
-            </div>
+            </section>
           )}
 
-          {/* Bookings Tab */}
           {activeTab === 'bookings' && (
-            <div className="space-y-6">
-              <h2 className="text-xl font-bold text-gray-900">Bookings</h2>
-              
-              <div className="space-y-4">
-                {provider.bookings?.map(booking => (
-                  <div key={booking.id} className="border rounded-lg p-4">
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <h3 className="font-semibold text-gray-900">{booking.customerName}</h3>
-                          <span className={`px-2 py-0.5 rounded text-xs ${STATUS_COLORS[booking.status]}`}>{booking.status}</span>
-                        </div>
-                        <p className="text-orange-600">{booking.serviceType}</p>
-                        <p className="text-sm text-gray-500 mt-1">📅 {formatDate(booking.scheduledAt)}</p>
-                        {booking.notes && <p className="text-gray-600 mt-2">{booking.notes}</p>}
-                      </div>
-                      <div className="text-right">
-                        {booking.estimatedPrice && <p className="font-semibold text-lg">K{booking.estimatedPrice.toLocaleString()}</p>}
-                        <div className="flex gap-2 mt-2">
-                          {booking.status === 'PENDING' && (
-                            <>
-                              <button onClick={() => updateBookingStatus(booking.id, 'CONFIRMED')} className="bg-blue-600 text-white px-3 py-1 rounded text-sm">Confirm</button>
-                              <button onClick={() => updateBookingStatus(booking.id, 'CANCELED')} className="bg-red-100 text-red-800 px-3 py-1 rounded text-sm">Cancel</button>
-                            </>
-                          )}
-                          {booking.status === 'CONFIRMED' && (
-                            <button onClick={() => updateBookingStatus(booking.id, 'COMPLETED')} className="bg-green-600 text-white px-3 py-1 rounded text-sm">Mark Complete</button>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-
-                {(!provider.bookings || provider.bookings.length === 0) && (
-                  <div className="text-center py-12 text-gray-500">
-                    <p className="text-4xl mb-4">📅</p>
-                    <p className="text-lg">No bookings yet</p>
-                  </div>
-                )}
+            <section className="border border-slate-200 bg-white">
+              <div className="border-b border-slate-200 p-5">
+                <h2 className="font-semibold">Bookings</h2>
+                <p className="mt-1 text-sm text-slate-500">Confirm, complete or cancel real customer booking requests.</p>
               </div>
-            </div>
+
+              {provider.bookings?.length ? (
+                <div className="divide-y divide-slate-100">
+                  {provider.bookings.map((booking) => (
+                    <article key={booking.id} className="p-5">
+                      <div className="flex flex-col justify-between gap-4 lg:flex-row">
+                        <div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <h3 className="font-semibold">{booking.customerName || booking.customer?.name || 'Customer'}</h3>
+                            <span className={'border px-2 py-1 text-xs font-semibold ' + statusClass(booking.status)}>
+                              {humanize(booking.status)}
+                            </span>
+                          </div>
+                          <div className="mt-2 text-sm font-medium text-blue-700">{booking.serviceType}</div>
+                          <div className="mt-1 text-sm text-slate-500">Scheduled {formatDate(booking.scheduledAt)}</div>
+                          {booking.notes && <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-700">{booking.notes}</p>}
+                        </div>
+
+                        <div className="shrink-0 lg:text-right">
+                          {booking.estimatedPrice != null && (
+                            <div className="font-semibold">Estimate: {money(booking.estimatedPrice)}</div>
+                          )}
+                          {booking.finalPrice != null && (
+                            <div className="mt-1 text-sm text-slate-600">Final: {money(booking.finalPrice)}</div>
+                          )}
+
+                          <div className="mt-3 flex flex-wrap gap-2 lg:justify-end">
+                            {booking.status === 'PENDING' && (
+                              <>
+                                <button
+                                  type="button"
+                                  disabled={actionLoading === 'booking-' + booking.id}
+                                  onClick={() => updateBookingStatus(booking.id, 'CONFIRMED')}
+                                  className="bg-blue-600 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50"
+                                >
+                                  Confirm
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={actionLoading === 'booking-' + booking.id}
+                                  onClick={() => updateBookingStatus(booking.id, 'CANCELED')}
+                                  className="border border-red-200 px-3 py-2 text-xs font-semibold text-red-700 disabled:opacity-50"
+                                >
+                                  Cancel
+                                </button>
+                              </>
+                            )}
+                            {booking.status === 'CONFIRMED' && (
+                              <>
+                                <button
+                                  type="button"
+                                  disabled={actionLoading === 'booking-' + booking.id}
+                                  onClick={() => updateBookingStatus(booking.id, 'COMPLETED')}
+                                  className="bg-emerald-600 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50"
+                                >
+                                  Mark complete
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={actionLoading === 'booking-' + booking.id}
+                                  onClick={() => updateBookingStatus(booking.id, 'CANCELED')}
+                                  className="border border-red-200 px-3 py-2 text-xs font-semibold text-red-700 disabled:opacity-50"
+                                >
+                                  Cancel
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              ) : (
+                <div className="p-10 text-center text-sm text-slate-500">No bookings recorded yet.</div>
+              )}
+            </section>
           )}
 
-          {/* Portfolio Tab */}
           {activeTab === 'portfolio' && (
-            <div className="space-y-6">
-              <div className="flex items-center justify-between">
-                <h2 className="text-xl font-bold text-gray-900">Portfolio</h2>
-                <button onClick={() => setShowPortfolioModal(true)} className="bg-orange-600 text-white px-4 py-2 rounded-lg hover:bg-orange-700">+ Add Work</button>
-              </div>
-
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                {provider.portfolio?.map(item => (
-                  <div key={item.id} className="border rounded-lg overflow-hidden">
-                    <img src={item.imageUrl} alt={item.title} className="w-full h-48 object-cover" />
-                    <div className="p-3">
-                      <h3 className="font-semibold">{item.title}</h3>
-                      {item.description && <p className="text-sm text-gray-500 line-clamp-2">{item.description}</p>}
-                    </div>
-                  </div>
-                ))}
-
-                {(!provider.portfolio || provider.portfolio.length === 0) && (
-                  <div className="col-span-full text-center py-12 text-gray-500">
-                    <p className="text-4xl mb-4">📸</p>
-                    <p className="text-lg">No portfolio items yet</p>
-                    <p className="text-sm mt-2">Showcase your work to attract more customers</p>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Settings Tab */}
-          {activeTab === 'settings' && (
-            <div className="space-y-6">
-              <h2 className="text-xl font-bold text-gray-900">Profile Settings</h2>
-              
-              <div className="grid md:grid-cols-2 gap-6">
-                <div className="space-y-4">
-                  <h3 className="font-semibold text-gray-700">Business Information</h3>
-                  <div>
-                    <label className="block text-sm text-gray-600 mb-1">Business Name</label>
-                    <input type="text" value={provider.businessName} className="w-full p-3 border rounded-lg bg-gray-50" readOnly />
-                  </div>
-                  <div>
-                    <label className="block text-sm text-gray-600 mb-1">Category</label>
-                    <input type="text" value={CATEGORY_LABELS[provider.category] || provider.category} className="w-full p-3 border rounded-lg bg-gray-50" readOnly />
-                  </div>
-                  <div>
-                    <label className="block text-sm text-gray-600 mb-1">Phone</label>
-                    <input type="text" value={provider.phone} className="w-full p-3 border rounded-lg bg-gray-50" readOnly />
-                  </div>
-                  <div>
-                    <label className="block text-sm text-gray-600 mb-1">Email</label>
-                    <input type="text" value={provider.email} className="w-full p-3 border rounded-lg bg-gray-50" readOnly />
-                  </div>
+            <section className="border border-slate-200 bg-white">
+              <div className="flex items-center justify-between gap-4 border-b border-slate-200 p-5">
+                <div>
+                  <h2 className="font-semibold">Portfolio</h2>
+                  <p className="mt-1 text-sm text-slate-500">Show real work completed by you or your company.</p>
                 </div>
-
-                <div className="space-y-4">
-                  <h3 className="font-semibold text-gray-700">Location</h3>
-                  <div>
-                    <label className="block text-sm text-gray-600 mb-1">City</label>
-                    <input type="text" value={provider.city} className="w-full p-3 border rounded-lg bg-gray-50" readOnly />
-                  </div>
-                  <div>
-                    <label className="block text-sm text-gray-600 mb-1">Area</label>
-                    <input type="text" value={provider.area || ''} className="w-full p-3 border rounded-lg bg-gray-50" readOnly />
-                  </div>
-                  <div>
-                    <label className="block text-sm text-gray-600 mb-1">Price Range</label>
-                    <input type="text" value={provider.priceRange || ''} className="w-full p-3 border rounded-lg bg-gray-50" readOnly />
-                  </div>
-                </div>
-              </div>
-
-              <div className="pt-4 border-t">
-                <Link href="/services/register?edit=true" className="bg-orange-600 text-white px-6 py-2 rounded-lg hover:bg-orange-700">Edit Profile</Link>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Portfolio Modal */}
-      {showPortfolioModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl p-6 w-full max-w-md">
-            <h3 className="text-lg font-semibold mb-4">Add Portfolio Item</h3>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm text-gray-600 mb-1">Title *</label>
-                <input
-                  type="text"
-                  value={portfolioForm.title}
-                  onChange={(e) => setPortfolioForm({ ...portfolioForm, title: e.target.value })}
-                  className="w-full p-3 border rounded-lg"
-                  placeholder="e.g., Kitchen Renovation"
-                />
-              </div>
-              <div>
-                <label className="block text-sm text-gray-600 mb-1">Description</label>
-                <textarea
-                  value={portfolioForm.description}
-                  onChange={(e) => setPortfolioForm({ ...portfolioForm, description: e.target.value })}
-                  className="w-full p-3 border rounded-lg"
-                  rows={3}
-                  placeholder="Describe the project..."
-                />
-              </div>
-              <div>
-                <label className="block text-sm text-gray-600 mb-1">Image *</label>
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={(e) => setPortfolioForm({ ...portfolioForm, image: e.target.files?.[0] || null })}
-                  className="w-full p-3 border rounded-lg"
-                />
-              </div>
-              <div className="flex gap-2">
-                <button onClick={() => setShowPortfolioModal(false)} className="flex-1 border border-gray-300 text-gray-700 py-2 rounded-lg">Cancel</button>
                 <button
-                  onClick={async () => {
-                    if (!portfolioForm.title || !portfolioForm.image) return;
-                    setShowPortfolioModal(false);
-                  }}
-                  className="flex-1 bg-orange-600 text-white py-2 rounded-lg"
+                  type="button"
+                  onClick={() => setShowPortfolioModal(true)}
+                  className="bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white"
                 >
-                  Add
+                  Add work
                 </button>
               </div>
+
+              {provider.portfolio?.length ? (
+                <div className="grid gap-4 p-5 sm:grid-cols-2 lg:grid-cols-3">
+                  {provider.portfolio.map((item) => (
+                    <article key={item.id} className="overflow-hidden border border-slate-200">
+                      <img src={item.imageUrl} alt={item.title} className="aspect-[4/3] w-full object-cover" />
+                      <div className="p-4">
+                        <h3 className="font-semibold">{item.title}</h3>
+                        {item.description && <p className="mt-2 line-clamp-3 text-sm leading-6 text-slate-500">{item.description}</p>}
+                        {item.category && <div className="mt-2 text-xs text-slate-400">{item.category}</div>}
+                        <button
+                          type="button"
+                          onClick={() => deletePortfolioItem(item.id)}
+                          disabled={actionLoading === 'portfolio-' + item.id}
+                          className="mt-4 text-sm font-semibold text-red-700 disabled:opacity-50"
+                        >
+                          {actionLoading === 'portfolio-' + item.id ? 'Removing…' : 'Remove'}
+                        </button>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              ) : (
+                <div className="p-10 text-center">
+                  <h3 className="font-semibold">No portfolio work added yet</h3>
+                  <p className="mt-2 text-sm text-slate-500">Add real examples of completed work to help customers evaluate your services.</p>
+                </div>
+              )}
+            </section>
+          )}
+
+          {activeTab === 'analytics' && (
+            <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
+              <section className="border border-slate-200 bg-white">
+                <div className="border-b border-slate-200 p-5">
+                  <h2 className="font-semibold">Profile activity · last 30 days</h2>
+                  <p className="mt-1 text-sm text-slate-500">Aggregate viewing activity without exposing visitor contact details.</p>
+                </div>
+                <div className="grid grid-cols-2 border-b border-slate-200 sm:grid-cols-3">
+                  <div className="border-r border-slate-200 p-5">
+                    <div className="text-xs text-slate-500">Total views</div>
+                    <div className="mt-2 text-2xl font-bold">{Number(viewStats?.totalViews || 0)}</div>
+                  </div>
+                  <div className="border-r border-slate-200 p-5">
+                    <div className="text-xs text-slate-500">Unique signed-in viewers</div>
+                    <div className="mt-2 text-2xl font-bold">{Number(viewStats?.uniqueViewers || 0)}</div>
+                  </div>
+                  <div className="p-5">
+                    <div className="text-xs text-slate-500">Recorded search queries</div>
+                    <div className="mt-2 text-2xl font-bold">{Number(viewStats?.searchQueries?.length || 0)}</div>
+                  </div>
+                </div>
+
+                {profileViews.length ? (
+                  <div className="divide-y divide-slate-100">
+                    {profileViews.slice(0, 30).map((view) => (
+                      <div key={view.id} className="flex items-start justify-between gap-4 px-5 py-4">
+                        <div>
+                          <div className="text-sm font-semibold">Profile view</div>
+                          <div className="mt-1 text-sm text-slate-500">
+                            {view.source ? 'Source: ' + humanize(view.source) : 'Direct or unknown source'}
+                          </div>
+                          {view.searchQuery && <div className="mt-1 text-xs text-slate-400">Search: “{view.searchQuery}”</div>}
+                        </div>
+                        <div className="text-xs text-slate-400">{formatTimeAgo(view.createdAt)}</div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="p-8 text-sm text-slate-500">No profile views recorded in this period.</div>
+                )}
+              </section>
+
+              <aside className="h-fit border border-slate-200 bg-white p-5">
+                <h2 className="font-semibold">Top search queries</h2>
+                <div className="mt-4 space-y-3">
+                  {viewStats?.searchQueries?.length ? viewStats.searchQueries.slice(0, 10).map((item: any, index: number) => (
+                    <div key={index} className="flex items-center justify-between gap-4 text-sm">
+                      <span className="truncate text-slate-600">{item.query || 'Unknown query'}</span>
+                      <strong>{Number(item.count || 0)}</strong>
+                    </div>
+                  )) : (
+                    <p className="text-sm text-slate-500">No search-query data recorded yet.</p>
+                  )}
+                </div>
+              </aside>
+            </div>
+          )}
+
+          {activeTab === 'profile' && (
+            <section className="border border-slate-200 bg-white">
+              <div className="border-b border-slate-200 p-5">
+                <h2 className="font-semibold">Public profile details</h2>
+                <p className="mt-1 max-w-2xl text-sm text-slate-500">
+                  Update customer-facing information here. Verification documents and identity/company records are managed separately.
+                </p>
+              </div>
+
+              <div className="grid gap-5 p-5 sm:grid-cols-2">
+                <label className="text-sm font-medium text-slate-700">
+                  Business / professional name
+                  <input value={profileForm.businessName} onChange={(e) => setProfileForm({ ...profileForm, businessName: e.target.value })} className="mt-2 h-11 w-full border border-slate-300 px-3" />
+                </label>
+
+                <label className="text-sm font-medium text-slate-700">
+                  Category
+                  <input value={CATEGORY_LABELS[provider.category] || humanize(provider.category)} readOnly className="mt-2 h-11 w-full border border-slate-200 bg-slate-50 px-3 text-slate-500" />
+                </label>
+
+                <label className="sm:col-span-2 text-sm font-medium text-slate-700">
+                  Description
+                  <textarea value={profileForm.description} onChange={(e) => setProfileForm({ ...profileForm, description: e.target.value })} rows={5} className="mt-2 w-full border border-slate-300 p-3" />
+                </label>
+
+                <label className="text-sm font-medium text-slate-700">
+                  Phone
+                  <input value={profileForm.phone} onChange={(e) => setProfileForm({ ...profileForm, phone: e.target.value })} className="mt-2 h-11 w-full border border-slate-300 px-3" />
+                </label>
+
+                <label className="text-sm font-medium text-slate-700">
+                  Email
+                  <input type="email" value={profileForm.email} onChange={(e) => setProfileForm({ ...profileForm, email: e.target.value })} className="mt-2 h-11 w-full border border-slate-300 px-3" />
+                </label>
+
+                <label className="text-sm font-medium text-slate-700">
+                  Website
+                  <input value={profileForm.website} onChange={(e) => setProfileForm({ ...profileForm, website: e.target.value })} placeholder="https://..." className="mt-2 h-11 w-full border border-slate-300 px-3" />
+                </label>
+
+                <label className="text-sm font-medium text-slate-700">
+                  Price range
+                  <input value={profileForm.priceRange} onChange={(e) => setProfileForm({ ...profileForm, priceRange: e.target.value })} placeholder="e.g. K500–K2,000" className="mt-2 h-11 w-full border border-slate-300 px-3" />
+                </label>
+
+                <label className="text-sm font-medium text-slate-700">
+                  City
+                  <input value={profileForm.city} onChange={(e) => setProfileForm({ ...profileForm, city: e.target.value })} className="mt-2 h-11 w-full border border-slate-300 px-3" />
+                </label>
+
+                <label className="text-sm font-medium text-slate-700">
+                  Area
+                  <input value={profileForm.area} onChange={(e) => setProfileForm({ ...profileForm, area: e.target.value })} className="mt-2 h-11 w-full border border-slate-300 px-3" />
+                </label>
+
+                <label className="text-sm font-medium text-slate-700">
+                  Years in business / trade
+                  <input type="number" min="0" value={profileForm.yearsInBusiness} onChange={(e) => setProfileForm({ ...profileForm, yearsInBusiness: e.target.value })} className="mt-2 h-11 w-full border border-slate-300 px-3" />
+                </label>
+
+                <div className="flex items-end">
+                  <button
+                    type="button"
+                    onClick={saveProfile}
+                    disabled={actionLoading === 'profile' || !profileForm.businessName.trim() || !profileForm.phone.trim() || !profileForm.email.trim() || !profileForm.city.trim()}
+                    className="h-11 w-full bg-slate-950 px-5 text-sm font-semibold text-white disabled:opacity-50"
+                  >
+                    {actionLoading === 'profile' ? 'Saving…' : 'Save profile changes'}
+                  </button>
+                </div>
+              </div>
+            </section>
+          )}
+        </section>
+      </main>
+
+      {showPortfolioModal && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-lg border border-slate-200 bg-white p-6">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-lg font-semibold">Add portfolio work</h2>
+                <p className="mt-1 text-sm text-slate-500">Use a real photo from completed work.</p>
+              </div>
+              <button type="button" onClick={() => setShowPortfolioModal(false)} className="text-sm font-semibold text-slate-500">
+                Close
+              </button>
+            </div>
+
+            <div className="mt-5 space-y-4">
+              <label className="block text-sm font-medium text-slate-700">
+                Title
+                <input value={portfolioForm.title} onChange={(e) => setPortfolioForm({ ...portfolioForm, title: e.target.value })} className="mt-2 h-11 w-full border border-slate-300 px-3" />
+              </label>
+
+              <label className="block text-sm font-medium text-slate-700">
+                Description
+                <textarea value={portfolioForm.description} onChange={(e) => setPortfolioForm({ ...portfolioForm, description: e.target.value })} rows={4} className="mt-2 w-full border border-slate-300 p-3" />
+              </label>
+
+              <label className="block text-sm font-medium text-slate-700">
+                Category / type of work
+                <input value={portfolioForm.category} onChange={(e) => setPortfolioForm({ ...portfolioForm, category: e.target.value })} placeholder="e.g. CCTV installation" className="mt-2 h-11 w-full border border-slate-300 px-3" />
+              </label>
+
+              <label className="block text-sm font-medium text-slate-700">
+                Project image
+                <input type="file" accept="image/*" onChange={(e) => setPortfolioForm({ ...portfolioForm, image: e.target.files?.[0] || null })} className="mt-2 block w-full border border-slate-300 p-3 text-sm" />
+              </label>
+
+              <button
+                type="button"
+                onClick={addPortfolioItem}
+                disabled={actionLoading === 'portfolio' || !portfolioForm.title.trim() || !portfolioForm.image}
+                className="w-full bg-slate-950 px-5 py-3 text-sm font-semibold text-white disabled:opacity-50"
+              >
+                {actionLoading === 'portfolio' ? 'Uploading…' : 'Add portfolio work'}
+              </button>
             </div>
           </div>
         </div>
@@ -1037,7 +1486,7 @@ function ServiceProviderDashboardContent() {
 
 export default function ServiceProviderDashboard() {
   return (
-    <Suspense fallback={<div className="min-h-screen flex items-center justify-center">Loading...</div>}>
+    <Suspense fallback={<div className="min-h-screen bg-slate-50" />}>
       <ServiceProviderDashboardContent />
     </Suspense>
   );
