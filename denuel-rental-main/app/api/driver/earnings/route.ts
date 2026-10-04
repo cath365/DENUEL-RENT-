@@ -33,7 +33,13 @@ export async function GET(req: Request) {
           select: {
             pickupAddressText: true,
             dropoffAddressText: true,
-            status: true
+            distanceKmEstimated: true,
+            status: true,
+            tenant: {
+              select: {
+                name: true
+              }
+            }
           }
         }
       }
@@ -59,7 +65,16 @@ export async function GET(req: Request) {
       week: weekEarnings,
       month: monthEarnings,
       total: totalEarnings,
-      list: allEarnings.slice(0, 50) // Last 50 earnings
+      list: allEarnings.slice(0, 50).map((earning) => ({
+        ...earning,
+        amount: earning.netZmw,
+        date: earning.createdAt.toISOString(),
+        tripId: earning.transportRequestId,
+        pickup: earning.transportRequest.pickupAddressText,
+        dropoff: earning.transportRequest.dropoffAddressText,
+        distance: earning.transportRequest.distanceKmEstimated || 0,
+        customerName: earning.transportRequest.tenant?.name || 'Customer',
+      })) // Last 50 earnings with stable UI-friendly aliases
     });
   } catch (e: any) {
     if (e instanceof Response) return e;
