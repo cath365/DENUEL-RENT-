@@ -109,7 +109,7 @@ export default function ServiceProviderRegisterPage() {
       return;
     }
 
-    router.push('/services/' + data.id);
+    router.push('/services/verification');
   }
 
   const input = 'h-11 w-full border border-slate-300 bg-white px-3 text-sm outline-none focus:border-blue-600';
