@@ -10,6 +10,7 @@ import ReportListing from '@/components/ReportListing';
 import ViewingScheduler from '@/components/ViewingScheduler';
 import PropertyLocationMap from '@/components/PropertyLocationMap';
 import PropertyApplicationButton from '@/components/PropertyApplicationButton';
+import PropertyViewTracker from '@/components/PropertyViewTracker';
 import prisma from '@/lib/prisma';
 import { getUserFromToken } from '@/lib/auth';
 
@@ -131,8 +132,23 @@ export default async function PropertyPage({ params }: { params: { id: string } 
       : null;
 
   let related: any[] = [];
+  let viewerCount = 0;
 
   if (property.status === 'APPROVED') {
+    try {
+      const uniqueViewers = await prisma.propertyView.findMany({
+        where: {
+          propertyId: property.id,
+          ip: { not: '' },
+        },
+        distinct: ['ip'],
+        select: { ip: true },
+      });
+      viewerCount = uniqueViewers.length;
+    } catch (error) {
+      console.error('Property viewer count query failed', error);
+    }
+
     try {
       related = await prisma.property.findMany({
         where: {
@@ -173,6 +189,10 @@ export default async function PropertyPage({ params }: { params: { id: string } 
   return (
     <div className="min-h-screen bg-[#F8F9FA] text-slate-950">
       <Header />
+      <PropertyViewTracker
+        propertyId={property.id}
+        enabled={property.status === 'APPROVED'}
+      />
 
       <main className="mx-auto max-w-7xl px-4 pb-16 pt-6 sm:px-6">
         {isPrivatePreview && (
@@ -273,9 +293,14 @@ export default async function PropertyPage({ params }: { params: { id: string } 
                       {humanize(property.listingType)}
                     </span>
                     {property.status === 'APPROVED' && (
-                      <span className="border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-emerald-700">
-                        Approved listing
-                      </span>
+                      <>
+                        <span className="border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-emerald-700">
+                          Approved listing
+                        </span>
+                        <span className="border border-slate-200 bg-white px-2.5 py-1 text-slate-600">
+                          {viewerCount.toLocaleString()} {viewerCount === 1 ? 'viewer' : 'viewers'}
+                        </span>
+                      </>
                     )}
                     {property.isShortStay && (
                       <span className="border border-slate-300 px-2.5 py-1 text-slate-600">
