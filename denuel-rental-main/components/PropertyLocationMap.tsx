@@ -30,7 +30,7 @@ export default function PropertyLocationMap({ latitude, longitude, label }: Prop
 
     map.addControl(new mapboxgl.NavigationControl({ showCompass: false }), 'top-right');
 
-    new mapboxgl.Marker({ color: '#2563eb' })
+    new mapboxgl.Marker({ color: '#16A34A' })
       .setLngLat([longitude, latitude])
       .setPopup(new mapboxgl.Popup({ offset: 20 }).setText(label))
       .addTo(map);
@@ -46,5 +46,5 @@ export default function PropertyLocationMap({ latitude, longitude, label }: Prop
     );
   }
 
-  return <div ref={mapNode} className="h-72 w-full border border-slate-200 bg-slate-100" />;
+  return <div ref={mapNode} className="h-80 w-full border border-slate-200 bg-slate-100" />;
 }
