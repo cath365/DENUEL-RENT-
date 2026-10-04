@@ -604,7 +604,7 @@ model Application {
   propertyId String
   status     ApplicationStatus @default(PENDING)
   appliedAt  DateTime @default(now())
-  feeAmount  Float?   @default(35) // ZMW
+  feeAmount  Float?   // Set only when a real application fee is configured/charged
   feePaid    Boolean  @default(false)
   @@unique([userId, propertyId])
 }
