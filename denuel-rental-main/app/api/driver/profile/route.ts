@@ -11,6 +11,9 @@ const DriverDocumentSchema = z.object({
 });
 
 const CreateDriverSchema = z.object({
+  fullName: z.string().min(1),
+  phone: z.string().min(5),
+  nrcNumber: z.string().min(3),
   licenseNumber: z.string().min(3),
   vehicleType: z.enum(['MOTORBIKE','CAR','SUV','VAN','TRUCK_SMALL','TRUCK_MEDIUM','TRUCK_LARGE']),
   vehiclePlate: z.string().min(1),
@@ -72,19 +75,22 @@ export async function POST(req: Request) {
           vehicleYear: parsed.vehicleYear ?? null,
           vehicleColor: parsed.vehicleColor ?? null,
           vehicleCapacityKg: parsed.vehicleCapacityKg ?? null,
-          serviceAreas: parsed.serviceAreas,
+          serviceAreas: parsed.serviceAreas as any,
           experience: parsed.experience ?? null,
           bio: parsed.bio ?? null,
           isApproved: false,
         },
       });
 
-      if (user.role !== 'ADMIN') {
-        await tx.user.update({
-          where: { id: user.id },
-          data: { role: 'DRIVER' },
-        });
-      }
+      await tx.user.update({
+        where: { id: user.id },
+        data: {
+          name: parsed.fullName,
+          phone: parsed.phone,
+          nrcNumber: parsed.nrcNumber,
+          ...(user.role === 'USER' ? { role: 'DRIVER' as any } : {}),
+        },
+      });
 
       for (const document of parsed.documents) {
         await tx.verificationDocument.create({
@@ -141,7 +147,7 @@ export async function PUT(req: Request) {
         vehicleYear: parsed.vehicleYear ?? profile.vehicleYear,
         vehicleColor: parsed.vehicleColor ?? profile.vehicleColor,
         vehicleCapacityKg: parsed.vehicleCapacityKg ?? profile.vehicleCapacityKg,
-        serviceAreas: parsed.serviceAreas ?? profile.serviceAreas,
+        ...(parsed.serviceAreas !== undefined ? { serviceAreas: parsed.serviceAreas as any } : {}),
         experience: parsed.experience ?? profile.experience,
         bio: parsed.bio ?? profile.bio,
       },
