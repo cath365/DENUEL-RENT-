@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev -p 3000",
-    "build": "prisma generate && next build",
+    "build": "prisma generate && prisma db push --skip-generate && next build",
     "start": "next start -p $PORT",
     "lint": "next lint",
     "format": "prettier --write \"**/*.{ts,tsx,js,json,md}\"",
@@ -17,7 +17,8 @@
     "serverless:deploy": "serverless deploy",
     "serverless:package": "serverless package",
     "prisma:deploy": "prisma migrate deploy",
-    "audit:demo-data": "ts-node --transpile-only scripts/audit-demo-data.ts"
+    "audit:demo-data": "ts-node --transpile-only scripts/audit-demo-data.ts",
+    "prisma:sync": "prisma db push"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.374.0",
