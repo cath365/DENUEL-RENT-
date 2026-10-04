@@ -18,7 +18,7 @@ export default function Footer() {
   ].filter(([,url]) => Boolean(url));
 
   return (
-    <footer className="bg-slate-950 text-slate-300">
+    <footer className="bg-[#0F2B46] text-slate-200">
       <div className="mx-auto max-w-7xl px-4 py-14 sm:px-6">
         <div className="grid gap-10 lg:grid-cols-[1.2fr_2fr]">
           <div>
