@@ -76,24 +76,76 @@ export default function EditPropertyPage({ params }: { params: { id: string } })
 
   async function handleFiles(files: FileList | null) {
     if (!files || files.length === 0) return;
+
     for (const file of Array.from(files)) {
       if (!file.type.startsWith('image/')) continue;
+
       const presignRes = await fetch('/api/uploads/presign', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ filename: file.name, contentType: file.type }),
       });
-      const presignJson = await presignRes.json();
-      const put = await fetch(presignJson.url, { method: 'PUT', body: file, headers: { 'Content-Type': file.type } });
+      const presignText = await presignRes.text();
+      let presignJson: any = {};
+      try {
+        presignJson = presignText ? JSON.parse(presignText) : {};
+      } catch {
+        presignJson = {};
+      }
+
+      if (presignRes.status === 401) {
+        router.push(`/auth/login?redirect=/dashboard/properties/${params.id}/edit`);
+        return;
+      }
+      if (!presignRes.ok) continue;
+
+      if (presignJson.useDirectUpload) {
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('key', presignJson.key);
+
+        const uploadRes = await fetch('/api/uploads/direct', {
+          method: 'POST',
+          body: formData,
+        });
+        const uploadText = await uploadRes.text();
+        let uploadJson: any = {};
+        try {
+          uploadJson = uploadText ? JSON.parse(uploadText) : {};
+        } catch {
+          uploadJson = {};
+        }
+
+        if (uploadRes.status === 401) {
+          router.push(`/auth/login?redirect=/dashboard/properties/${params.id}/edit`);
+          return;
+        }
+
+        if (uploadRes.ok && uploadJson?.publicUrl) {
+          setImages((s) => [...s, { src: uploadJson.publicUrl, key: uploadJson.key }]);
+        }
+        continue;
+      }
+
+      if (!presignJson.url) continue;
+
+      const put = await fetch(presignJson.url, {
+        method: 'PUT',
+        body: file,
+        headers: { 'Content-Type': file.type },
+      });
       if (!put.ok) continue;
+
       const verifyRes = await fetch('/api/uploads/verify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ key: presignJson.key }),
       });
       const verifyJson = await verifyRes.json();
-      if (!verifyJson?.publicUrl) continue;
-      setImages((s) => [...s, { src: verifyJson.publicUrl, key: presignJson.key }]);
+
+      if (verifyRes.ok && verifyJson?.publicUrl) {
+        setImages((s) => [...s, { src: verifyJson.publicUrl, key: presignJson.key }]);
+      }
     }
   }
 

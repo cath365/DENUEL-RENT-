@@ -45,9 +45,9 @@ export default function DriverEarningsPage() {
   };
 
   const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-NG', {
+    return new Intl.NumberFormat('en-ZM', {
       style: 'currency',
-      currency: 'NGN',
+      currency: 'ZMW',
       minimumFractionDigits: 0,
     }).format(amount);
   };

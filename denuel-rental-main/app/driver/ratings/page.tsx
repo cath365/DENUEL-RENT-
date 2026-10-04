@@ -37,21 +37,41 @@ export default function DriverRatingsPage() {
   const fetchRatings = async () => {
     try {
       const { data } = await axios.get('/api/driver/ratings');
-      setRatings(data.ratings || []);
+      const rawRatings = Array.isArray(data) ? data : (data?.ratings || []);
+      const normalizedRatings: Rating[] = rawRatings.map((item: any) => ({
+        id: item.id,
+        rating: Number(item.rating ?? item.stars ?? 0),
+        comment: item.comment || '',
+        createdAt: item.createdAt,
+        tenant: {
+          name: item.tenant?.name || 'Customer',
+          image: item.tenant?.image,
+        },
+        trip: {
+          pickup: item.trip?.pickup || item.transportRequest?.pickupAddressText || 'Pickup not available',
+          dropoff: item.trip?.dropoff || item.transportRequest?.dropoffAddressText || 'Drop-off not available',
+          date: item.trip?.date || item.transportRequest?.createdAt || item.createdAt,
+        },
+      }));
+      setRatings(normalizedRatings);
       
-      // Calculate stats
-      if (data.ratings && data.ratings.length > 0) {
-        const total = data.ratings.length;
-        const sum = data.ratings.reduce((acc: number, r: Rating) => acc + r.rating, 0);
+      // Calculate stats from the normalized API response.
+      if (normalizedRatings.length > 0) {
+        const total = normalizedRatings.length;
+        const sum = normalizedRatings.reduce((acc, rating) => acc + rating.rating, 0);
         const distribution = [0, 0, 0, 0, 0];
-        data.ratings.forEach((r: Rating) => {
-          distribution[r.rating - 1]++;
+        normalizedRatings.forEach((rating) => {
+          if (rating.rating >= 1 && rating.rating <= 5) {
+            distribution[rating.rating - 1]++;
+          }
         });
         setStats({
           average: sum / total,
           total,
           distribution
         });
+      } else {
+        setStats({ average: 0, total: 0, distribution: [0, 0, 0, 0, 0] });
       }
     } catch (error) {
       console.error('Failed to fetch ratings:', error);

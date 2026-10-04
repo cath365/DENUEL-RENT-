@@ -3,6 +3,8 @@ import { prisma } from '@/lib/prisma';
 import { requireAuth } from '@/lib/auth';
 
 // GET - Get current user's service provider profile
+export const dynamic = 'force-dynamic';
+
 export async function GET(req: NextRequest) {
   try {
     const user = await requireAuth(req);
@@ -64,6 +66,7 @@ export async function GET(req: NextRequest) {
       },
     });
   } catch (error) {
+    if (error instanceof Response) return error;
     console.error('Error fetching provider profile:', error);
     return NextResponse.json(
       { message: 'Failed to fetch profile' },
@@ -137,6 +140,7 @@ export async function PATCH(req: NextRequest) {
       provider: updatedProvider,
     });
   } catch (error) {
+    if (error instanceof Response) return error;
     console.error('Error updating provider profile:', error);
     return NextResponse.json(
       { message: 'Failed to update profile' },
