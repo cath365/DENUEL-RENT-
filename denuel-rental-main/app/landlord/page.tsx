@@ -1,9 +1,10 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import Header from '../../components/Header';
 
-interface DashboardStats {
+interface Stats {
   totalProperties: number;
   activeLeases: number;
   pendingRentAmount: number;
@@ -12,339 +13,160 @@ interface DashboardStats {
   screeningRequests: number;
 }
 
-interface MaintenanceRequest {
-  id: string;
-  title: string;
-  priority: string;
-  status: string;
-  createdAt: string;
-  property: {
-    title: string;
-  };
-}
-
-interface UpcomingPayment {
-  id: string;
-  amount: number;
-  dueDate: string;
-  status: string;
-  tenant: { name: string };
-  property: { title: string };
-}
-
 export default function LandlordDashboardPage() {
-  const [stats, setStats] = useState<DashboardStats | null>(null);
-  const [maintenanceRequests, setMaintenanceRequests] = useState<MaintenanceRequest[]>([]);
-  const [upcomingPayments, setUpcomingPayments] = useState<UpcomingPayment[]>([]);
+  const [stats, setStats] = useState<Stats | null>(null);
+  const [maintenance, setMaintenance] = useState<any[]>([]);
+  const [payments, setPayments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'overview' | 'maintenance' | 'payments' | 'leases' | 'expenses'>('overview');
 
   useEffect(() => {
-    fetchDashboardData();
+    Promise.all([
+      fetch('/api/landlord/maintenance'),
+      fetch('/api/landlord/rent-payments?role=landlord'),
+      fetch('/api/properties/mine'),
+      fetch('/api/landlord/leases'),
+      fetch('/api/landlord/screening?role=landlord'),
+    ])
+      .then(async ([maintenanceRes, paymentsRes, propertiesRes, leasesRes, screeningsRes]) => {
+        const maintenanceData = maintenanceRes.ok ? await maintenanceRes.json() : { requests: [] };
+        const paymentsData = paymentsRes.ok ? await paymentsRes.json() : { payments: [], stats: {} };
+        const propertiesData = propertiesRes.ok ? await propertiesRes.json() : { items: [] };
+        const leasesData = leasesRes.ok ? await leasesRes.json() : [];
+        const screeningsData = screeningsRes.ok ? await screeningsRes.json() : [];
+
+        const requests = Array.isArray(maintenanceData.requests) ? maintenanceData.requests : [];
+        const paymentRows = Array.isArray(paymentsData.payments) ? paymentsData.payments : [];
+        const properties = Array.isArray(propertiesData.items) ? propertiesData.items : [];
+        const leases = Array.isArray(leasesData) ? leasesData : [];
+        const screenings = Array.isArray(screeningsData) ? screeningsData : [];
+
+        setMaintenance(requests.filter((r: any) => ['OPEN', 'IN_PROGRESS'].includes(r.status)).slice(0, 6));
+        setPayments(paymentRows.filter((p: any) => p.status === 'PENDING').slice(0, 6));
+        setStats({
+          totalProperties: properties.length,
+          activeLeases: leases.filter((l: any) => l.status === 'ACTIVE').length,
+          pendingRentAmount: Number(paymentsData.stats?.totalDue || 0),
+          maintenanceRequests: requests.filter((r: any) => ['OPEN', 'IN_PROGRESS'].includes(r.status)).length,
+          rentCollected: Number(paymentsData.stats?.totalPaid || 0),
+          screeningRequests: screenings.filter((x: any) => x.status === 'PENDING').length,
+        });
+      })
+      .catch((error) => console.error('Landlord dashboard failed', error))
+      .finally(() => setLoading(false));
   }, []);
 
-  const fetchDashboardData = async () => {
-    setLoading(true);
-    try {
-      const [maintenanceRes, paymentsRes, propertiesRes, leasesRes, screeningsRes] = await Promise.all([
-        fetch('/api/landlord/maintenance'),
-        fetch('/api/landlord/rent-payments?role=landlord'),
-        fetch('/api/properties/mine'),
-        fetch('/api/landlord/leases'),
-        fetch('/api/landlord/screening?role=landlord'),
-      ]);
-
-      const maintenanceData = maintenanceRes.ok ? await maintenanceRes.json() : { requests: [] };
-      const paymentData = paymentsRes.ok ? await paymentsRes.json() : { payments: [], stats: {} };
-      const propertyData = propertiesRes.ok ? await propertiesRes.json() : { items: [] };
-      const leaseData = leasesRes.ok ? await leasesRes.json() : [];
-      const screeningData = screeningsRes.ok ? await screeningsRes.json() : [];
-
-      const requests = Array.isArray(maintenanceData.requests) ? maintenanceData.requests : [];
-      setMaintenanceRequests(requests.filter((r: any) => ['OPEN', 'IN_PROGRESS'].includes(r.status)));
-
-      const payments = Array.isArray(paymentData.payments) ? paymentData.payments : [];
-      setUpcomingPayments(payments
-        .filter((p: any) => p.status === 'PENDING')
-        .slice(0, 8)
-        .map((p: any) => ({
-          id: p.id,
-          amount: p.amount,
-          dueDate: p.dueDate,
-          status: p.status,
-          tenant: { name: p.lease?.tenant?.name || 'Tenant' },
-          property: { title: p.lease?.property?.title || 'Property' },
-        })));
-
-      const leases = Array.isArray(leaseData) ? leaseData : [];
-      const screenings = Array.isArray(screeningData) ? screeningData : [];
-      const properties = Array.isArray(propertyData.items) ? propertyData.items : [];
-
-      setStats({
-        totalProperties: properties.length,
-        activeLeases: leases.filter((l: any) => l.status === 'ACTIVE').length,
-        pendingRentAmount: Number(paymentData.stats?.totalDue || 0),
-        maintenanceRequests: requests.filter((r: any) => ['OPEN', 'IN_PROGRESS'].includes(r.status)).length,
-        rentCollected: Number(paymentData.stats?.totalPaid || 0),
-        screeningRequests: screenings.filter((x: any) => x.status === 'PENDING').length,
-      });
-    } catch (error) {
-      console.error('Failed to fetch dashboard data:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-ZM', {
-      style: 'currency',
-      currency: 'ZMW',
-      minimumFractionDigits: 0,
-    }).format(amount);
-  };
-
-  const getPriorityColor = (priority: string) => {
-    switch (priority) {
-      case 'EMERGENCY': return 'bg-red-100 text-red-700';
-      case 'HIGH': return 'bg-orange-100 text-orange-700';
-      case 'MEDIUM': return 'bg-yellow-100 text-yellow-700';
-      default: return 'bg-gray-100 text-gray-700';
-    }
-  };
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'PAID': return 'bg-green-100 text-green-700';
-      case 'PENDING': return 'bg-yellow-100 text-yellow-700';
-      case 'OVERDUE': return 'bg-red-100 text-red-700';
-      default: return 'bg-gray-100 text-gray-700';
-    }
-  };
-
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-50">
-        <div className="max-w-7xl mx-auto px-4 py-8">
-          <div className="animate-pulse space-y-6">
-            <div className="h-8 bg-gray-200 rounded w-1/4" />
-            <div className="grid grid-cols-4 gap-4">
-              {[1, 2, 3, 4].map((i) => (
-                <div key={i} className="h-32 bg-gray-200 rounded-xl" />
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  const money = (amount: number) => 'K' + Number(amount || 0).toLocaleString();
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <div className="bg-gradient-to-r from-indigo-600 to-indigo-700 text-white py-8">
-        <div className="max-w-7xl mx-auto px-4">
-          <h1 className="text-3xl font-bold">Landlord Dashboard</h1>
-          <p className="text-indigo-100 mt-1">
-            Manage your properties, tenants, and finances
-          </p>
-        </div>
-      </div>
-
-      <div className="max-w-7xl mx-auto px-4 py-8">
-        {/* Quick Stats */}
-        {stats && (
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-8">
-            <div className="bg-white rounded-xl shadow p-4">
-              <p className="text-sm text-gray-600">Properties</p>
-              <p className="text-2xl font-bold text-gray-900">{stats.totalProperties}</p>
-            </div>
-            <div className="bg-white rounded-xl shadow p-4">
-              <p className="text-sm text-gray-600">Active Leases</p>
-              <p className="text-2xl font-bold text-green-600">{stats.activeLeases}</p>
-            </div>
-            <div className="bg-white rounded-xl shadow p-4">
-              <p className="text-sm text-gray-600">Pending Rent</p>
-              <p className="text-2xl font-bold text-yellow-600">{formatCurrency(stats.pendingRentAmount)}</p>
-            </div>
-            <div className="bg-white rounded-xl shadow p-4">
-              <p className="text-sm text-gray-600">Maintenance</p>
-              <p className="text-2xl font-bold text-orange-600">{stats.maintenanceRequests}</p>
-            </div>
-            <div className="bg-white rounded-xl shadow p-4">
-              <p className="text-sm text-gray-600">Screenings</p>
-              <p className="text-2xl font-bold text-purple-600">{stats.screeningRequests}</p>
-            </div>
-            <div className="bg-white rounded-xl shadow p-4">
-              <p className="text-sm text-gray-600">Rent Collected</p>
-              <p className="text-2xl font-bold text-blue-600">{formatCurrency(stats.rentCollected)}</p>
-            </div>
+    <div className="min-h-screen bg-slate-50">
+      <Header />
+      <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
+        <div className="flex flex-col justify-between gap-4 border-b border-slate-200 pb-6 sm:flex-row sm:items-end">
+          <div>
+            <h1 className="text-3xl font-bold tracking-[-0.035em] text-slate-950">Landlord dashboard</h1>
+            <p className="mt-2 text-sm text-slate-500">Properties, rent, leases and maintenance in one place.</p>
           </div>
+          <Link href="/dashboard/properties/new" className="bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white">
+            Add property
+          </Link>
+        </div>
+
+        {loading ? (
+          <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {Array.from({ length: 4 }).map((_, i) => <div key={i} className="h-28 animate-pulse border border-slate-200 bg-white" />)}
+          </div>
+        ) : (
+          <>
+            <section className="mt-8 grid border-l border-t border-slate-200 sm:grid-cols-2 lg:grid-cols-3">
+              {[
+                ['Properties', stats?.totalProperties || 0],
+                ['Active leases', stats?.activeLeases || 0],
+                ['Pending rent', money(stats?.pendingRentAmount || 0)],
+                ['Rent collected', money(stats?.rentCollected || 0)],
+                ['Maintenance open', stats?.maintenanceRequests || 0],
+                ['Screenings pending', stats?.screeningRequests || 0],
+              ].map(([label, value]) => (
+                <div key={label} className="border-b border-r border-slate-200 bg-white p-5">
+                  <div className="text-sm text-slate-500">{label}</div>
+                  <div className="mt-2 text-2xl font-bold tracking-[-0.02em] text-slate-950">{value}</div>
+                </div>
+              ))}
+            </section>
+
+            <section className="mt-8 grid gap-6 lg:grid-cols-[1fr_320px]">
+              <div className="space-y-6">
+                <div className="border border-slate-200 bg-white">
+                  <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+                    <h2 className="font-semibold text-slate-950">Maintenance requests</h2>
+                    <Link href="/landlord/maintenance" className="text-sm font-semibold text-blue-700">View all</Link>
+                  </div>
+                  {maintenance.length ? (
+                    <div className="divide-y divide-slate-100">
+                      {maintenance.map((item) => (
+                        <div key={item.id} className="flex items-start justify-between gap-4 px-5 py-4">
+                          <div>
+                            <div className="text-sm font-semibold text-slate-900">{item.title}</div>
+                            <div className="mt-1 text-sm text-slate-500">{item.property?.title || 'Property'}</div>
+                          </div>
+                          <div className="text-right">
+                            <div className="text-xs font-semibold text-slate-600">{item.priority}</div>
+                            <div className="mt-1 text-xs text-slate-400">{item.status}</div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="px-5 py-8 text-sm text-slate-500">No open maintenance requests.</p>
+                  )}
+                </div>
+
+                <div className="border border-slate-200 bg-white">
+                  <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+                    <h2 className="font-semibold text-slate-950">Upcoming rent payments</h2>
+                    <Link href="/landlord/payments" className="text-sm font-semibold text-blue-700">View all</Link>
+                  </div>
+                  {payments.length ? (
+                    <div className="divide-y divide-slate-100">
+                      {payments.map((payment) => (
+                        <div key={payment.id} className="flex items-start justify-between gap-4 px-5 py-4">
+                          <div>
+                            <div className="text-sm font-semibold text-slate-900">{payment.lease?.tenant?.name || 'Tenant'}</div>
+                            <div className="mt-1 text-sm text-slate-500">{payment.lease?.property?.title || 'Property'}</div>
+                          </div>
+                          <div className="text-right">
+                            <div className="text-sm font-semibold text-slate-950">{money(payment.amount)}</div>
+                            <div className="mt-1 text-xs text-slate-400">{payment.dueDate ? new Date(payment.dueDate).toLocaleDateString('en-ZM') : ''}</div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="px-5 py-8 text-sm text-slate-500">No pending rent payments.</p>
+                  )}
+                </div>
+              </div>
+
+              <aside className="border border-slate-200 bg-white p-5">
+                <h2 className="font-semibold text-slate-950">Property management</h2>
+                <div className="mt-4 divide-y divide-slate-100 border-t border-slate-100">
+                  {[
+                    ['My properties', '/dashboard/properties'],
+                    ['Leases', '/landlord/leases'],
+                    ['Rent payments', '/landlord/payments'],
+                    ['Maintenance', '/landlord/maintenance'],
+                    ['Tenant screening', '/landlord/screening'],
+                    ['Expenses', '/landlord/expenses'],
+                  ].map(([label, href]) => (
+                    <Link key={href} href={href} className="flex items-center justify-between py-3 text-sm font-medium text-slate-700 hover:text-blue-700">
+                      {label}<span>→</span>
+                    </Link>
+                  ))}
+                </div>
+              </aside>
+            </section>
+          </>
         )}
-
-        {/* Navigation Tabs */}
-        <div className="flex gap-2 mb-6 overflow-x-auto">
-          {[
-            { id: 'overview', label: 'Overview', icon: '📊' },
-            { id: 'maintenance', label: 'Maintenance', icon: '🔧' },
-            { id: 'payments', label: 'Payments', icon: '💰' },
-            { id: 'leases', label: 'Leases', icon: '📄' },
-            { id: 'expenses', label: 'Expenses', icon: '📈' },
-          ].map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id as typeof activeTab)}
-              className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition flex items-center gap-2 ${
-                activeTab === tab.id
-                  ? 'bg-indigo-600 text-white'
-                  : 'bg-white text-gray-700 hover:bg-gray-100 shadow'
-              }`}
-            >
-              <span>{tab.icon}</span>
-              {tab.label}
-            </button>
-          ))}
-        </div>
-
-        <div className="grid lg:grid-cols-3 gap-6">
-          {/* Main Content */}
-          <div className="lg:col-span-2 space-y-6">
-            {/* Maintenance Requests */}
-            <div className="bg-white rounded-xl shadow-lg overflow-hidden">
-              <div className="p-4 border-b flex items-center justify-between">
-                <h3 className="font-semibold text-gray-900">Recent Maintenance Requests</h3>
-                <Link href="/landlord/maintenance" className="text-sm text-indigo-600 hover:text-indigo-700">
-                  View all →
-                </Link>
-              </div>
-              <div className="divide-y">
-                {maintenanceRequests.length > 0 ? (
-                  maintenanceRequests.slice(0, 5).map((request) => (
-                    <div key={request.id} className="p-4 hover:bg-gray-50">
-                      <div className="flex items-start justify-between">
-                        <div>
-                          <p className="font-medium text-gray-900">{request.title}</p>
-                          <p className="text-sm text-gray-600">{request.property.title}</p>
-                        </div>
-                        <span className={`px-2 py-1 rounded text-xs font-medium ${getPriorityColor(request.priority)}`}>
-                          {request.priority}
-                        </span>
-                      </div>
-                      <p className="text-xs text-gray-500 mt-1">
-                        {new Date(request.createdAt).toLocaleDateString()}
-                      </p>
-                    </div>
-                  ))
-                ) : (
-                  <p className="p-4 text-center text-gray-500">No pending maintenance requests</p>
-                )}
-              </div>
-            </div>
-
-            {/* Upcoming Payments */}
-            <div className="bg-white rounded-xl shadow-lg overflow-hidden">
-              <div className="p-4 border-b flex items-center justify-between">
-                <h3 className="font-semibold text-gray-900">Upcoming Rent Payments</h3>
-                <Link href="/landlord/payments" className="text-sm text-indigo-600 hover:text-indigo-700">
-                  View all →
-                </Link>
-              </div>
-              <div className="divide-y">
-                {upcomingPayments.length > 0 ? (
-                  upcomingPayments.slice(0, 5).map((payment) => (
-                    <div key={payment.id} className="p-4 hover:bg-gray-50">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="font-medium text-gray-900">{payment.tenant.name}</p>
-                          <p className="text-sm text-gray-600">{payment.property.title}</p>
-                        </div>
-                        <div className="text-right">
-                          <p className="font-bold text-gray-900">{formatCurrency(payment.amount)}</p>
-                          <span className={`px-2 py-1 rounded text-xs font-medium ${getStatusColor(payment.status)}`}>
-                            {payment.status}
-                          </span>
-                        </div>
-                      </div>
-                      <p className="text-xs text-gray-500 mt-1">
-                        Due: {new Date(payment.dueDate).toLocaleDateString()}
-                      </p>
-                    </div>
-                  ))
-                ) : (
-                  <p className="p-4 text-center text-gray-500">No upcoming payments</p>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* Sidebar - Quick Actions */}
-          <div className="space-y-6">
-            <div className="bg-white rounded-xl shadow-lg p-6">
-              <h3 className="font-semibold text-gray-900 mb-4">Quick Actions</h3>
-              <div className="space-y-3">
-                <Link
-                  href="/dashboard/properties/new"
-                  className="flex items-center gap-3 p-3 border rounded-lg hover:bg-gray-50 transition"
-                >
-                  <span className="text-xl">➕</span>
-                  <span className="font-medium">Add Property</span>
-                </Link>
-                <Link
-                  href="/landlord/screening"
-                  className="flex items-center gap-3 p-3 border rounded-lg hover:bg-gray-50 transition"
-                >
-                  <span className="text-xl">🔍</span>
-                  <span className="font-medium">Screen Tenant</span>
-                </Link>
-                <Link
-                  href="/landlord/leases"
-                  className="flex items-center gap-3 p-3 border rounded-lg hover:bg-gray-50 transition"
-                >
-                  <span className="text-xl">📝</span>
-                  <span className="font-medium">Create Lease</span>
-                </Link>
-                <Link
-                  href="/landlord/expenses"
-                  className="flex items-center gap-3 p-3 border rounded-lg hover:bg-gray-50 transition"
-                >
-                  <span className="text-xl">📊</span>
-                  <span className="font-medium">Track Expenses</span>
-                </Link>
-              </div>
-            </div>
-
-            {/* Resources */}
-            <div className="bg-white rounded-xl shadow-lg p-6">
-              <h3 className="font-semibold text-gray-900 mb-4">Landlord Resources</h3>
-              <div className="space-y-2">
-                <Link
-                  href="/guides?category=landlord"
-                  className="block text-sm text-indigo-600 hover:text-indigo-700"
-                >
-                  📚 Landlord Guide
-                </Link>
-                <Link
-                  href="/landlord/leases"
-                  className="block text-sm text-indigo-600 hover:text-indigo-700"
-                >
-                  📄 Lease Templates
-                </Link>
-                <Link
-                  href="/market"
-                  className="block text-sm text-indigo-600 hover:text-indigo-700"
-                >
-                  📈 Market Trends
-                </Link>
-                <Link
-                  href="/services"
-                  className="block text-sm text-indigo-600 hover:text-indigo-700"
-                >
-                  🔧 Service Providers
-                </Link>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
+      </main>
     </div>
   );
 }
