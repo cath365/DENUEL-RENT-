@@ -97,7 +97,7 @@ export default async function AdminPage() {
         </div>
 
         <section className="mt-7 grid border-l border-t border-slate-200 sm:grid-cols-2 lg:grid-cols-4">
-          <Metric label="Review queue" value={reviewQueue} note="Providers + properties + reports" />
+          <Metric label="Review queue" value={reviewQueue} note="Drivers + providers + properties + reports" />
           <Metric label="Users" value={totalUsers.toLocaleString()} />
           <Metric label="Properties" value={totalProperties.toLocaleString()} note={pendingProperties + ' pending approval'} />
           <Metric label="Service providers" value={totalProviders.toLocaleString()} note={verifiedProviders + ' verified'} />
