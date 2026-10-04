@@ -404,6 +404,17 @@ export default function AgentLeasesPage() {
                           : 'No'}
                       </span>
                     </div>
+
+                    {lease.content && (
+                      <details className="mt-4 border border-slate-200 bg-slate-50">
+                        <summary className="cursor-pointer px-3 py-2.5 text-sm font-semibold text-slate-800">
+                          Review stored agreement text
+                        </summary>
+                        <div className="max-h-72 overflow-y-auto whitespace-pre-wrap border-t border-slate-200 bg-white p-3 text-sm leading-6 text-slate-700">
+                          {lease.content}
+                        </div>
+                      </details>
+                    )}
                   </div>
 
                   <div className="grid gap-2">
