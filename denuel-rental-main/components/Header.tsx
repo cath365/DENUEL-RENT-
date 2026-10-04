@@ -35,22 +35,11 @@ export default function Header() {
     <header className="sticky top-0 z-50 border-b border-slate-200 bg-white">
       <div className="mx-auto flex h-[68px] max-w-7xl items-center justify-between px-4 sm:px-6">
         <Link href="/" className="flex shrink-0 items-center gap-2.5">
-          {settings.logoUrl ? (
-            <img
-              src={settings.logoUrl}
-              alt={settings.siteName}
-              className="h-8 max-w-[150px] object-contain"
-            />
-          ) : (
-            <>
-              <span className="flex h-8 w-8 items-center justify-center bg-slate-950 text-sm font-bold text-white">
-                D
-              </span>
-              <span className="text-[19px] font-bold tracking-[-0.03em] text-slate-950">
-                {settings.siteName || 'DENUEL'}
-              </span>
-            </>
-          )}
+          <img
+            src={settings.logoUrl || '/brand/nganda-logo-horizontal.svg'}
+            alt={settings.siteName || "Ng'anda"}
+            className="h-10 w-auto max-w-[190px] object-contain sm:max-w-[220px]"
+          />
         </Link>
 
         <nav className="hidden items-center gap-6 lg:flex">
