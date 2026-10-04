@@ -65,6 +65,7 @@ export async function GET(
       messages,
     });
   } catch (error: any) {
+    if (error instanceof Response) return error;
     console.error('Error fetching messages:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
@@ -132,6 +133,7 @@ export async function POST(
 
     return NextResponse.json({ success: true, message });
   } catch (error: any) {
+    if (error instanceof Response) return error;
     console.error('Error sending message:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
