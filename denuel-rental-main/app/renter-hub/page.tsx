@@ -189,10 +189,14 @@ export default function RenterHub() {
     setError('');
 
     try {
-      const response = await csrfFetch(
-        '/api/viewings?id=' + encodeURIComponent(viewingId),
-        { method: 'DELETE' }
-      );
+      const response = await csrfFetch('/api/viewings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          appointmentId: viewingId,
+          status: 'CANCELED',
+        }),
+      });
       const data = await response.json().catch(() => ({}));
 
       if (!response.ok) {
@@ -200,7 +204,11 @@ export default function RenterHub() {
       }
 
       setViewings((current) =>
-        current.filter((viewing) => viewing.id !== viewingId)
+        current.map((viewing) =>
+          viewing.id === viewingId
+            ? { ...viewing, status: 'CANCELED' }
+            : viewing
+        )
       );
     } catch (actionError) {
       setError(
