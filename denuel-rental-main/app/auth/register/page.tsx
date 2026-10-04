@@ -158,7 +158,7 @@ export default function RegisterPage() {
                 <input required type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="Email address" className="h-12 w-full border border-slate-300 bg-white px-4 text-sm outline-none focus:border-slate-950" />
                 <input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="Phone number" className="h-12 w-full border border-slate-300 bg-white px-4 text-sm outline-none focus:border-slate-950" />
                 <div className="relative">
-                  <input required minLength={6} type={showPassword ? 'text' : 'password'} value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder="Password" className="h-12 w-full border border-slate-300 bg-white px-4 pr-16 text-sm outline-none focus:border-slate-950" />
+                  <input required minLength={8} type={showPassword ? 'text' : 'password'} value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder="Password" className="h-12 w-full border border-slate-300 bg-white px-4 pr-16 text-sm outline-none focus:border-slate-950" />
                   <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium text-slate-500">{showPassword ? 'Hide' : 'Show'}</button>
                 </div>
 
