@@ -86,7 +86,14 @@ export async function calculatePrice(params: {
   let surgeReason: string | undefined;
   if (settings.surgeEnabled && pickupLat != null && pickupLng != null) {
     // determine nearby drivers and recent requests
-    const drivers = await prisma.driverProfile.findMany({ where: { isApproved: true, isOnline: true } });
+    const drivers = await prisma.driverProfile.findMany({
+      where: {
+        isApproved: true,
+        isOnline: true,
+        verificationStatus: 'VERIFIED',
+        user: { isSuspended: false },
+      },
+    });
     const nearbyDrivers = drivers.filter(d => d.currentLat != null && d.currentLng != null).filter(d => {
       const dLat = toRad((d.currentLat as number) - pickupLat);
       const dLon = toRad((d.currentLng as number) - pickupLng);
@@ -97,7 +104,12 @@ export async function calculatePrice(params: {
     });
 
     const windowAgo = new Date(Date.now() - (settings.surgeWindowMinutes || 5) * 60 * 1000);
-    const recentRequests = await prisma.transportRequest.findMany({ where: { createdAt: { gte: windowAgo } } });
+    const recentRequests = await prisma.transportRequest.findMany({
+      where: {
+        createdAt: { gte: windowAgo },
+        status: { in: ['REQUESTED', 'SEARCHING', 'DRIVER_ASSIGNED'] },
+      },
+    });
     const nearbyRequests = recentRequests.filter(r => {
       const dLat = toRad(r.pickupLat - (pickupLat as number));
       const dLon = toRad(r.pickupLng - (pickupLng as number));
