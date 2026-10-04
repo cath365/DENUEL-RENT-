@@ -7,6 +7,8 @@ import RetryButton from '../components/RetryButton';
 import PersonalizedDiscovery from '../components/PersonalizedDiscovery';
 import prisma from '../lib/prisma';
 
+export const dynamic = 'force-dynamic';
+
 export const metadata: Metadata = {
   title: 'DENUEL | Zambia Property & Living Platform',
   description: 'Find, verify, rent, buy and manage property across Zambia. Explore homes, land, commercial property, agents, services and market insights.',
