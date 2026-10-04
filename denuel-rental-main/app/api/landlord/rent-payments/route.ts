@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { requireAuth } from '@/lib/auth';
+import { requireAuth, requireCsrf } from '@/lib/auth';
 
 // GET - Get rent payments
 export async function GET(req: NextRequest) {
@@ -72,42 +72,47 @@ export async function GET(req: NextRequest) {
 }
 
 // POST - Record a payment
+// Manual payment recording is restricted to the landlord or an administrator.
+// Tenants must use a real configured payment flow rather than marking their own rent as paid.
 export async function POST(req: NextRequest) {
   try {
     const user = await requireAuth(req);
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    requireCsrf(req);
 
     const body = await req.json();
-    const { paymentId, amount, paymentMethod, transactionId, notes } = body;
+    const paymentId = typeof body.paymentId === 'string' ? body.paymentId : '';
+    const amount = Number(body.amount);
+    const paymentMethod =
+      typeof body.paymentMethod === 'string' ? body.paymentMethod.trim() : '';
+    const transactionId =
+      typeof body.transactionId === 'string' ? body.transactionId.trim() : '';
+    const notes =
+      typeof body.notes === 'string' ? body.notes.trim().slice(0, 1000) : '';
 
-    if (!paymentId) {
-      return NextResponse.json({ error: 'Payment ID is required' }, { status: 400 });
+    if (!paymentId || !Number.isFinite(amount) || amount <= 0) {
+      return NextResponse.json(
+        { error: 'Payment record and amount are required.' },
+        { status: 400 }
+      );
     }
 
     const payment = await prisma.rentPayment.findUnique({
       where: { id: paymentId },
-      include: {
-        lease: true,
-      },
+      include: { lease: true },
     });
 
     if (!payment) {
-      return NextResponse.json({ error: 'Payment not found' }, { status: 404 });
+      return NextResponse.json({ error: 'Payment record not found.' }, { status: 404 });
     }
 
-    // Check authorization
-    if (payment.tenantId !== user.id && payment.lease.landlordId !== user.id && user.role !== 'ADMIN') {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-    }
+    const canRecord =
+      payment.lease.landlordId === user.id || user.role === 'ADMIN';
 
-    // Check if late
-    const isLate = new Date(payment.dueDate) < new Date();
-    let lateFee = 0;
-    if (isLate && !payment.lateFee) {
-      // Apply 5% late fee
-      lateFee = payment.amount * 0.05;
+    if (!canRecord) {
+      return NextResponse.json(
+        { error: 'Only the landlord or an administrator can record a manual rent payment.' },
+        { status: 403 }
+      );
     }
 
     const updated = await prisma.rentPayment.update({
@@ -115,31 +120,36 @@ export async function POST(req: NextRequest) {
       data: {
         status: amount >= payment.amount ? 'PAID' : 'PARTIAL',
         paidDate: new Date(),
-        paymentMethod,
-        transactionId,
-        notes,
-        lateFee: lateFee > 0 ? lateFee : payment.lateFee,
+        paymentMethod: paymentMethod || null,
+        transactionId: transactionId || null,
+        notes: notes || null,
       },
     });
 
-    // Notify landlord of payment
-    await prisma.notification.create({
-      data: {
-        userId: payment.lease.landlordId,
-        type: 'RENT_PAID',
+    try {
+      await prisma.notification.create({
         data: {
-          paymentId: updated.id,
-          amount: payment.amount,
-          tenantId: payment.tenantId,
-          propertyId: payment.lease.propertyId,
+          userId: payment.tenantId,
+          type: 'RENT_PAYMENT_RECORDED',
+          data: {
+            paymentId: updated.id,
+            amount,
+            propertyId: payment.lease.propertyId,
+          },
         },
-      },
-    });
+      });
+    } catch {
+      // Payment record remains valid even if notification delivery fails.
+    }
 
     return NextResponse.json(updated);
   } catch (error) {
+    if (error instanceof Response) return error;
     console.error('Record rent payment error:', error);
-    return NextResponse.json({ error: 'Failed to record payment' }, { status: 500 });
+    return NextResponse.json(
+      { error: 'Unable to record this payment right now.' },
+      { status: 500 }
+    );
   }
 }
 
@@ -147,6 +157,7 @@ export async function POST(req: NextRequest) {
 export async function PUT(req: NextRequest) {
   try {
     const user = await requireAuth(req);
+    requireCsrf(req);
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
