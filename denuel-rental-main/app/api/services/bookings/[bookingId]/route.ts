@@ -91,6 +91,7 @@ export async function PATCH(
       booking: updatedBooking,
     });
   } catch (error) {
+    if (error instanceof Response) return error;
     console.error('Error updating booking:', error);
     return NextResponse.json({ message: 'Failed to update booking' }, { status: 500 });
   }
@@ -144,6 +145,7 @@ export async function DELETE(
 
     return NextResponse.json({ message: 'Booking canceled' });
   } catch (error) {
+    if (error instanceof Response) return error;
     console.error('Error canceling booking:', error);
     return NextResponse.json({ message: 'Failed to cancel booking' }, { status: 500 });
   }
