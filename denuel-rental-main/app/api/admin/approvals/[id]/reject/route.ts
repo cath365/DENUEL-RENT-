@@ -29,6 +29,9 @@ export async function POST(
           where: { id },
           data: {
             isApproved: false,
+            isOnline: false,
+            verificationStatus: 'REJECTED',
+            rejectionReason: reason.trim(),
           },
         });
 
