@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth } from "@/lib/auth";
+import { requireAuth, requireCsrf } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 
 // GET - Fetch all verification documents (admin only)
@@ -48,6 +48,7 @@ export async function GET(req: NextRequest) {
 export async function PATCH(req: NextRequest) {
   try {
     const user = await requireAuth(req, ["ADMIN"]);
+    requireCsrf(req);
     const body = await req.json();
 
     const { documentId, status, reviewNotes } = body;
