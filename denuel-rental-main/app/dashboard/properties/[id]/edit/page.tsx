@@ -92,7 +92,11 @@ export default function EditPropertyPage({ params }: { params: { id: string } })
         setTitle(property.title || '');
         setDescription(property.description || '');
         setPropertyType(property.propertyType || '');
-        setListingType(property.listingType || '');
+        setListingType(
+          property.listingType === 'RENT' || property.listingType === 'SALE'
+            ? property.listingType
+            : ''
+        );
         setPrice(property.price != null ? String(property.price) : '');
         setDeposit(property.deposit != null ? String(property.deposit) : '');
         setCity(property.city || '');
