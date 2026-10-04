@@ -25,6 +25,7 @@ export default function PropertySearchMarketplace({ mode, title, description }: 
   const [properties, setProperties] = useState<any[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [searchError, setSearchError] = useState('');
   const [view, setView] = useState<'grid' | 'map'>('grid');
   const [showFilters, setShowFilters] = useState(false);
   const [page, setPage] = useState(1);
@@ -82,8 +83,23 @@ export default function PropertySearchMarketplace({ mode, title, description }: 
     let cancelled = false;
     setLoading(true);
 
+    setSearchError('');
     fetch('/api/search?' + params.toString())
-      .then((res) => res.json())
+      .then(async (res) => {
+        const text = await res.text();
+        let data: any = {};
+        try {
+          data = text ? JSON.parse(text) : {};
+        } catch {
+          data = {};
+        }
+
+        if (!res.ok) {
+          throw new Error(data?.error || text || 'Property search is temporarily unavailable.');
+        }
+
+        return data;
+      })
       .then((data) => {
         if (cancelled) return;
         setProperties(Array.isArray(data.items) ? data.items : []);
@@ -94,6 +110,7 @@ export default function PropertySearchMarketplace({ mode, title, description }: 
         if (!cancelled) {
           setProperties([]);
           setTotal(0);
+          setSearchError(error instanceof Error ? error.message : 'Property search is temporarily unavailable.');
         }
       })
       .finally(() => !cancelled && setLoading(false));
@@ -226,6 +243,14 @@ export default function PropertySearchMarketplace({ mode, title, description }: 
           <div className="grid gap-5 py-7 sm:grid-cols-2 lg:grid-cols-4">
             {Array.from({ length: 8 }).map((_, i) => <div key={i} className="aspect-[4/5] animate-pulse border border-slate-200 bg-slate-100" />)}
           </div>
+        ) : searchError ? (
+          <div className="my-10 border border-red-200 bg-red-50 p-6 sm:p-8">
+            <h2 className="text-lg font-semibold text-red-900">We could not load the property results</h2>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-red-800">{searchError}</p>
+            <button onClick={() => window.location.reload()} className="mt-5 border border-red-300 bg-white px-4 py-2.5 text-sm font-semibold text-red-800">
+              Try again
+            </button>
+          </div>
         ) : properties.length === 0 ? (
           <div className="my-10 border border-slate-200 bg-slate-50 p-10">
             <h2 className="text-xl font-semibold text-slate-950">No matching properties</h2>
@@ -233,7 +258,7 @@ export default function PropertySearchMarketplace({ mode, title, description }: 
             <button onClick={clearFilters} className="mt-5 bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white">Clear filters</button>
           </div>
         ) : view === 'map' ? (
-          <div className="mt-7"><MapSplitView properties={properties} /></div>
+          <div className="mt-7"><MapSplitView properties={properties} listingType={mode} /></div>
         ) : (
           <div className="mt-7 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
             {properties.map((property) => (
