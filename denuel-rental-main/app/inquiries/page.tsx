@@ -1,170 +1,287 @@
-"use client";
-import React, { useEffect, useState } from 'react';
-import Header from '../../components/Header';
-import { LoadingSpinner } from '../../components/Loading';
-import Link from 'next/link';
+'use client';
 
-interface Inquiry {
-  id: string;
-  property: {
-    id: string;
-    title: string;
-    city: string;
-    price: number;
-    images: { url: string }[];
-  };
-  lastMessage: {
-    body: string;
-    createdAt: string;
-    senderId: string;
-  };
-  messageCount: number;
-  createdAt: string;
-  updatedAt: string;
+import { useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
+import Header from '@/components/Header';
+
+function money(value: unknown) {
+  return 'K' + Number(value || 0).toLocaleString(undefined, {
+    maximumFractionDigits: 2,
+  });
+}
+
+function formatDateTime(value?: string | null) {
+  if (!value) return '—';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '—';
+
+  return date.toLocaleString('en-ZM', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+function counterpartName(item: any) {
+  return (
+    item?.counterpart?.companyName ||
+    item?.counterpart?.name ||
+    'Property contact'
+  );
 }
 
 export default function InquiriesPage() {
-  const [inquiries, setInquiries] = useState<Inquiry[]>([]);
+  const [items, setItems] = useState<any[]>([]);
+  const [viewer, setViewer] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState('');
+  const [query, setQuery] = useState('');
 
-  useEffect(() => {
-    fetchInquiries();
-  }, []);
+  async function load() {
+    setLoading(true);
+    setError('');
 
-  const fetchInquiries = async () => {
     try {
-      setLoading(true);
-      setError(null);
-      const res = await fetch('/api/inquiries');
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || 'Failed to load inquiries');
+      const response = await fetch('/api/inquiries');
+
+      if (response.status === 401) {
+        window.location.href = '/auth/login?redirect=/inquiries';
+        return;
       }
-      const data = await res.json();
-      setInquiries(data.items || []);
-    } catch (err) {
-      console.error('Fetch inquiries error:', err);
-      setError(err instanceof Error ? err.message : 'Failed to load inquiries');
+
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(
+          data.error || 'Unable to load your property conversations.'
+        );
+      }
+
+      setItems(Array.isArray(data.items) ? data.items : []);
+      setViewer(data.viewer || null);
+    } catch (loadError) {
+      setError(
+        loadError instanceof Error
+          ? loadError.message
+          : 'Unable to load your property conversations.'
+      );
+      setItems([]);
     } finally {
       setLoading(false);
     }
-  };
+  }
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  const filtered = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    if (!needle) return items;
+
+    return items.filter((item) => {
+      const property = item.property || {};
+      const counterpart = counterpartName(item);
+
+      return [
+        property.title,
+        property.city,
+        property.area,
+        counterpart,
+        item.lastMessage?.body,
+      ]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(needle));
+    });
+  }, [items, query]);
+
+  const unreadTotal = useMemo(
+    () => items.reduce((sum, item) => sum + Number(item.unreadCount || 0), 0),
+    [items]
+  );
 
   return (
-    <main className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-[#F8F9FA]">
       <Header />
-      <div className="container mx-auto px-4 py-8">
-        <div className="max-w-4xl mx-auto">
-          <div className="flex justify-between items-center mb-6">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900">My Messages</h1>
-              <p className="text-gray-600 mt-1">Track your conversations about properties</p>
-            </div>
-          </div>
 
-        {loading ? (
-          <div className="flex justify-center py-12">
-            <LoadingSpinner size="lg" />
-          </div>
-        ) : error ? (
-          <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-            <p className="text-red-600">{error}</p>
-          </div>
-        ) : inquiries.length === 0 ? (
-          <div className="text-center py-12">
-            <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-              </svg>
+      <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
+        <div className="flex flex-col justify-between gap-4 border-b border-slate-200 pb-6 sm:flex-row sm:items-end">
+          <div>
+            <div className="text-sm font-semibold text-[#16A34A]">
+              Property conversations
             </div>
-            <h3 className="text-xl font-semibold text-gray-900 mb-2">No inquiries yet</h3>
-            <p className="text-gray-600 mb-4">
-              Start a conversation with landlords by clicking &quot;Contact&quot; on properties you&apos;re interested in.
+            <h1 className="mt-2 text-3xl font-bold tracking-[-0.035em] text-slate-950">
+              Messages
+            </h1>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
+              Real conversations connected to properties you enquired about or manage.
             </p>
-            <a
-              href="/"
-              className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors inline-block"
-            >
-              Browse Properties
-            </a>
           </div>
-        ) : (
-          <div className="space-y-4">
-            {inquiries.map((inquiry) => (
-              <div key={inquiry.id} className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm hover:shadow-md transition-shadow">
-                <div className="flex items-start gap-4">
-                  <div className="w-20 h-20 bg-gray-200 rounded-lg overflow-hidden flex-shrink-0">
-                    {inquiry.property.images?.[0] ? (
-                      <img
-                        src={inquiry.property.images[0].url}
-                        alt={inquiry.property.title}
-                        className="w-full h-full object-cover"
-                      />
-                    ) : (
-                      <div className="w-full h-full bg-gray-300 flex items-center justify-center">
-                        <svg className="w-8 h-8 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-                        </svg>
-                      </div>
-                    )}
-                  </div>
 
-                  <div className="flex-1">
-                    <div className="flex justify-between items-start mb-2">
-                      <div>
-                        <h3 className="text-lg font-semibold text-gray-900 mb-1">
-                          {inquiry.property.title}
-                        </h3>
-                        <p className="text-gray-600 text-sm mb-1">
-                          {inquiry.property.city} • K{inquiry.property.price}/month
-                        </p>
-                        <p className="text-xs text-gray-500">
-                          Started: {new Date(inquiry.createdAt).toLocaleDateString()}
-                        </p>
-                      </div>
-                      <div className="text-right">
-                        <div className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs font-medium mb-1">
-                          {inquiry.messageCount} messages
-                        </div>
-                        {inquiry.lastMessage && (
-                          <p className="text-xs text-gray-500">
-                            Last: {new Date(inquiry.lastMessage.createdAt).toLocaleDateString()}
-                          </p>
-                        )}
-                      </div>
-                    </div>
+          <div className="flex flex-wrap gap-2">
+            <Link
+              href="/renter-hub"
+              className="border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700"
+            >
+              Renter Hub
+            </Link>
+            <Link
+              href="/rent"
+              className="bg-[#0F2B46] px-4 py-2.5 text-sm font-semibold text-white"
+            >
+              Browse properties
+            </Link>
+          </div>
+        </div>
 
-                    {inquiry.lastMessage && (
-                      <div className="bg-gray-50 rounded-lg p-3 mb-3">
-                        <p className="text-sm text-gray-700 line-clamp-2">
-                          {inquiry.lastMessage.body}
-                        </p>
-                      </div>
-                    )}
+        <section className="mt-7 grid border-l border-t border-slate-200 sm:grid-cols-3">
+          {[
+            ['Conversations', items.length],
+            ['Unread messages', unreadTotal],
+            ['Account role', viewer?.role || '—'],
+          ].map(([label, value]) => (
+            <div
+              key={String(label)}
+              className="border-b border-r border-slate-200 bg-white p-5"
+            >
+              <div className="text-sm text-slate-500">{label}</div>
+              <div className="mt-2 text-2xl font-bold text-slate-950">{value}</div>
+            </div>
+          ))}
+        </section>
 
-                    <div className="flex gap-2">
-                      <Link 
-                        href={`/inquiries/${inquiry.id}`}
-                        className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors text-sm"
-                      >
-                        Continue Conversation
-                      </Link>
-                      <Link
-                        href={`/property/${inquiry.property.id}`}
-                        className="bg-gray-100 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-200 transition-colors text-sm"
-                      >
-                        View Property
-                      </Link>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ))}
+        <div className="mt-6">
+          <label className="sr-only" htmlFor="conversation-search">
+            Search conversations
+          </label>
+          <input
+            id="conversation-search"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Search property, area, person or message"
+            className="h-12 w-full border border-slate-300 bg-white px-4 text-sm outline-none focus:border-[#16A34A]"
+          />
+        </div>
+
+        {error && (
+          <div className="mt-6 border border-red-200 bg-red-50 p-5">
+            <h2 className="font-semibold text-red-800">
+              Messages are temporarily unavailable
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-red-700">{error}</p>
+            <button
+              type="button"
+              onClick={load}
+              className="mt-4 bg-[#0F2B46] px-4 py-2.5 text-sm font-semibold text-white"
+            >
+              Try again
+            </button>
           </div>
         )}
-        </div>
-      </div>
-    </main>
+
+        {loading ? (
+          <div className="mt-6 h-72 animate-pulse border border-slate-200 bg-white" />
+        ) : items.length === 0 ? (
+          <section className="mt-6 border border-slate-200 bg-white p-10">
+            <h2 className="text-xl font-semibold text-slate-950">
+              No property conversations yet
+            </h2>
+            <p className="mt-2 max-w-xl text-sm leading-6 text-slate-500">
+              Your inbox starts empty. A conversation appears only after you send
+              or receive a real property enquiry.
+            </p>
+            <Link
+              href="/rent"
+              className="mt-5 inline-flex bg-[#16A34A] px-4 py-2.5 text-sm font-semibold text-white"
+            >
+              Find a property
+            </Link>
+          </section>
+        ) : filtered.length === 0 ? (
+          <section className="mt-6 border border-slate-200 bg-white p-8 text-sm text-slate-500">
+            No conversation matches your search.
+          </section>
+        ) : (
+          <section className="mt-6 divide-y divide-slate-100 border border-slate-200 bg-white">
+            {filtered.map((item) => {
+              const property = item.property || {};
+              const image = property.images?.[0]?.url;
+              const isRent = property.listingType === 'RENT';
+              const unread = Number(item.unreadCount || 0);
+
+              return (
+                <Link
+                  key={item.id}
+                  href={'/inquiries/' + item.id}
+                  className="grid gap-4 p-4 transition hover:bg-slate-50 sm:grid-cols-[110px_minmax(0,1fr)_190px] sm:items-center sm:p-5"
+                >
+                  <div className="aspect-[4/3] overflow-hidden bg-slate-100">
+                    {image ? (
+                      <img
+                        src={image}
+                        alt={property.title || ''}
+                        className="h-full w-full object-cover"
+                      />
+                    ) : (
+                      <div className="flex h-full items-center justify-center text-xs text-slate-400">
+                        No image
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h2 className="truncate font-semibold text-slate-950">
+                        {property.title || 'Property conversation'}
+                      </h2>
+
+                      {unread > 0 && (
+                        <span className="bg-[#16A34A] px-2 py-0.5 text-xs font-semibold text-white">
+                          {unread} unread
+                        </span>
+                      )}
+                    </div>
+
+                    <p className="mt-1 text-sm text-slate-500">
+                      {counterpartName(item)}
+                      {property.city ? ' · ' + [property.area, property.city].filter(Boolean).join(', ') : ''}
+                    </p>
+
+                    <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-xs text-slate-500">
+                      <span>
+                        {money(property.price)}
+                        {isRent ? ' / month' : ''}
+                      </span>
+                      <span>{item.messageCount} messages</span>
+                    </div>
+
+                    {item.lastMessage?.body && (
+                      <p
+                        className={`mt-3 line-clamp-2 text-sm ${
+                          unread > 0 ? 'font-medium text-slate-800' : 'text-slate-500'
+                        }`}
+                      >
+                        {item.lastMessage.body}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="sm:text-right">
+                    <div className="text-xs text-slate-400">
+                      {formatDateTime(item.lastMessageAt)}
+                    </div>
+                    <div className="mt-3 text-sm font-semibold text-[#16A34A]">
+                      Open conversation →
+                    </div>
+                  </div>
+                </Link>
+              );
+            })}
+          </section>
+        )}
+      </main>
+    </div>
   );
 }
