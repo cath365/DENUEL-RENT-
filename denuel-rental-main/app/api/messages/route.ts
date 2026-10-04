@@ -4,6 +4,8 @@ import { requireAuth, requireCsrf } from '../../../lib/auth';
 import { publicServerError } from '../../../lib/publicError';
 import { z } from 'zod';
 
+export const dynamic = 'force-dynamic';
+
 const SendSchema = z.object({
   receiverId: z.string().optional(),
   propertyId: z.string().min(1),
