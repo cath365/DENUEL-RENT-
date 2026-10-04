@@ -214,8 +214,8 @@ export default function AgentProfilePage({
     Boolean(agent.user?.isIdVerified) ||
     Boolean(agent.user?.isBusinessVerified);
   const whatsapp =
-    agent.user?.phone
-      ? whatsappLink(agent.user.phone, displayName)
+    agent.whatsappNumber
+      ? whatsappLink(agent.whatsappNumber, displayName)
       : null;
 
   return (
@@ -300,7 +300,7 @@ export default function AgentProfilePage({
                     WhatsApp
                   </a>
                 )}
-                {agent.user?.phone && (
+                {agent.publicPhone && (
                   <a
                     href={'tel:' + agent.user.phone}
                     className="border border-slate-300 bg-white px-4 py-2.5 text-center text-sm font-semibold text-slate-700"
@@ -308,7 +308,7 @@ export default function AgentProfilePage({
                     Call
                   </a>
                 )}
-                {agent.user?.email && (
+                {agent.publicEmail && (
                   <a
                     href={'mailto:' + agent.user.email}
                     className="border border-slate-300 bg-white px-4 py-2.5 text-center text-sm font-semibold text-slate-700"
@@ -536,8 +536,8 @@ export default function AgentProfilePage({
             <section className="border border-slate-200 bg-white p-5">
               <h2 className="font-bold text-slate-950">Contact details</h2>
               <div className="mt-4 space-y-3 text-sm text-slate-600">
-                {agent.user?.phone && <div>{agent.user.phone}</div>}
-                {agent.user?.email && <div className="break-all">{agent.user.email}</div>}
+                {agent.publicPhone && <div>{agent.user.phone}</div>}
+                {agent.publicEmail && <div className="break-all">{agent.user.email}</div>}
               </div>
               <p className="mt-4 text-xs leading-5 text-slate-500">
                 For a listing-specific conversation, open the property and use its enquiry form. That keeps the discussion tied to the correct property and client.
