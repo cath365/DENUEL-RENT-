@@ -254,24 +254,6 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    try {
-      await prisma.notification.create({
-        data: {
-          userId: tenant.id,
-          type: 'LEASE_CREATED',
-          data: {
-            leaseId: lease.id,
-            propertyId: property.id,
-            propertyTitle: property.title,
-            landlordId: property.ownerId,
-            monthlyRent: parsed.monthlyRent,
-          },
-        },
-      });
-    } catch {
-      console.warn('Unable to create lease notification.');
-    }
-
     return NextResponse.json({ lease }, { status: 201 });
   } catch (error: any) {
     if (error instanceof Response) return error;
@@ -331,11 +313,17 @@ export async function PUT(req: NextRequest) {
         );
       }
 
-      if (
-        !['DRAFT', 'PENDING_SIGNATURES'].includes(lease.status)
-      ) {
+      const canSign =
+        (isLandlord && ['DRAFT', 'PENDING_SIGNATURES'].includes(lease.status)) ||
+        (isTenant && lease.status === 'PENDING_SIGNATURES');
+
+      if (!canSign) {
         return NextResponse.json(
-          { error: 'This lease is not awaiting signatures.' },
+          {
+            error: isTenant
+              ? 'The landlord must send this lease for signatures before the tenant can sign.'
+              : 'This lease is not awaiting signatures.',
+          },
           { status: 409 }
         );
       }
