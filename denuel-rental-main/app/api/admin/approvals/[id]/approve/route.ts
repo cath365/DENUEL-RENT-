@@ -17,29 +17,81 @@ export async function POST(
 
     // Try to find and update driver first
     try {
-      const driver = await prisma.driverProfile.findUnique({ where: { id } });
+      const driver = await prisma.driverProfile.findUnique({
+        where: { id },
+        include: {
+          documents: true,
+          user: {
+            select: { isSuspended: true },
+          },
+        },
+      });
+
       if (driver) {
+        if (driver.user.isSuspended) {
+          return NextResponse.json(
+            { error: 'Suspended users cannot be approved as drivers.' },
+            { status: 409 }
+          );
+        }
+
+        const requiredDriverDocuments = [
+          'NRC',
+          'DRIVER_LICENSE',
+          'VEHICLE_REGISTRATION',
+          'INSURANCE',
+          'POLICE_CLEARANCE',
+        ];
+
+        const missing = requiredDriverDocuments.filter(
+          (type) => !driver.documents.some((document) => document.type === type)
+        );
+        const unverified = requiredDriverDocuments.filter(
+          (type) => driver.documents.some((document) => document.type === type && !document.isVerified)
+        );
+        const insecure = requiredDriverDocuments.filter(
+          (type) => driver.documents.some(
+            (document) =>
+              document.type === type &&
+              !document.fileUrl.includes('.private.blob.vercel-storage.com')
+          )
+        );
+
+        if (missing.length || unverified.length || insecure.length) {
+          return NextResponse.json(
+            {
+              error: 'Driver documents must be uploaded privately and verified before approval.',
+              missing,
+              unverified,
+              insecure,
+            },
+            { status: 400 }
+          );
+        }
+
         await prisma.driverProfile.update({
           where: { id },
           data: {
             isApproved: true,
+            isOnline: false,
+            verificationStatus: 'VERIFIED',
+            rejectionReason: null,
           },
         });
 
-        // Send notification to the driver
         try {
           await prisma.notification.create({
             data: {
               userId: driver.userId,
               type: 'APPLICATION_APPROVED',
               data: {
-                title: 'Application Approved!',
-                message: 'Congratulations! Your driver application has been approved. You can now start accepting ride requests.',
+                title: 'Driver application approved',
+                message: 'Your driver application has been approved. You can now go online and accept matching transport requests.',
               },
             },
           });
-        } catch (e) {
-          console.log('Could not create notification');
+        } catch (notificationError) {
+          console.log('Could not create driver approval notification');
         }
 
         return NextResponse.json({ success: true, type: 'driver' });
