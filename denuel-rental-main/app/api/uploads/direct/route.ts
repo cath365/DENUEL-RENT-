@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireAuth } from '../../../../lib/auth';
+import { requireAuth, requireCsrf } from '../../../../lib/auth';
 import { put } from '@vercel/blob';
 
 export const runtime = 'nodejs';
@@ -7,9 +7,14 @@ export const runtime = 'nodejs';
 export async function POST(req: NextRequest) {
   try {
     const user = await requireAuth(req);
+    requireCsrf(req);
     const formData = await req.formData();
     const file = formData.get('file') as File;
-    const key = formData.get('key') as string;
+    const keyValue = formData.get('key');
+    const key =
+      typeof keyValue === 'string' && keyValue.trim()
+        ? keyValue.trim()
+        : `${Date.now()}-${file.name}`;
 
     if (!file) {
       return NextResponse.json({ error: 'No file provided' }, { status: 400 });
