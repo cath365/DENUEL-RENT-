@@ -4,6 +4,8 @@ import { requireAuth, requireCsrf } from '../../../../lib/auth';
 import { publicServerError } from '../../../../lib/publicError';
 import { z } from 'zod';
 
+export const dynamic = 'force-dynamic';
+
 const ReplySchema = z.object({
   message: z.string().trim().min(1).max(1200),
 });
