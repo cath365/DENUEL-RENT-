@@ -30,7 +30,7 @@ const UpdateSchema = z.object({
     'COMMERCIAL',
     'OTHER',
   ]).optional(),
-  listingType: z.enum(['RENT', 'SALE', 'BOTH']).optional(),
+  listingType: z.enum(['RENT', 'SALE']).optional(),
   price: z.number().positive().optional(),
   deposit: z.number().nonnegative().nullable().optional(),
   country: z.string().trim().min(2).optional(),
