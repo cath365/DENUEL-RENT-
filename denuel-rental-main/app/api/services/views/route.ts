@@ -88,7 +88,12 @@ export async function GET(req: NextRequest) {
       stats: {
         totalViews,
         uniqueViewers: uniqueViewers.length,
-        viewsByDay,
+        viewsByDay: Array.isArray(viewsByDay)
+          ? (viewsByDay as any[]).map((row) => ({
+              ...row,
+              count: Number(row.count || 0),
+            }))
+          : [],
         searchQueries: searchQueries.map(q => ({
           query: q.searchQuery,
           count: q._count.searchQuery,
