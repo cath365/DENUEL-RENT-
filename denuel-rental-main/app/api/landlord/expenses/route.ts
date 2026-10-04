@@ -5,13 +5,11 @@ import { publicServerError } from '@/lib/publicError';
 
 const EXPENSE_CATEGORIES = new Set([
   'MAINTENANCE',
-  'REPAIRS',
-  'UTILITIES',
-  'INSURANCE',
   'TAXES',
-  'MANAGEMENT',
-  'SECURITY',
-  'CLEANING',
+  'INSURANCE',
+  'UTILITIES',
+  'MORTGAGE',
+  'HOA',
   'OTHER',
 ]);
 
