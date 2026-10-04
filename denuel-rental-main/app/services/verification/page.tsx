@@ -15,6 +15,7 @@ type VerificationDocument = {
   isVerified: boolean;
   uploadedAt: string;
   fileAccessUrl: string;
+  storagePrivate?: boolean;
 };
 
 type Provider = {
@@ -219,7 +220,10 @@ export default function ServiceVerificationPage() {
 
   const requiredRequirements = requirements.filter((requirement) => requirement.required);
   const requiredUploaded = requiredRequirements.filter((requirement) => docFor(requirement.type)).length;
-  const requiredVerified = requiredRequirements.filter((requirement) => docFor(requirement.type)?.isVerified).length;
+  const requiredVerified = requiredRequirements.filter((requirement) => {
+    const document = docFor(requirement.type);
+    return Boolean(document?.isVerified && document.storagePrivate);
+  }).length;
   const requiredComplete = requiredUploaded === requiredRequirements.length && requiredRequirements.length > 0;
 
   async function uploadDocument(requirement: Requirement, file: File) {
@@ -237,8 +241,8 @@ export default function ServiceVerificationPage() {
     }
 
     const existing = docFor(requirement.type);
-    if (existing?.isVerified) {
-      setError('This document is already verified and cannot be replaced from the provider account.');
+    if (existing?.isVerified && existing.storagePrivate) {
+      setError('This securely stored document is already verified and cannot be replaced from the provider account.');
       return;
     }
 
@@ -434,10 +438,13 @@ export default function ServiceVerificationPage() {
                       ) : (
                         <span className="bg-slate-100 px-2 py-0.5 text-xs text-slate-500">Optional</span>
                       )}
-                      {document?.isVerified && (
+                      {document && !document.storagePrivate && (
+                        <span className="bg-red-50 px-2 py-0.5 text-xs font-semibold text-red-700">Secure re-upload required</span>
+                      )}
+                      {document?.isVerified && document.storagePrivate && (
                         <span className="bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700">Admin verified</span>
                       )}
-                      {document && !document.isVerified && (
+                      {document && document.storagePrivate && !document.isVerified && (
                         <span className="bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-700">Awaiting review</span>
                       )}
                     </div>
@@ -457,7 +464,7 @@ export default function ServiceVerificationPage() {
                         >
                           Open secure document
                         </a>
-                        {!document.isVerified && (
+                        {!document.isVerified && document.storagePrivate && (
                           <button
                             type="button"
                             disabled={removing === document.id}
@@ -488,9 +495,13 @@ export default function ServiceVerificationPage() {
                     </label>
                   )}
 
-                  {document && !document.isVerified && (
+                  {document && (!document.isVerified || !document.storagePrivate) && (
                     <label className="inline-flex cursor-pointer items-center justify-center border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700">
-                      {uploading === requirement.type ? 'Replacing…' : 'Replace before review'}
+                      {uploading === requirement.type
+                        ? 'Replacing…'
+                        : !document.storagePrivate
+                          ? 'Re-upload securely'
+                          : 'Replace before review'}
                       <input
                         type="file"
                         accept="application/pdf,image/jpeg,image/png,image/webp"
