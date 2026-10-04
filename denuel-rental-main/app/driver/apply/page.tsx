@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Header from '../../../components/Header';
 import Link from 'next/link';
 import { TRANSPORT_IMAGES } from '../../../lib/transport/vehicleImages';
+import { csrfFetch } from '../../../lib/csrf';
 
 type VehicleType =
   | 'MOTORBIKE'
@@ -252,7 +253,7 @@ export default function DriverApplyPage() {
         document.file.name.replace(/\s+/g, '-')
     );
 
-    const response = await fetch('/api/uploads/direct', {
+    const response = await csrfFetch('/api/uploads/direct', {
       method: 'POST',
       body: form,
     });
@@ -294,7 +295,7 @@ export default function DriverApplyPage() {
 
       setUploadProgress('Saving driver application…');
 
-      const response = await fetch('/api/driver/profile', {
+      const response = await csrfFetch('/api/driver/profile', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
