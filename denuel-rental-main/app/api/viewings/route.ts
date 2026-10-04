@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { requireAuth } from '@/lib/auth';
+import { requireAuth, requireCsrf } from '@/lib/auth';
 
 // GET - Get viewing appointments
 export async function GET(req: NextRequest) {
@@ -65,41 +65,64 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const user = await requireAuth(req);
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    requireCsrf(req);
 
     const body = await req.json();
-    const { propertyId, scheduledAt, notes } = body;
+    const propertyId = typeof body.propertyId === 'string' ? body.propertyId : '';
+    const scheduledAt = body.scheduledAt ? new Date(body.scheduledAt) : null;
+    const notes = typeof body.notes === 'string' ? body.notes.trim().slice(0, 1000) : null;
 
-    if (!propertyId || !scheduledAt) {
+    if (!propertyId || !scheduledAt || Number.isNaN(scheduledAt.getTime())) {
       return NextResponse.json(
-        { error: 'Property ID and scheduled time are required' },
+        { error: 'Property and a valid viewing time are required.' },
+        { status: 400 }
+      );
+    }
+
+    if (scheduledAt.getTime() <= Date.now()) {
+      return NextResponse.json(
+        { error: 'Choose a future date and time.' },
         { status: 400 }
       );
     }
 
     const property = await prisma.property.findUnique({
       where: { id: propertyId },
+      select: {
+        id: true,
+        title: true,
+        ownerId: true,
+        status: true,
+      },
     });
 
-    if (!property) {
-      return NextResponse.json({ error: 'Property not found' }, { status: 404 });
+    if (!property || property.status !== 'APPROVED') {
+      return NextResponse.json(
+        { error: 'This property is not available for viewing requests.' },
+        { status: 404 }
+      );
     }
 
-    // Check if slot is available (basic check)
+    if (property.ownerId === user.id) {
+      return NextResponse.json(
+        { error: 'You cannot request a viewing for your own property.' },
+        { status: 400 }
+      );
+    }
+
     const existingAppointment = await prisma.viewingAppointment.findFirst({
       where: {
         propertyId,
-        scheduledAt: new Date(scheduledAt),
+        visitorId: user.id,
+        scheduledAt,
         status: { in: ['PENDING', 'CONFIRMED'] },
       },
     });
 
     if (existingAppointment) {
       return NextResponse.json(
-        { error: 'This time slot is not available' },
-        { status: 400 }
+        { error: 'You already requested this viewing time.' },
+        { status: 409 }
       );
     }
 
@@ -107,29 +130,37 @@ export async function POST(req: NextRequest) {
       data: {
         propertyId,
         visitorId: user.id,
-        scheduledAt: new Date(scheduledAt),
+        scheduledAt,
         notes,
+        status: 'PENDING',
       },
     });
 
-    // Notify property owner
-    await prisma.notification.create({
-      data: {
-        userId: property.ownerId,
-        type: 'VIEWING_REQUEST',
+    try {
+      await prisma.notification.create({
         data: {
-          appointmentId: appointment.id,
-          propertyTitle: property.title,
-          visitorName: user.name,
-          scheduledAt,
+          userId: property.ownerId,
+          type: 'VIEWING_REQUEST',
+          data: {
+            appointmentId: appointment.id,
+            propertyTitle: property.title,
+            visitorName: user.name,
+            scheduledAt: scheduledAt.toISOString(),
+          },
         },
-      },
-    });
+      });
+    } catch {
+      // The viewing request remains valid even if notification delivery fails.
+    }
 
-    return NextResponse.json(appointment, { status: 201 });
+    return NextResponse.json({ appointment }, { status: 201 });
   } catch (error) {
+    if (error instanceof Response) return error;
     console.error('Create viewing appointment error:', error);
-    return NextResponse.json({ error: 'Failed to create appointment' }, { status: 500 });
+    return NextResponse.json(
+      { error: 'Unable to submit the viewing request right now.' },
+      { status: 500 }
+    );
   }
 }
 
