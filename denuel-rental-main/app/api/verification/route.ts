@@ -5,6 +5,8 @@ import prisma from '@/lib/prisma';
 import { publicServerError } from '@/lib/publicError';
 import { verifyObject } from '@/lib/s3';
 
+export const dynamic = 'force-dynamic';
+
 const DOCUMENT_TYPES = new Set([
   'NATIONAL_ID',
   'PASSPORT',
