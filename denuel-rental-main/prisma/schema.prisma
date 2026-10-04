@@ -762,6 +762,9 @@ model AgentProfile {
   facebookUrl       String?
   linkedinUrl       String?
   instagramUrl      String?
+  publicEmail       String?
+  publicPhone       String?
+  whatsappNumber    String?
   totalSales        Int      @default(0)
   totalRentals      Int      @default(0)
   totalVolume       Float    @default(0) // Total transaction value
