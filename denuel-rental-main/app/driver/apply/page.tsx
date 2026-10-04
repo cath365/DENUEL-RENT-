@@ -6,13 +6,13 @@ import Header from '../../../components/Header';
 import Link from 'next/link';
 
 const VEHICLE_TYPES = [
-  { id: 'MOTORBIKE', label: 'Motorbike', image: '/transport/vehicles/motorbike.svg', description: 'Motorbike for eligible trips and deliveries' },
-  { id: 'CAR', label: 'Car / Sedan', image: '/transport/vehicles/car.svg', description: 'Passenger car / sedan' },
-  { id: 'SUV', label: 'SUV', image: '/transport/vehicles/suv.svg', description: 'SUV / larger passenger vehicle' },
-  { id: 'VAN', label: 'Van / Minibus', image: '/transport/vehicles/suv.svg', description: 'Van or minibus' },
-  { id: 'TRUCK_SMALL', label: 'Small Truck', image: '/transport/vehicles/truck-small.svg', description: 'Pickup or small moving truck' },
-  { id: 'TRUCK_MEDIUM', label: 'Medium Truck', image: '/transport/vehicles/truck-medium.svg', description: 'Medium moving / delivery truck' },
-  { id: 'TRUCK_LARGE', label: 'Large Truck', image: '/transport/vehicles/truck-large.svg', description: 'Large moving / freight truck' },
+  { id: 'MOTORBIKE', label: 'Motorbike', image: '/transport/motorbike.svg', description: 'Motorbike for eligible trips and lightweight deliveries' },
+  { id: 'CAR', label: 'Car / Sedan', image: '/transport/car.svg', description: 'Passenger car or sedan' },
+  { id: 'SUV', label: 'SUV', image: '/transport/suv.svg', description: 'Larger passenger vehicle with extra luggage space' },
+  { id: 'VAN', label: 'Van / Minibus', image: '/transport/van.svg', description: 'Passenger groups, luggage or light moving' },
+  { id: 'TRUCK_SMALL', label: 'Pickup / Small Truck', image: '/transport/pickup.svg', description: 'Small moving and delivery jobs' },
+  { id: 'TRUCK_MEDIUM', label: 'Medium Moving Truck', image: '/transport/moving-truck.svg', description: 'Furniture and medium moving jobs' },
+  { id: 'TRUCK_LARGE', label: 'Large Truck', image: '/transport/moving-truck.svg', description: 'Large moving or freight jobs' },
 ];
 
 const ZAMBIAN_CITIES = [
@@ -151,11 +151,11 @@ export default function DriverApplyPage() {
               <React.Fragment key={s}>
                 <div className="flex flex-col items-center">
                   <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold ${
-                    step >= s ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-500'
+                    step >= s ? 'bg-[#0F2B46] text-white' : 'bg-gray-200 text-gray-500'
                   }`}>
                     {step > s ? '✓' : s}
                   </div>
-                  <span className={`text-xs mt-2 ${step >= s ? 'text-blue-600 font-medium' : 'text-gray-500'}`}>
+                  <span className={`text-xs mt-2 ${step >= s ? 'text-[#16A34A] font-medium' : 'text-gray-500'}`}>
                     {s === 1 ? 'Vehicle' : s === 2 ? 'Personal' : s === 3 ? 'Areas' : 'Documents'}
                   </span>
                 </div>
@@ -185,7 +185,7 @@ export default function DriverApplyPage() {
                     onClick={() => handleVehicleSelect(vehicle.id)}
                     className={`p-4 rounded-xl border-2 text-left transition-all ${
                       formData.vehicleType === vehicle.id
-                        ? 'border-blue-500 bg-blue-50'
+                        ? 'border-[#16A34A] bg-emerald-50'
                         : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
                     }`}
                   >
@@ -217,7 +217,7 @@ export default function DriverApplyPage() {
                         value={formData.vehicleMake}
                         onChange={handleInputChange}
                         placeholder="e.g., Toyota"
-                        className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500"
+                        className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#16A34A]"
                       />
                     </div>
                     <div>
@@ -228,7 +228,7 @@ export default function DriverApplyPage() {
                         value={formData.vehicleModel}
                         onChange={handleInputChange}
                         placeholder="e.g., Land Cruiser"
-                        className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500"
+                        className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#16A34A]"
                       />
                     </div>
                     <div>
@@ -241,7 +241,7 @@ export default function DriverApplyPage() {
                         placeholder="e.g., 2020"
                         min="1990"
                         max={new Date().getFullYear() + 1}
-                        className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500"
+                        className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#16A34A]"
                       />
                     </div>
                     <div>
@@ -252,7 +252,7 @@ export default function DriverApplyPage() {
                         value={formData.vehicleColor}
                         onChange={handleInputChange}
                         placeholder="e.g., White"
-                        className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500"
+                        className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#16A34A]"
                       />
                     </div>
                     <div>
@@ -263,7 +263,7 @@ export default function DriverApplyPage() {
                         value={formData.vehiclePlate}
                         onChange={handleInputChange}
                         placeholder="e.g., ABZ 1234"
-                        className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500"
+                        className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#16A34A]"
                       />
                     </div>
                     <div>
@@ -274,7 +274,7 @@ export default function DriverApplyPage() {
                         value={formData.capacity}
                         onChange={handleInputChange}
                         placeholder="e.g., 500"
-                        className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500"
+                        className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#16A34A]"
                       />
                     </div>
                   </div>
@@ -285,7 +285,7 @@ export default function DriverApplyPage() {
                 <button
                   onClick={() => setStep(2)}
                   disabled={!formData.vehicleType || !formData.vehicleMake || !formData.vehicleModel || !formData.vehiclePlate}
-                  className="bg-blue-600 text-white px-8 py-3 rounded-lg font-semibold hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="bg-[#0F2B46] text-white px-8 py-3 rounded-lg font-semibold hover:bg-[#163e63] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Continue
                 </button>
@@ -308,7 +308,7 @@ export default function DriverApplyPage() {
                       name="fullName"
                       value={formData.fullName}
                       onChange={handleInputChange}
-                      className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#16A34A]"
                       placeholder="Your full name"
                     />
                   </div>
@@ -319,7 +319,7 @@ export default function DriverApplyPage() {
                       name="nrcNumber"
                       value={formData.nrcNumber}
                       onChange={handleInputChange}
-                      className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#16A34A]"
                       placeholder="123456/10/1"
                     />
                   </div>
@@ -333,7 +333,7 @@ export default function DriverApplyPage() {
                       name="email"
                       value={formData.email}
                       onChange={handleInputChange}
-                      className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#16A34A]"
                       placeholder="your@email.com"
                     />
                   </div>
@@ -344,7 +344,7 @@ export default function DriverApplyPage() {
                       name="phone"
                       value={formData.phone}
                       onChange={handleInputChange}
-                      className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#16A34A]"
                       placeholder="+260 97X XXX XXX"
                     />
                   </div>
@@ -358,7 +358,7 @@ export default function DriverApplyPage() {
                       name="licenseNumber"
                       value={formData.licenseNumber}
                       onChange={handleInputChange}
-                      className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#16A34A]"
                       placeholder="DL123456"
                     />
                   </div>
@@ -368,7 +368,7 @@ export default function DriverApplyPage() {
                       name="experience"
                       value={formData.experience}
                       onChange={handleInputChange}
-                      className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#16A34A]"
                     >
                       <option value="">Select experience</option>
                       <option value="Less than 1 year">Less than 1 year</option>
@@ -387,7 +387,7 @@ export default function DriverApplyPage() {
                     value={formData.bio}
                     onChange={handleInputChange}
                     rows={4}
-                    className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-[#16A34A]"
                     placeholder="Tell clients about your driving experience, why you're reliable, etc..."
                   />
                 </div>
@@ -403,7 +403,7 @@ export default function DriverApplyPage() {
                 <button
                   onClick={() => setStep(3)}
                   disabled={!formData.fullName || !formData.licenseNumber || !formData.experience}
-                  className="bg-blue-600 text-white px-8 py-3 rounded-lg font-semibold hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="bg-[#0F2B46] text-white px-8 py-3 rounded-lg font-semibold hover:bg-[#163e63] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Continue
                 </button>
@@ -448,7 +448,7 @@ export default function DriverApplyPage() {
                 <button
                   onClick={() => setStep(4)}
                   disabled={formData.serviceAreas.length === 0}
-                  className="bg-blue-600 text-white px-8 py-3 rounded-lg font-semibold hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="bg-[#0F2B46] text-white px-8 py-3 rounded-lg font-semibold hover:bg-[#163e63] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Continue
                 </button>
@@ -498,12 +498,12 @@ export default function DriverApplyPage() {
                 {/* Terms */}
                 <div className="bg-gray-50 p-4 rounded-xl mt-6">
                   <label className="flex items-start gap-3 cursor-pointer">
-                    <input type="checkbox" className="mt-1 rounded text-blue-600" required />
+                    <input type="checkbox" className="mt-1 rounded text-[#16A34A]" required />
                     <span className="text-sm text-gray-600">
                       I confirm that all information provided is accurate and I agree to the{' '}
-                      <Link href="/terms" className="text-blue-600 hover:underline">Terms of Service</Link>
+                      <Link href="/terms" className="text-[#16A34A] hover:underline">Terms of Service</Link>
                       {' '}and{' '}
-                      <Link href="/privacy" className="text-blue-600 hover:underline">Privacy Policy</Link>.
+                      <Link href="/privacy" className="text-[#16A34A] hover:underline">Privacy Policy</Link>.
                       I understand that providing false information may result in permanent removal from the platform.
                     </span>
                   </label>
