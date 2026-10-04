@@ -316,13 +316,18 @@ export async function PUT(req: NextRequest) {
       return NextResponse.json({ error: 'Forbidden.' }, { status: 403 });
     }
 
-    const allowedStatuses = ['PENDING', 'PAID', 'LATE', 'PARTIAL', 'WAIVED'];
+    const allowedStatuses = ['PENDING', 'LATE', 'WAIVED'];
     const data: Record<string, unknown> = {};
 
     if (requestedStatus !== undefined) {
       if (!allowedStatuses.includes(requestedStatus)) {
         return NextResponse.json(
-          { error: 'Invalid rent-payment status.' },
+          {
+            error:
+              requestedStatus === 'PAID' || requestedStatus === 'PARTIAL'
+                ? 'Paid and partial states cannot be set manually through this update route. Use a verified payment flow.'
+                : 'Invalid rent-payment status.',
+          },
           { status: 400 }
         );
       }
