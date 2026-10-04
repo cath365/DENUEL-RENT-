@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, requireCsrf } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 
+export const dynamic = 'force-dynamic';
+
 // GET - Fetch all verification documents (admin only)
 export async function GET(req: NextRequest) {
   try {
