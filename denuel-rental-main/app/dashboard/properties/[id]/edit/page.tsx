@@ -85,8 +85,18 @@ export default function EditPropertyPage({ params }: { params: { id: string } })
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ filename: file.name, contentType: file.type }),
       });
-      const presignJson = await presignRes.json();
+      const presignText = await presignRes.text();
+      let presignJson: any = {};
+      try {
+        presignJson = presignText ? JSON.parse(presignText) : {};
+      } catch {
+        presignJson = {};
+      }
 
+      if (presignRes.status === 401) {
+        router.push(`/auth/login?redirect=/dashboard/properties/${params.id}/edit`);
+        return;
+      }
       if (!presignRes.ok) continue;
 
       if (presignJson.useDirectUpload) {
@@ -98,7 +108,18 @@ export default function EditPropertyPage({ params }: { params: { id: string } })
           method: 'POST',
           body: formData,
         });
-        const uploadJson = await uploadRes.json();
+        const uploadText = await uploadRes.text();
+        let uploadJson: any = {};
+        try {
+          uploadJson = uploadText ? JSON.parse(uploadText) : {};
+        } catch {
+          uploadJson = {};
+        }
+
+        if (uploadRes.status === 401) {
+          router.push(`/auth/login?redirect=/dashboard/properties/${params.id}/edit`);
+          return;
+        }
 
         if (uploadRes.ok && uploadJson?.publicUrl) {
           setImages((s) => [...s, { src: uploadJson.publicUrl, key: uploadJson.key }]);
