@@ -202,6 +202,7 @@ export default async function DashboardPage() {
             ['Saved searches', '/saved-search'],
             ['Notifications', '/notifications'],
             ['Renter hub', '/renter-hub'],
+            ['My leases', '/my-leases'],
             ['Rent payments', '/rent-payment'],
           ]} />
         </section>
