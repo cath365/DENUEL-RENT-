@@ -62,10 +62,14 @@ function requiredDocuments(provider: ServiceProvider) {
   if (provider.providerType === 'COMPANY') {
     required.push(
       { type: 'BUSINESS_LICENSE', label: 'Company registration' },
-      { type: 'TAX_CLEARANCE', label: 'TPIN / tax document' }
+      { type: 'TAX_CLEARANCE', label: 'TPIN / tax document' },
+      { type: 'NRC', label: 'Authorised contact person ID' }
     );
     if (provider.category === 'SECURITY') {
-      required.push({ type: 'LICENSE', label: 'Security / operating licence' });
+      required.push(
+        { type: 'LICENSE', label: 'Security / operating licence' },
+        { type: 'BACKGROUND_CHECK', label: 'Staff screening / police-clearance evidence' }
+      );
     }
     if (provider.insured) {
       required.push({ type: 'INSURANCE', label: 'Insurance evidence' });
@@ -77,6 +81,9 @@ function requiredDocuments(provider: ServiceProvider) {
         { type: 'LICENSE', label: 'Security / professional licence' },
         { type: 'BACKGROUND_CHECK', label: 'Background / police clearance' }
       );
+    }
+    if (provider.category === 'ELECTRICIAN') {
+      required.push({ type: 'QUALIFICATION', label: 'Electrical qualification / trade certificate' });
     }
   }
 
