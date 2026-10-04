@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { requireAuth } from '@/lib/auth';
+import { requireAuth, requireCsrf } from '@/lib/auth';
 
 const ALLOWED_DOCUMENT_TYPES = new Set([
   'NATIONAL_ID',
@@ -44,7 +44,12 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ message: 'Provider not found' }, { status: 404 });
     }
 
-    return NextResponse.json({ documents: provider.documents });
+    return NextResponse.json({
+      documents: provider.documents.map(({ fileUrl, ...document }) => ({
+        ...document,
+        fileAccessUrl: '/api/services/documents/' + document.id + '/file',
+      })),
+    });
   } catch (error) {
     if (error instanceof Response) return error;
     console.error('Error fetching documents:', error);
@@ -52,93 +57,27 @@ export async function GET(req: NextRequest) {
   }
 }
 
-// POST - Upload document
+// POST - Metadata-only document creation is intentionally disabled.
+// Verification documents must be uploaded through the private storage endpoint.
 export async function POST(req: NextRequest) {
   try {
-    const user = await requireAuth(req);
-    if (!user) {
-      return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
-    }
-
-    const provider = await prisma.serviceProvider.findUnique({
-      where: { userId: user.id },
-    });
-
-    if (!provider) {
-      return NextResponse.json({ message: 'Provider not found' }, { status: 404 });
-    }
-
-    const body = await req.json();
-    const { type, name, fileUrl, fileSize, mimeType, expiresAt } = body;
-
-    if (!type || !name || !fileUrl) {
-      return NextResponse.json(
-        { message: 'Type, name, and file URL are required' },
-        { status: 400 }
-      );
-    }
-
-    if (!ALLOWED_DOCUMENT_TYPES.has(type)) {
-      return NextResponse.json({ message: 'Unsupported document type' }, { status: 400 });
-    }
-
-    if (fileSize && Number(fileSize) > 10 * 1024 * 1024) {
-      return NextResponse.json({ message: 'Document must be 10MB or smaller' }, { status: 400 });
-    }
-
-    if (mimeType && !String(mimeType).startsWith('image/') && mimeType !== 'application/pdf') {
-      return NextResponse.json({ message: 'Only images and PDF documents are supported' }, { status: 400 });
-    }
-
-    const existing = await prisma.serviceDocument.findFirst({
-      where: { providerId: provider.id, type },
-      orderBy: { uploadedAt: 'desc' },
-    });
-
-    if (existing?.isVerified) {
-      return NextResponse.json(
-        { message: 'This verified document cannot be replaced. Contact support if it needs to be updated.' },
-        { status: 409 }
-      );
-    }
-
-    if (existing) {
-      await prisma.serviceDocument.deleteMany({
-        where: { providerId: provider.id, type, isVerified: false },
-      });
-    }
-
-    const document = await prisma.serviceDocument.create({
-      data: {
-        providerId: provider.id,
-        type,
-        name,
-        fileUrl,
-        fileSize,
-        mimeType,
-        expiresAt: expiresAt ? new Date(expiresAt) : null,
-        isVerified: false, // Documents need admin verification
-      },
-    });
-
-    return NextResponse.json({
-      message: 'Document uploaded successfully. It will be reviewed for verification.',
-      document,
-    });
+    await requireAuth(req, ['SERVICE_PROVIDER', 'ADMIN']);
+    requireCsrf(req);
+    return NextResponse.json(
+      { message: 'Use /api/services/documents/upload for secure verification uploads.' },
+      { status: 410 }
+    );
   } catch (error) {
     if (error instanceof Response) return error;
-    console.error('Error uploading document:', error);
-    return NextResponse.json({ message: 'Failed to upload document' }, { status: 500 });
+    return NextResponse.json({ message: 'Unable to process document request' }, { status: 500 });
   }
 }
 
 // DELETE - Remove document
 export async function DELETE(req: NextRequest) {
   try {
-    const user = await requireAuth(req);
-    if (!user) {
-      return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
-    }
+    const user = await requireAuth(req, ['SERVICE_PROVIDER', 'ADMIN']);
+    requireCsrf(req);
 
     const { searchParams } = new URL(req.url);
     const docId = searchParams.get('id');
