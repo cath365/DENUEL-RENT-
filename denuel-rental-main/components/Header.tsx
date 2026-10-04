@@ -48,7 +48,7 @@ export default function Header() {
               <Link
                 key={href}
                 href={href}
-                className="text-sm font-medium text-slate-600 transition hover:text-slate-950"
+                className="text-sm font-medium text-slate-600 transition hover:text-[#0F2B46]"
               >
                 {label}
               </Link>
@@ -62,7 +62,7 @@ export default function Header() {
 
         <div className="hidden items-center gap-4 md:flex">
           {user && user.role !== 'ADMIN' && (
-            <Link href="/favorites" className="text-sm font-medium text-slate-600 hover:text-slate-950">
+            <Link href="/favorites" className="text-sm font-medium text-slate-600 hover:text-[#0F2B46]">
               Saved
             </Link>
           )}
@@ -71,16 +71,16 @@ export default function Header() {
             <>
               <Link
                 href={user.role === 'ADMIN' ? '/admin' : '/dashboard'}
-                className="text-sm font-medium text-slate-700 hover:text-slate-950"
+                className="text-sm font-medium text-slate-700 hover:text-[#0F2B46]"
               >
                 Dashboard
               </Link>
-              <button onClick={logout} className="text-sm font-medium text-slate-500 hover:text-slate-950">
+              <button onClick={logout} className="text-sm font-medium text-slate-500 hover:text-[#0F2B46]">
                 Sign out
               </button>
             </>
           ) : (
-            <Link href="/auth/login" className="text-sm font-medium text-slate-700 hover:text-slate-950">
+            <Link href="/auth/login" className="text-sm font-medium text-slate-700 hover:text-[#0F2B46]">
               Sign in
             </Link>
           )}
@@ -88,7 +88,7 @@ export default function Header() {
           {user?.role !== 'ADMIN' && (
             <Link
               href="/dashboard/properties/new"
-              className="border border-slate-950 bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800"
+              className="border border-[#16A34A] bg-[#16A34A] px-4 py-2.5 text-sm font-semibold text-white transition hover:brightness-95"
             >
               List a property
             </Link>
@@ -123,7 +123,7 @@ export default function Header() {
           <div className="mt-5 grid gap-2">
             <Link
               href="/dashboard/properties/new"
-              className="bg-slate-950 px-4 py-3 text-center text-sm font-semibold text-white"
+              className="bg-[#16A34A] px-4 py-3 text-center text-sm font-semibold text-white"
             >
               List a property
             </Link>
