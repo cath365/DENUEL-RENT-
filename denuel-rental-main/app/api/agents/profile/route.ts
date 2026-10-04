@@ -1,31 +1,71 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
-import { requireAuth } from '@/lib/auth';
+import { requireAuth, requireCsrf } from '@/lib/auth';
+import { publicServerError } from '@/lib/publicError';
 
-// GET - Get agent profiles
+const ProfileSchema = z.object({
+  bio: z.string().trim().max(4000).optional().nullable(),
+  specialties: z.array(z.string().trim().min(1)).max(20).optional(),
+  areasServed: z.array(z.string().trim().min(1)).max(30).optional(),
+  licenseNumber: z.string().trim().max(120).optional().nullable(),
+  yearsExperience: z.number().int().min(0).max(80).optional().nullable(),
+  languages: z.array(z.string().trim().min(1)).max(20).optional(),
+  profilePhotoUrl: z.string().url().optional().nullable(),
+  coverPhotoUrl: z.string().url().optional().nullable(),
+  website: z.string().url().optional().nullable(),
+  facebookUrl: z.string().url().optional().nullable(),
+  linkedinUrl: z.string().url().optional().nullable(),
+  instagramUrl: z.string().url().optional().nullable(),
+});
+
+function completion(profile: any) {
+  const checks = [
+    profile?.bio,
+    Array.isArray(profile?.specialties) && profile.specialties.length > 0,
+    Array.isArray(profile?.areasServed) && profile.areasServed.length > 0,
+    profile?.yearsExperience !== null && profile?.yearsExperience !== undefined,
+    Array.isArray(profile?.languages) && profile.languages.length > 0,
+    profile?.profilePhotoUrl,
+  ];
+  return Math.round((checks.filter(Boolean).length / checks.length) * 100);
+}
+
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
+    const agentId = searchParams.get('agentId');
+    const userId = searchParams.get('userId');
+    const me = searchParams.get('me') === 'true';
     const city = searchParams.get('city');
     const area = searchParams.get('area');
     const specialty = searchParams.get('specialty');
     const verified = searchParams.get('verified') === 'true';
-    const featured = searchParams.get('featured') === 'true';
     const sortBy = searchParams.get('sortBy') || 'rating';
-    const page = parseInt(searchParams.get('page') || '1');
-    const limit = parseInt(searchParams.get('limit') || '20');
+    const page = Math.max(1, Number(searchParams.get('page') || 1) || 1);
+    const limit = Math.min(50, Math.max(1, Number(searchParams.get('limit') || 20) || 20));
 
-    const where: Record<string, unknown> = {};
+    const where: any = {};
+
+    if (me) {
+      const user = await requireAuth(req, ['AGENT', 'ADMIN']);
+      where.userId = user.id;
+    } else if (agentId) {
+      where.id = agentId;
+    } else if (userId) {
+      where.userId = userId;
+    }
 
     if (verified) {
-      where.isVerified = true;
+      where.user = {
+        ...(where.user || {}),
+        OR: [
+          { isIdVerified: true },
+          { isBusinessVerified: true },
+        ],
+      };
     }
 
-    if (featured) {
-      where.isFeatured = true;
-    }
-
-    // Filter by areas served
     if (city || area) {
       where.areasServed = {
         path: '$',
@@ -33,7 +73,6 @@ export async function GET(req: NextRequest) {
       };
     }
 
-    // Filter by specialty
     if (specialty) {
       where.specialties = {
         path: '$',
@@ -41,49 +80,75 @@ export async function GET(req: NextRequest) {
       };
     }
 
-    const orderBy: Record<string, string> = {};
-    switch (sortBy) {
-      case 'rating':
-        orderBy.ratingAvg = 'desc';
-        break;
-      case 'sales':
-        orderBy.totalSales = 'desc';
-        break;
-      case 'volume':
-        orderBy.totalVolume = 'desc';
-        break;
-      case 'experience':
-        orderBy.yearsExperience = 'desc';
-        break;
-      case 'reviews':
-        orderBy.ratingCount = 'desc';
-        break;
-      default:
-        orderBy.ratingAvg = 'desc';
+    let orderBy: any = { ratingAvg: 'desc' };
+    if (sortBy === 'reviews') orderBy = { ratingCount: 'desc' };
+    else if (sortBy === 'experience') orderBy = { yearsExperience: 'desc' };
+    else if (sortBy === 'newest') orderBy = { createdAt: 'desc' };
+
+    const include = {
+      user: {
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          phone: true,
+          companyName: true,
+          profileImage: true,
+          isEmailVerified: true,
+          isPhoneVerified: true,
+          isIdVerified: true,
+          isBusinessVerified: true,
+          trustScore: true,
+          properties: {
+            where: { status: 'APPROVED' as const },
+            select: { id: true },
+          },
+        },
+      },
+      reviews: {
+        take: 3,
+        orderBy: { createdAt: 'desc' as const },
+        include: {
+          reviewer: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+        },
+      },
+      transactions: {
+        orderBy: { closedAt: 'desc' as const },
+        take: 10,
+      },
+    };
+
+    if (me || agentId || userId) {
+      const agent = await prisma.agentProfile.findFirst({
+        where,
+        include,
+      });
+
+      if (!agent) {
+        return NextResponse.json(
+          { error: 'Agent profile not found.' },
+          { status: 404 }
+        );
+      }
+
+      return NextResponse.json({
+        agent: {
+          ...agent,
+          approvedListingCount: agent.user.properties.length,
+          profileCompletion: completion(agent),
+        },
+      });
     }
 
     const [agents, total] = await Promise.all([
       prisma.agentProfile.findMany({
         where,
-        include: {
-          user: {
-            select: {
-              id: true,
-              name: true,
-              email: true,
-              phone: true,
-            },
-          },
-          reviews: {
-            take: 3,
-            orderBy: { createdAt: 'desc' },
-            include: {
-              reviewer: {
-                select: { name: true },
-              },
-            },
-          },
-        },
+        include,
         orderBy: [{ isFeatured: 'desc' }, orderBy],
         skip: (page - 1) * limit,
         take: limit,
@@ -92,7 +157,11 @@ export async function GET(req: NextRequest) {
     ]);
 
     return NextResponse.json({
-      agents,
+      agents: agents.map((agent) => ({
+        ...agent,
+        approvedListingCount: agent.user.properties.length,
+        profileCompletion: completion(agent),
+      })),
       pagination: {
         page,
         limit,
@@ -101,80 +170,67 @@ export async function GET(req: NextRequest) {
       },
     });
   } catch (error) {
+    if (error instanceof Response) return error;
     console.error('Fetch agents error:', error);
-    return NextResponse.json({ error: 'Failed to fetch agents' }, { status: 500 });
+    const safe = publicServerError(error, 'Unable to load agent profiles.');
+    return NextResponse.json({ error: safe.message }, { status: safe.status });
   }
 }
 
-// POST - Create/update agent profile
 export async function POST(req: NextRequest) {
   try {
-    const user = await requireAuth(req);
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const user = await requireAuth(req, ['AGENT', 'ADMIN']);
+    requireCsrf(req);
 
-    // Check if user has AGENT role
-    if (user.role !== 'AGENT' && user.role !== 'ADMIN') {
-      return NextResponse.json(
-        { error: 'Only agents can create agent profiles' },
-        { status: 403 }
-      );
-    }
+    const parsed = ProfileSchema.parse(await req.json());
 
-    const body = await req.json();
-    const {
-      bio,
-      specialties,
-      areasServed,
-      licenseNumber,
-      yearsExperience,
-      languages,
-      profilePhotoUrl,
-      coverPhotoUrl,
-      website,
-      facebookUrl,
-      linkedinUrl,
-      instagramUrl,
-    } = body;
-
-    // Upsert agent profile
-    const agentProfile = await prisma.agentProfile.upsert({
+    const profile = await prisma.agentProfile.upsert({
       where: { userId: user.id },
       update: {
-        bio,
-        specialties,
-        areasServed,
-        licenseNumber,
-        yearsExperience,
-        languages,
-        profilePhotoUrl,
-        coverPhotoUrl,
-        website,
-        facebookUrl,
-        linkedinUrl,
-        instagramUrl,
+        bio: parsed.bio ?? null,
+        specialties: parsed.specialties ?? [],
+        areasServed: parsed.areasServed ?? [],
+        licenseNumber: parsed.licenseNumber ?? null,
+        yearsExperience: parsed.yearsExperience ?? null,
+        languages: parsed.languages ?? [],
+        profilePhotoUrl: parsed.profilePhotoUrl ?? null,
+        coverPhotoUrl: parsed.coverPhotoUrl ?? null,
+        website: parsed.website ?? null,
+        facebookUrl: parsed.facebookUrl ?? null,
+        linkedinUrl: parsed.linkedinUrl ?? null,
+        instagramUrl: parsed.instagramUrl ?? null,
       },
       create: {
         userId: user.id,
-        bio,
-        specialties,
-        areasServed,
-        licenseNumber,
-        yearsExperience,
-        languages,
-        profilePhotoUrl,
-        coverPhotoUrl,
-        website,
-        facebookUrl,
-        linkedinUrl,
-        instagramUrl,
+        bio: parsed.bio ?? null,
+        specialties: parsed.specialties ?? [],
+        areasServed: parsed.areasServed ?? [],
+        licenseNumber: parsed.licenseNumber ?? null,
+        yearsExperience: parsed.yearsExperience ?? null,
+        languages: parsed.languages ?? [],
+        profilePhotoUrl: parsed.profilePhotoUrl ?? null,
+        coverPhotoUrl: parsed.coverPhotoUrl ?? null,
+        website: parsed.website ?? null,
+        facebookUrl: parsed.facebookUrl ?? null,
+        linkedinUrl: parsed.linkedinUrl ?? null,
+        instagramUrl: parsed.instagramUrl ?? null,
       },
     });
 
-    return NextResponse.json(agentProfile);
+    return NextResponse.json({
+      profile,
+      profileCompletion: completion(profile),
+    });
   } catch (error) {
-    console.error('Create agent profile error:', error);
-    return NextResponse.json({ error: 'Failed to create agent profile' }, { status: 500 });
+    if (error instanceof z.ZodError) {
+      return NextResponse.json(
+        { error: error.errors[0]?.message || 'Check the agent profile details.' },
+        { status: 422 }
+      );
+    }
+    if (error instanceof Response) return error;
+    console.error('Save agent profile error:', error);
+    const safe = publicServerError(error, 'Unable to save the agent profile.');
+    return NextResponse.json({ error: safe.message }, { status: safe.status });
   }
 }
