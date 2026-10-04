@@ -3,6 +3,8 @@ import prisma from '../../../../lib/prisma';
 import { z } from 'zod';
 import { requireAuth } from '../../../../lib/auth';
 
+export const dynamic = 'force-dynamic';
+
 const NullableTextSchema = z.preprocess(
   (v) => (typeof v === 'string' && v.trim() === '' ? null : v),
   z.string().nullable().optional(),
@@ -18,6 +20,8 @@ const UpdateSchema = z.object({
   description: z.string().min(10).optional(),
   price: z.number().positive().optional(),
   deposit: z.number().nonnegative().optional(),
+  propertyType: z.string().min(1).optional(),
+  listingType: z.enum(['RENT', 'SALE', 'BOTH']).optional(),
   country: z.string().min(2).optional(),
   city: z.string().min(2).optional(),
   area: NullableTextSchema,
@@ -85,6 +89,13 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
       if (Object.prototype.hasOwnProperty.call(parsed, 'area')) data.area = parsed.area;
       if (Object.prototype.hasOwnProperty.call(parsed, 'addressText')) data.addressText = parsed.addressText;
       if (Object.prototype.hasOwnProperty.call(parsed, 'virtualTourUrl')) data.virtualTourUrl = parsed.virtualTourUrl;
+
+      if (
+        user.role !== 'ADMIN' &&
+        (existing.status === 'APPROVED' || existing.status === 'REJECTED')
+      ) {
+        data.status = 'PENDING';
+      }
 
       await tx.property.update({ where: { id }, data });
 
