@@ -7,6 +7,9 @@ import Header from '@/components/Header';
 
 interface ServiceProvider {
   id: string;
+  providerType?: string;
+  verificationStatus?: string;
+  rejectionReason?: string | null;
   businessName: string;
   category: string;
   description: string;
@@ -400,12 +403,31 @@ function ServiceProviderDashboardContent() {
       <Header />
       
       {showSuccessMessage && (
-        <div className="bg-green-500 text-white text-center py-3">
-          🎉 Welcome! Your service provider account has been created successfully.
+        <div className="border-b border-emerald-200 bg-emerald-50 px-4 py-3 text-center text-sm font-medium text-emerald-800">
+          Your service provider profile has been created.
         </div>
       )}
 
       <div className="max-w-7xl mx-auto px-4 py-6">
+        {!provider.isVerified && (
+          <div className={`mb-6 border p-5 ${provider.verificationStatus === 'REJECTED' ? 'border-red-200 bg-red-50' : 'border-amber-200 bg-amber-50'}`}>
+            <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
+              <div>
+                <h2 className="font-semibold text-slate-950">
+                  {provider.verificationStatus === 'REJECTED' ? 'Verification needs attention' : 'Complete DENUEL verification'}
+                </h2>
+                <p className="mt-1 text-sm leading-6 text-slate-600">
+                  {provider.verificationStatus === 'REJECTED' && provider.rejectionReason
+                    ? provider.rejectionReason
+                    : 'Upload the required documents so the admin can review your profile and issue the verified badge.'}
+                </p>
+              </div>
+              <Link href="/services/verification" className="shrink-0 bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white">
+                Open verification
+              </Link>
+            </div>
+          </div>
+        )}
         {/* Profile Header */}
         <div className="bg-white rounded-xl shadow-lg p-6 mb-6">
           <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
