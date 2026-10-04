@@ -5,6 +5,8 @@ import { z } from 'zod';
 
 const SendSchema = z.object({ receiverId: z.string().optional(), propertyId: z.string(), message: z.string().min(1) });
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(req: Request) {
   try {
     const user = await requireAuth(req);
