@@ -578,7 +578,7 @@ export default function TransportPage() {
                 <div>
                   <h2 className="text-xl font-semibold">3. Get a real estimate</h2>
                   <p className="mt-1 text-sm leading-6 text-slate-500">
-                    Distance and duration come from the selected coordinates. Price comes from active transport pricing rules and configured multipliers.
+                    Road distance and travel time come from the selected Mapbox route. Price comes from active transport pricing rules and configured multipliers.
                   </p>
                 </div>
                 <button
@@ -605,7 +605,7 @@ export default function TransportPage() {
                       <div className="mt-2 text-2xl font-bold">{money(estimate.estimate.finalPrice)}</div>
                     </div>
                     <div className="border-b border-r border-slate-200 p-4">
-                      <div className="text-xs text-slate-500">Straight-line distance</div>
+                      <div className="text-xs text-slate-500">Route distance</div>
                       <div className="mt-2 text-2xl font-bold">{Number(estimate.distanceKm).toFixed(1)} km</div>
                     </div>
                     <div className="border-b border-r border-slate-200 p-4">
@@ -697,9 +697,9 @@ export default function TransportPage() {
             </section>
 
             <section className="border border-blue-200 bg-blue-50 p-5">
-              <h2 className="font-semibold">No fake route prices</h2>
+              <h2 className="font-semibold">Pricing transparency</h2>
               <p className="mt-2 text-sm leading-6 text-slate-600">
-                DENUEL shows a price only after real pickup/drop-off coordinates and an active pricing rule are available.
+                DENUEL shows a price only after real pickup/drop-off coordinates, a drivable route and an active pricing rule are available.
               </p>
             </section>
           </aside>
