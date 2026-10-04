@@ -1,0 +1,2 @@
+ALTER TABLE `Application`
+  ALTER COLUMN `feeAmount` DROP DEFAULT;
