@@ -4,6 +4,8 @@ import { requireAuth, requireCsrf } from '../../../lib/auth';
 import { publicServerError } from '../../../lib/publicError';
 import { z } from 'zod';
 
+export const dynamic = 'force-dynamic';
+
 const ToggleSchema = z.object({ propertyId: z.string().min(1) });
 
 export async function GET(req: Request) {
