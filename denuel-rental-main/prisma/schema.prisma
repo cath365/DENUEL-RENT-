@@ -42,6 +42,7 @@ enum PowerBackup {
 enum VehicleType {
   MOTORBIKE
   CAR
+  SUV
   VAN
   TRUCK_SMALL
   TRUCK_MEDIUM
@@ -464,7 +465,14 @@ model DriverProfile {
   licenseNumber    String
   vehicleType      VehicleType
   vehiclePlate     String
+  vehicleMake      String?
+  vehicleModel     String?
+  vehicleYear      Int?
+  vehicleColor     String?
   vehicleCapacityKg Int?
+  serviceAreas     Json?
+  experience       String?
+  bio              String?   @db.Text
   isApproved       Boolean   @default(false)
   isOnline         Boolean   @default(false)
   currentLat       Float?
@@ -483,8 +491,8 @@ model TransportRequest {
   bookingId             String?    
   tenant                User       @relation(fields: [tenantId], references: [id])
   tenantId              String
-  property              Property   @relation(fields: [propertyId], references: [id])
-  propertyId            String
+  property              Property?  @relation(fields: [propertyId], references: [id])
+  propertyId            String?
   pickupLat             Float
   pickupLng             Float
   pickupAddressText     String
@@ -498,6 +506,7 @@ model TransportRequest {
   lockedPriceZmw        Int?
   pricingBreakdown      Json?
   priceLockedAt         DateTime?
+  scheduledAt           DateTime?
   status                TripStatus @default(REQUESTED)
   assignedDriver        DriverProfile? @relation("driver_requests", fields: [assignedDriverId], references: [id])
   assignedDriverId      String?
