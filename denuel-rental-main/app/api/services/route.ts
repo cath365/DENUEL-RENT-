@@ -282,6 +282,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json(provider, { status: 201 });
   } catch (error) {
+    if (error instanceof Response) return error;
     console.error('Create service provider error:', error);
     return NextResponse.json({ error: 'Failed to register service provider' }, { status: 500 });
   }
