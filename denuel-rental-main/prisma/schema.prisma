@@ -342,7 +342,7 @@ model MessageThread {
   id         String   @id @default(cuid())
   property   Property @relation(fields: [propertyId], references: [id])
   propertyId String
-  client     User?    @relation("ClientMessageThreads", fields: [clientId], references: [id])
+  client     User?    @relation("ClientMessageThreads", fields: [clientId], references: [id], onDelete: SetNull)
   clientId   String?
   createdAt  DateTime @default(now())
   messages   Message[]
