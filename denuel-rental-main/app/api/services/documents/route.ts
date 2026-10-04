@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { requireAuth } from '@/lib/auth';
+import { requireAuth, requireCsrf } from '@/lib/auth';
 import { publicServerError } from '@/lib/publicError';
 
 // GET - Get documents for a provider
@@ -36,6 +36,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const user = await requireAuth(req);
+    requireCsrf(req);
     if (!user) {
       return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
     }
@@ -86,6 +87,7 @@ export async function POST(req: NextRequest) {
 export async function DELETE(req: NextRequest) {
   try {
     const user = await requireAuth(req);
+    requireCsrf(req);
     if (!user) {
       return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
     }
