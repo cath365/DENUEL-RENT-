@@ -36,7 +36,7 @@ type Requirement = {
   description: string;
 };
 
-const MAX_FILE_SIZE = 10 * 1024 * 1024;
+const MAX_FILE_SIZE = 4 * 1024 * 1024;
 const ALLOWED_MIME_TYPES = new Set([
   'application/pdf',
   'image/jpeg',
@@ -236,7 +236,7 @@ export default function ServiceVerificationPage() {
     }
 
     if (file.size <= 0 || file.size > MAX_FILE_SIZE) {
-      setError('Verification documents must be 10MB or smaller.');
+      setError('Verification documents must be 4MB or smaller.');
       return;
     }
 
@@ -412,7 +412,7 @@ export default function ServiceVerificationPage() {
         <section className="mt-6 border border-blue-200 bg-blue-50 p-5">
           <h2 className="font-semibold">Private verification storage</h2>
           <p className="mt-2 text-sm leading-6 text-slate-600">
-            Accepted files: PDF, JPG, PNG and WEBP, up to 10MB each. Uploaded identity and business documents are not published on your public service profile.
+            Accepted files: PDF, JPG, PNG and WEBP, up to 4MB each. Uploaded identity and business documents are not published on your public service profile.
           </p>
         </section>
 
