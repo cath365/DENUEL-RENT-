@@ -3,6 +3,8 @@ import prisma from '../../../../lib/prisma';
 import { verifyPassword, issueTokens } from '../../../../lib/auth';
 import { z } from 'zod';
 
+export const dynamic = 'force-dynamic';
+
 const LoginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(8),
@@ -17,7 +19,8 @@ export async function POST(req: Request) {
 
     const body = await req.json();
     const parsed = LoginSchema.parse(body);
-    const user = await prisma.user.findUnique({ where: { email: parsed.email } });
+    const email = parsed.email.trim().toLowerCase();
+    const user = await prisma.user.findUnique({ where: { email } });
     if (!user) return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
     const pwOk = verifyPassword(parsed.password, user.password);
     if (!pwOk) return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
