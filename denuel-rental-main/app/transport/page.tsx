@@ -1,134 +1,235 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Header from '../../components/Header';
 import Link from 'next/link';
+import { TRANSPORT_IMAGES } from '../../lib/transport/vehicleImages';
 
-interface Driver {
-  id: string;
-  user: { name: string; image?: string };
-  vehicleType: string;
-  vehiclePlate: string;
-  rating: number;
-  totalTrips: number;
-  isOnline: boolean;
+type Tab = 'book' | 'moving' | 'deliveries';
+
+type VehicleOption = {
+  id: 'MOTORBIKE' | 'CAR' | 'SUV' | 'VAN' | 'TRUCK_SMALL' | 'TRUCK_MEDIUM' | 'TRUCK_LARGE';
+  name: string;
+  description: string;
+  image?: string;
+};
+
+type RoutePoint = {
+  lat: number;
+  lng: number;
+  label: string;
+};
+
+type Estimate = {
+  price: number;
+  durationMin: number;
+  distanceKm: number;
+  breakdown?: any;
+};
+
+const VEHICLES: VehicleOption[] = [
+  { id: 'MOTORBIKE', name: 'Motorbike', description: 'Fast option for one passenger or light delivery', image: TRANSPORT_IMAGES.motorbike },
+  { id: 'CAR', name: 'Car / Taxi', description: 'Standard passenger ride', image: TRANSPORT_IMAGES.taxi },
+  { id: 'SUV', name: 'SUV / 4x4', description: 'Extra space for passengers and luggage', image: TRANSPORT_IMAGES.suv },
+  { id: 'VAN', name: 'Van / Minibus', description: 'Group transport or medium loads' },
+  { id: 'TRUCK_SMALL', name: 'Small Truck', description: 'Furniture, appliances and small moves', image: TRANSPORT_IMAGES.small_truck },
+  { id: 'TRUCK_MEDIUM', name: 'Medium Truck', description: 'Household and business moving jobs', image: TRANSPORT_IMAGES.medium_truck },
+  { id: 'TRUCK_LARGE', name: 'Large Truck', description: 'Large moves and heavier cargo', image: TRANSPORT_IMAGES.large_truck },
+];
+
+const TAB_CONFIG: Record<Tab, { title: string; description: string; hero: string; vehicles: VehicleOption['id'][] }> = {
+  book: {
+    title: 'Book a ride',
+    description: 'Request verified transport using real route and configured pricing.',
+    hero: TRANSPORT_IMAGES.taxi,
+    vehicles: ['MOTORBIKE', 'CAR', 'SUV', 'VAN'],
+  },
+  moving: {
+    title: 'Moving services',
+    description: 'Choose the truck size that fits your moving job.',
+    hero: TRANSPORT_IMAGES.large_truck,
+    vehicles: ['VAN', 'TRUCK_SMALL', 'TRUCK_MEDIUM', 'TRUCK_LARGE'],
+  },
+  deliveries: {
+    title: 'Deliveries',
+    description: 'Move parcels, goods and equipment across supported areas.',
+    hero: TRANSPORT_IMAGES.small_truck,
+    vehicles: ['MOTORBIKE', 'CAR', 'TRUCK_SMALL', 'TRUCK_MEDIUM'],
+  },
+};
+
+async function geocodeAddress(query: string): Promise<RoutePoint> {
+  const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
+  if (!token) throw new Error('Map search is not configured yet.');
+
+  const url =
+    'https://api.mapbox.com/geocoding/v5/mapbox.places/' +
+    encodeURIComponent(query) +
+    '.json?access_token=' +
+    encodeURIComponent(token) +
+    '&country=ZM&limit=1&autocomplete=true';
+
+  const response = await fetch(url);
+  if (!response.ok) throw new Error('Unable to search that location.');
+
+  const data = await response.json();
+  const feature = data?.features?.[0];
+  if (!feature?.center || feature.center.length < 2) {
+    throw new Error('Location not found. Add more detail to the address.');
+  }
+
+  return {
+    lng: Number(feature.center[0]),
+    lat: Number(feature.center[1]),
+    label: feature.place_name || query,
+  };
 }
 
 export default function TransportPage() {
+  const [activeTab, setActiveTab] = useState<Tab>('book');
   const [pickupAddress, setPickupAddress] = useState('');
   const [dropoffAddress, setDropoffAddress] = useState('');
-  const [vehicleType, setVehicleType] = useState('car');
+  const [vehicleType, setVehicleType] = useState<VehicleOption['id']>('CAR');
   const [scheduledDate, setScheduledDate] = useState('');
   const [scheduledTime, setScheduledTime] = useState('');
+  const [pickupPoint, setPickupPoint] = useState<RoutePoint | null>(null);
+  const [dropoffPoint, setDropoffPoint] = useState<RoutePoint | null>(null);
+  const [estimate, setEstimate] = useState<Estimate | null>(null);
   const [estimating, setEstimating] = useState(false);
-  const [estimate, setEstimate] = useState<{ price: number; duration: string; distance: string } | null>(null);
   const [booking, setBooking] = useState(false);
-  const [bookingSuccess, setBookingSuccess] = useState(false);
-  const [availableDrivers, setAvailableDrivers] = useState<Driver[]>([]);
-  const [activeTab, setActiveTab] = useState<'book' | 'moving' | 'deliveries'>('book');
+  const [bookingSuccess, setBookingSuccess] = useState<{ id: string } | null>(null);
+  const [error, setError] = useState('');
 
-  const vehicleTypes = [
-    { id: 'car', name: 'Standard Car', icon: '🚗', description: 'Comfortable sedan for 4 passengers', basePrice: 50 },
-    { id: 'suv', name: 'SUV', icon: '🚙', description: 'Spacious SUV for 6 passengers', basePrice: 80 },
-    { id: 'van', name: 'Mini Van', icon: '🚐', description: 'Van for groups up to 12', basePrice: 120 },
-    { id: 'truck', name: 'Pickup Truck', icon: '🛻', description: 'For moving small items', basePrice: 150 },
-    { id: 'moving', name: 'Moving Truck', icon: '🚚', description: 'Full-size moving truck', basePrice: 300 },
-  ];
+  const current = TAB_CONFIG[activeTab];
+  const visibleVehicles = useMemo(
+    () => VEHICLES.filter((vehicle) => current.vehicles.includes(vehicle.id)),
+    [current]
+  );
 
-  const getEstimate = async () => {
-    if (!pickupAddress || !dropoffAddress) return;
+  useEffect(() => {
+    const first = TAB_CONFIG[activeTab].vehicles[0];
+    setVehicleType(first);
+    setEstimate(null);
+    setError('');
+  }, [activeTab]);
+
+  function scheduledAtIso() {
+    if (!scheduledDate || !scheduledTime) return null;
+    const date = new Date(`${scheduledDate}T${scheduledTime}`);
+    return Number.isNaN(date.getTime()) ? null : date.toISOString();
+  }
+
+  async function getEstimate() {
+    if (!pickupAddress.trim() || !dropoffAddress.trim()) return;
+
     setEstimating(true);
-    
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
-    const basePrice = vehicleTypes.find(v => v.id === vehicleType)?.basePrice || 50;
-    const randomMultiplier = 1 + Math.random() * 0.5;
-    const price = Math.round(basePrice * randomMultiplier);
-    
-    setEstimate({
-      price,
-      duration: `${15 + Math.floor(Math.random() * 30)} mins`,
-      distance: `${5 + Math.floor(Math.random() * 20)} km`
-    });
-    setEstimating(false);
-  };
+    setError('');
+    setEstimate(null);
 
-  const handleBooking = async () => {
-    setBooking(true);
-    
     try {
-      const res = await fetch('/api/transport/request', {
+      const [pickup, dropoff] = await Promise.all([
+        geocodeAddress(pickupAddress.trim()),
+        geocodeAddress(dropoffAddress.trim()),
+      ]);
+
+      setPickupPoint(pickup);
+      setDropoffPoint(dropoff);
+
+      const response = await fetch('/api/transport/estimate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          pickupAddressText: pickupAddress,
-          dropoffAddressText: dropoffAddress,
+          pickupLat: pickup.lat,
+          pickupLng: pickup.lng,
+          dropoffLat: dropoff.lat,
+          dropoffLng: dropoff.lng,
           vehicleType,
-          priceEstimateZmw: estimate?.price,
-          scheduledAt: scheduledDate && scheduledTime ? new Date(`${scheduledDate}T${scheduledTime}`).toISOString() : null,
+          scheduledAt: scheduledAtIso(),
         }),
       });
 
-      if (res.ok) {
-        setBookingSuccess(true);
-      } else {
-        const data = await res.json();
-        alert(data.error || 'Booking failed');
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.error || 'Unable to calculate the route.');
       }
-    } catch (error) {
-      alert('Failed to create booking');
+
+      setEstimate({
+        price: Number(data.estimate?.finalPrice || 0),
+        durationMin: Number(data.durationMin || 0),
+        distanceKm: Number(data.distanceKm || 0),
+        breakdown: data.estimate,
+      });
+    } catch (err: any) {
+      setError(err?.message || 'Unable to calculate a transport estimate.');
+    } finally {
+      setEstimating(false);
     }
-    
-    setBooking(false);
-  };
+  }
+
+  async function handleBooking() {
+    if (!estimate || !pickupPoint || !dropoffPoint) return;
+
+    setBooking(true);
+    setError('');
+
+    try {
+      const response = await fetch('/api/transport/request', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          pickupLat: pickupPoint.lat,
+          pickupLng: pickupPoint.lng,
+          pickupAddressText: pickupPoint.label,
+          dropoffLat: dropoffPoint.lat,
+          dropoffLng: dropoffPoint.lng,
+          dropoffAddressText: dropoffPoint.label,
+          vehicleType,
+          scheduledAt: scheduledAtIso(),
+        }),
+      });
+
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || 'Unable to create the booking.');
+
+      setBookingSuccess({ id: data.id });
+    } catch (err: any) {
+      setError(err?.message || 'Unable to create the transport request.');
+    } finally {
+      setBooking(false);
+    }
+  }
 
   if (bookingSuccess) {
     return (
-      <main className="min-h-screen bg-gray-50">
+      <main className="min-h-screen bg-[#F8F9FA]">
         <Header />
-        <div className="container mx-auto px-4 py-16">
-          <div className="max-w-lg mx-auto text-center">
-            <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
-              <svg className="w-10 h-10 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-              </svg>
+        <div className="mx-auto max-w-3xl px-4 py-16 sm:px-6">
+          <div className="border border-emerald-200 bg-white p-8 text-center">
+            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-emerald-50 text-2xl text-emerald-700">✓</div>
+            <h1 className="mt-5 text-3xl font-bold tracking-[-0.03em] text-[#0F2B46]">Transport request submitted</h1>
+            <p className="mt-3 text-sm leading-6 text-slate-600">
+              Your request has been recorded. Approved drivers matching this vehicle type can receive the request.
+            </p>
+            <div className="mt-6 border border-slate-200 bg-slate-50 p-4 text-left text-sm text-slate-700">
+              <div><strong>Reference:</strong> {bookingSuccess.id}</div>
+              <div className="mt-2"><strong>Pickup:</strong> {pickupPoint?.label}</div>
+              <div className="mt-2"><strong>Drop-off:</strong> {dropoffPoint?.label}</div>
+              <div className="mt-2"><strong>Locked estimate:</strong> K{estimate?.price.toLocaleString()}</div>
             </div>
-            <h1 className="text-3xl font-bold text-gray-900 mb-4">Booking Confirmed!</h1>
-            <p className="text-gray-600 mb-8">Your transport request has been submitted. A driver will accept your request shortly.</p>
-            <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 mb-6">
-              <div className="text-left space-y-3">
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Pickup:</span>
-                  <span className="font-medium">{pickupAddress}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Dropoff:</span>
-                  <span className="font-medium">{dropoffAddress}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Estimated Price:</span>
-                  <span className="font-bold text-blue-600">K{estimate?.price}</span>
-                </div>
-              </div>
-            </div>
-            <div className="flex gap-4 justify-center">
-              <Link
-                href="/dashboard"
-                className="bg-blue-600 text-white px-6 py-3 rounded-full font-semibold hover:bg-blue-700 transition-colors"
-              >
-                Track Your Ride
-              </Link>
+            <div className="mt-6 flex flex-wrap justify-center gap-3">
+              <Link href="/dashboard" className="bg-[#0F2B46] px-5 py-3 text-sm font-semibold text-white">Open dashboard</Link>
               <button
                 onClick={() => {
-                  setBookingSuccess(false);
+                  setBookingSuccess(null);
                   setEstimate(null);
+                  setPickupPoint(null);
+                  setDropoffPoint(null);
                   setPickupAddress('');
                   setDropoffAddress('');
                 }}
-                className="border border-gray-300 text-gray-700 px-6 py-3 rounded-full font-semibold hover:bg-gray-50 transition-colors"
+                className="border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700"
               >
-                Book Another
+                New request
               </button>
             </div>
           </div>
@@ -138,294 +239,197 @@ export default function TransportPage() {
   }
 
   return (
-    <main className="min-h-screen bg-gray-50">
+    <main className="min-h-screen bg-[#F8F9FA]">
       <Header />
-      
-      {/* Hero Section */}
-      <section className="bg-gradient-to-r from-purple-600 to-indigo-700 text-white py-16">
-        <div className="container mx-auto px-4">
-          <h1 className="text-4xl md:text-5xl font-bold mb-4">Transport & Moving Services</h1>
-          <p className="text-xl text-purple-100 mb-6">Book rides, moving trucks, and delivery services across Zambia</p>
-          
-          {/* Service Tabs */}
-          <div className="flex gap-4 mb-8">
-            <button
-              onClick={() => setActiveTab('book')}
-              className={`px-6 py-3 rounded-full font-semibold transition-colors ${
-                activeTab === 'book' ? 'bg-white text-purple-700' : 'bg-purple-500 text-white hover:bg-purple-400'
-              }`}
-            >
-              🚗 Book a Ride
-            </button>
-            <button
-              onClick={() => setActiveTab('moving')}
-              className={`px-6 py-3 rounded-full font-semibold transition-colors ${
-                activeTab === 'moving' ? 'bg-white text-purple-700' : 'bg-purple-500 text-white hover:bg-purple-400'
-              }`}
-            >
-              🚚 Moving Services
-            </button>
-            <button
-              onClick={() => setActiveTab('deliveries')}
-              className={`px-6 py-3 rounded-full font-semibold transition-colors ${
-                activeTab === 'deliveries' ? 'bg-white text-purple-700' : 'bg-purple-500 text-white hover:bg-purple-400'
-              }`}
-            >
-              📦 Deliveries
-            </button>
+
+      <section className="border-b border-slate-200 bg-white">
+        <div className="mx-auto grid max-w-7xl gap-8 px-4 py-10 sm:px-6 lg:grid-cols-[1fr_430px] lg:items-center">
+          <div>
+            <div className="text-sm font-semibold text-[#16A34A]">Ng’anda Transport</div>
+            <h1 className="mt-3 max-w-3xl text-4xl font-bold tracking-[-0.04em] text-[#0F2B46] sm:text-5xl">
+              Transport that connects with your property journey.
+            </h1>
+            <p className="mt-4 max-w-2xl text-base leading-7 text-slate-600">
+              Book a ride, request a moving truck or arrange a delivery. Prices only appear after a real route is found and an admin-configured pricing rule is available.
+            </p>
+
+            <div className="mt-7 grid gap-2 sm:grid-cols-3">
+              {([
+                ['book', 'Book a ride'],
+                ['moving', 'Moving'],
+                ['deliveries', 'Deliveries'],
+              ] as [Tab, string][]).map(([tab, label]) => (
+                <button
+                  key={tab}
+                  onClick={() => setActiveTab(tab)}
+                  className={`border px-4 py-3 text-sm font-semibold transition ${
+                    activeTab === tab
+                      ? 'border-[#0F2B46] bg-[#0F2B46] text-white'
+                      : 'border-slate-300 bg-white text-slate-700 hover:border-[#0F2B46]'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex min-h-56 items-center justify-center border border-slate-200 bg-[#F8F9FA] p-6">
+            <img src={current.hero} alt="" className="max-h-64 w-full object-contain" />
           </div>
         </div>
       </section>
 
-      <div className="container mx-auto px-4 py-8">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Booking Form */}
-          <div className="lg:col-span-2">
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-              <h2 className="text-2xl font-bold text-gray-900 mb-6">
-                {activeTab === 'book' && 'Book a Ride'}
-                {activeTab === 'moving' && 'Book Moving Services'}
-                {activeTab === 'deliveries' && 'Schedule a Delivery'}
-              </h2>
+      <div className="mx-auto grid max-w-7xl gap-6 px-4 py-8 sm:px-6 lg:grid-cols-[minmax(0,1fr)_330px]">
+        <section className="border border-slate-200 bg-white p-5 sm:p-7">
+          <div className="border-b border-slate-100 pb-5">
+            <h2 className="text-2xl font-bold text-[#0F2B46]">{current.title}</h2>
+            <p className="mt-2 text-sm text-slate-500">{current.description}</p>
+          </div>
 
-              <div className="space-y-6">
-                {/* Pickup Location */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Pickup Location</label>
-                  <div className="relative">
-                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-green-500">📍</span>
-                    <input
-                      type="text"
-                      value={pickupAddress}
-                      onChange={(e) => setPickupAddress(e.target.value)}
-                      placeholder="Enter pickup address..."
-                      className="w-full pl-12 pr-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                    />
-                  </div>
-                </div>
+          {error && (
+            <div className="mt-5 border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+              {error}
+            </div>
+          )}
 
-                {/* Dropoff Location */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Dropoff Location</label>
-                  <div className="relative">
-                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-red-500">📍</span>
-                    <input
-                      type="text"
-                      value={dropoffAddress}
-                      onChange={(e) => setDropoffAddress(e.target.value)}
-                      placeholder="Enter dropoff address..."
-                      className="w-full pl-12 pr-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                    />
-                  </div>
-                </div>
+          <div className="mt-6 grid gap-5">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <label className="mb-2 block text-sm font-semibold text-slate-800">Pickup location</label>
+                <input
+                  value={pickupAddress}
+                  onChange={(e) => {
+                    setPickupAddress(e.target.value);
+                    setEstimate(null);
+                  }}
+                  placeholder="e.g. Kabulonga, Lusaka"
+                  className="h-12 w-full border border-slate-300 px-3 text-sm outline-none focus:border-[#16A34A]"
+                />
+              </div>
+              <div>
+                <label className="mb-2 block text-sm font-semibold text-slate-800">Drop-off location</label>
+                <input
+                  value={dropoffAddress}
+                  onChange={(e) => {
+                    setDropoffAddress(e.target.value);
+                    setEstimate(null);
+                  }}
+                  placeholder="e.g. Levy Junction, Lusaka"
+                  className="h-12 w-full border border-slate-300 px-3 text-sm outline-none focus:border-[#16A34A]"
+                />
+              </div>
+            </div>
 
-                {/* Vehicle Type Selection */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Vehicle Type</label>
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                    {vehicleTypes
-                      .filter(v => {
-                        if (activeTab === 'book') return ['car', 'suv', 'van'].includes(v.id);
-                        if (activeTab === 'moving') return ['truck', 'moving', 'van'].includes(v.id);
-                        return true;
-                      })
-                      .map((vehicle) => (
-                        <button
-                          key={vehicle.id}
-                          onClick={() => setVehicleType(vehicle.id)}
-                          className={`p-4 rounded-xl border-2 text-left transition-colors ${
-                            vehicleType === vehicle.id
-                              ? 'border-purple-500 bg-purple-50'
-                              : 'border-gray-200 hover:border-purple-200'
-                          }`}
-                        >
-                          <div className="text-2xl mb-2">{vehicle.icon}</div>
-                          <div className="font-semibold text-gray-900">{vehicle.name}</div>
-                          <div className="text-sm text-gray-500">{vehicle.description}</div>
-                          <div className="text-sm font-medium text-purple-600 mt-2">From K{vehicle.basePrice}</div>
-                        </button>
-                      ))}
-                  </div>
-                </div>
-
-                {/* Schedule (Optional) */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Schedule for Later (Optional)</label>
-                  <div className="grid grid-cols-2 gap-4">
-                    <input
-                      type="date"
-                      value={scheduledDate}
-                      onChange={(e) => setScheduledDate(e.target.value)}
-                      min={new Date().toISOString().split('T')[0]}
-                      className="px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500"
-                    />
-                    <input
-                      type="time"
-                      value={scheduledTime}
-                      onChange={(e) => setScheduledTime(e.target.value)}
-                      className="px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500"
-                    />
-                  </div>
-                </div>
-
-                {/* Get Estimate Button */}
-                <button
-                  onClick={getEstimate}
-                  disabled={!pickupAddress || !dropoffAddress || estimating}
-                  className="w-full bg-purple-600 text-white py-4 rounded-xl font-semibold hover:bg-purple-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {estimating ? (
-                    <span className="flex items-center justify-center gap-2">
-                      <svg className="animate-spin h-5 w-5" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                      </svg>
-                      Calculating...
-                    </span>
-                  ) : (
-                    'Get Price Estimate'
-                  )}
-                </button>
-
-                {/* Price Estimate */}
-                {estimate && (
-                  <div className="bg-purple-50 rounded-xl p-6 border border-purple-100">
-                    <h3 className="font-semibold text-gray-900 mb-4">Trip Estimate</h3>
-                    <div className="grid grid-cols-3 gap-4 mb-6">
-                      <div className="text-center">
-                        <div className="text-3xl font-bold text-purple-600">K{estimate.price}</div>
-                        <div className="text-sm text-gray-600">Estimated Price</div>
-                      </div>
-                      <div className="text-center">
-                        <div className="text-3xl font-bold text-gray-900">{estimate.duration}</div>
-                        <div className="text-sm text-gray-600">Duration</div>
-                      </div>
-                      <div className="text-center">
-                        <div className="text-3xl font-bold text-gray-900">{estimate.distance}</div>
-                        <div className="text-sm text-gray-600">Distance</div>
-                      </div>
+            <div>
+              <label className="mb-3 block text-sm font-semibold text-slate-800">Choose vehicle</label>
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                {visibleVehicles.map((vehicle) => (
+                  <button
+                    key={vehicle.id}
+                    onClick={() => {
+                      setVehicleType(vehicle.id);
+                      setEstimate(null);
+                    }}
+                    className={`min-h-44 border p-3 text-left transition ${
+                      vehicleType === vehicle.id
+                        ? 'border-[#16A34A] bg-emerald-50/40'
+                        : 'border-slate-200 bg-white hover:border-slate-400'
+                    }`}
+                  >
+                    <div className="flex h-24 items-center justify-center bg-[#F8F9FA]">
+                      {vehicle.image ? (
+                        <img src={vehicle.image} alt="" className="h-full w-full object-contain p-2" />
+                      ) : (
+                        <div className="text-xs font-medium text-slate-400">Image coming soon</div>
+                      )}
                     </div>
-                    <button
-                      onClick={handleBooking}
-                      disabled={booking}
-                      className="w-full bg-green-600 text-white py-4 rounded-xl font-semibold hover:bg-green-700 transition-colors disabled:opacity-50"
-                    >
-                      {booking ? 'Booking...' : 'Confirm Booking'}
-                    </button>
-                  </div>
-                )}
+                    <div className="mt-3 text-sm font-semibold text-slate-950">{vehicle.name}</div>
+                    <div className="mt-1 text-xs leading-5 text-slate-500">{vehicle.description}</div>
+                  </button>
+                ))}
               </div>
             </div>
 
-            {/* How It Works */}
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mt-6">
-              <h3 className="text-xl font-bold text-gray-900 mb-6">How It Works</h3>
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                <div className="text-center">
-                  <div className="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-3">
-                    <span className="text-xl">1</span>
-                  </div>
-                  <h4 className="font-semibold mb-1">Enter Location</h4>
-                  <p className="text-sm text-gray-600">Tell us where you're going</p>
-                </div>
-                <div className="text-center">
-                  <div className="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-3">
-                    <span className="text-xl">2</span>
-                  </div>
-                  <h4 className="font-semibold mb-1">Choose Vehicle</h4>
-                  <p className="text-sm text-gray-600">Select the right vehicle</p>
-                </div>
-                <div className="text-center">
-                  <div className="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-3">
-                    <span className="text-xl">3</span>
-                  </div>
-                  <h4 className="font-semibold mb-1">Get Matched</h4>
-                  <p className="text-sm text-gray-600">Driver accepts your request</p>
-                </div>
-                <div className="text-center">
-                  <div className="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-3">
-                    <span className="text-xl">4</span>
-                  </div>
-                  <h4 className="font-semibold mb-1">Enjoy Your Ride</h4>
-                  <p className="text-sm text-gray-600">Track and pay securely</p>
-                </div>
+            <div>
+              <label className="mb-2 block text-sm font-semibold text-slate-800">Schedule for later <span className="font-normal text-slate-400">(optional)</span></label>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <input
+                  type="date"
+                  value={scheduledDate}
+                  onChange={(e) => setScheduledDate(e.target.value)}
+                  min={new Date().toISOString().split('T')[0]}
+                  className="h-12 border border-slate-300 px-3 text-sm outline-none focus:border-[#16A34A]"
+                />
+                <input
+                  type="time"
+                  value={scheduledTime}
+                  onChange={(e) => setScheduledTime(e.target.value)}
+                  className="h-12 border border-slate-300 px-3 text-sm outline-none focus:border-[#16A34A]"
+                />
               </div>
             </div>
+
+            <button
+              onClick={getEstimate}
+              disabled={!pickupAddress.trim() || !dropoffAddress.trim() || estimating}
+              className="bg-[#16A34A] px-5 py-3.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {estimating ? 'Calculating real route…' : 'Get route & price'}
+            </button>
+
+            {estimate && (
+              <div className="border border-emerald-200 bg-emerald-50/40 p-5">
+                <div className="grid gap-4 sm:grid-cols-3">
+                  <div>
+                    <div className="text-xs font-medium uppercase tracking-wide text-slate-400">Price</div>
+                    <div className="mt-1 text-2xl font-bold text-[#0F2B46]">K{estimate.price.toLocaleString()}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs font-medium uppercase tracking-wide text-slate-400">Road distance</div>
+                    <div className="mt-1 text-2xl font-bold text-[#0F2B46]">{estimate.distanceKm.toFixed(1)} km</div>
+                  </div>
+                  <div>
+                    <div className="text-xs font-medium uppercase tracking-wide text-slate-400">Route time</div>
+                    <div className="mt-1 text-2xl font-bold text-[#0F2B46]">{estimate.durationMin} min</div>
+                  </div>
+                </div>
+                <p className="mt-4 text-xs leading-5 text-slate-500">
+                  Route distance/time comes from Mapbox. The price comes from the active Ng’anda pricing rule for the selected vehicle.
+                </p>
+                <button
+                  onClick={handleBooking}
+                  disabled={booking}
+                  className="mt-5 w-full bg-[#0F2B46] px-5 py-3.5 text-sm font-semibold text-white disabled:opacity-50"
+                >
+                  {booking ? 'Submitting request…' : 'Confirm transport request'}
+                </button>
+              </div>
+            )}
           </div>
+        </section>
 
-          {/* Sidebar */}
-          <div className="space-y-6">
-            {/* Become a Driver CTA */}
-            <div className="bg-gradient-to-r from-yellow-400 to-orange-500 rounded-2xl p-6 text-white">
-              <h3 className="text-xl font-bold mb-2">Become a Driver</h3>
-              <p className="text-yellow-100 mb-4">Earn money driving with Denuel. Flexible hours, weekly payouts.</p>
-              <Link
-                href="/driver/apply"
-                className="block w-full bg-white text-orange-600 text-center py-3 rounded-xl font-semibold hover:bg-orange-50 transition-colors"
-              >
-                Apply Now
-              </Link>
-            </div>
+        <aside className="space-y-5">
+          <section className="border border-slate-200 bg-white p-5">
+            <h3 className="font-semibold text-[#0F2B46]">Become a transport provider</h3>
+            <p className="mt-2 text-sm leading-6 text-slate-600">
+              Register your vehicle and submit the required identity, licence, registration, insurance and clearance documents.
+            </p>
+            <Link href="/driver/apply" className="mt-4 inline-flex w-full justify-center bg-[#16A34A] px-4 py-3 text-sm font-semibold text-white">
+              Driver registration
+            </Link>
+          </section>
 
-            {/* Safety Features */}
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-              <h3 className="font-bold text-gray-900 mb-4">Safety First</h3>
-              <ul className="space-y-3">
-                <li className="flex items-center gap-3">
-                  <span className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center text-green-600">✓</span>
-                  <span className="text-gray-700">Verified drivers</span>
-                </li>
-                <li className="flex items-center gap-3">
-                  <span className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center text-green-600">✓</span>
-                  <span className="text-gray-700">Real-time tracking</span>
-                </li>
-                <li className="flex items-center gap-3">
-                  <span className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center text-green-600">✓</span>
-                  <span className="text-gray-700">24/7 support</span>
-                </li>
-                <li className="flex items-center gap-3">
-                  <span className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center text-green-600">✓</span>
-                  <span className="text-gray-700">Secure payments</span>
-                </li>
-                <li className="flex items-center gap-3">
-                  <span className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center text-green-600">✓</span>
-                  <span className="text-gray-700">Trip insurance</span>
-                </li>
-              </ul>
+          <section className="border border-slate-200 bg-white p-5">
+            <h3 className="font-semibold text-[#0F2B46]">How matching works</h3>
+            <div className="mt-4 space-y-4 text-sm text-slate-600">
+              <div><strong className="text-slate-900">1. Route</strong><div className="mt-1">Ng’anda geocodes both addresses and requests a real road route.</div></div>
+              <div><strong className="text-slate-900">2. Pricing</strong><div className="mt-1">The platform applies only active pricing rules configured by the admin.</div></div>
+              <div><strong className="text-slate-900">3. Drivers</strong><div className="mt-1">Only approved, online drivers with the selected vehicle type are considered.</div></div>
+              <div><strong className="text-slate-900">4. Request</strong><div className="mt-1">Your confirmed estimate is recorded with the request for transparency.</div></div>
             </div>
-
-            {/* Recent Trips */}
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-              <h3 className="font-bold text-gray-900 mb-4">Popular Routes</h3>
-              <div className="space-y-3">
-                <button className="w-full text-left p-3 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors">
-                  <div className="font-medium">Lusaka → Kitwe</div>
-                  <div className="text-sm text-gray-600">From K450</div>
-                </button>
-                <button className="w-full text-left p-3 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors">
-                  <div className="font-medium">Lusaka → Livingstone</div>
-                  <div className="text-sm text-gray-600">From K500</div>
-                </button>
-                <button className="w-full text-left p-3 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors">
-                  <div className="font-medium">Lusaka City Rides</div>
-                  <div className="text-sm text-gray-600">From K50</div>
-                </button>
-              </div>
-            </div>
-
-            {/* Contact Support */}
-            <div className="bg-gray-900 rounded-2xl p-6 text-white">
-              <h3 className="font-bold mb-2">Need Help?</h3>
-              <p className="text-gray-400 text-sm mb-4">Our support team is available 24/7</p>
-              <a
-                href="tel:+260123456789"
-                className="block w-full bg-white text-gray-900 text-center py-3 rounded-xl font-semibold hover:bg-gray-100 transition-colors"
-              >
-                Call Support
-              </a>
-            </div>
-          </div>
-        </div>
+          </section>
+        </aside>
       </div>
     </main>
   );
