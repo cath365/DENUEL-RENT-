@@ -208,10 +208,10 @@ export default function AdminVerificationPage() {
               <section>
                 <div className="flex items-center justify-between">
                   <h3 className="text-lg font-bold text-slate-950">Document</h3>
-                  <a href={selected.documentUrl} target="_blank" rel="noreferrer" className="text-sm font-semibold text-blue-700">Open original ↗</a>
+                  <a href={'/api/verification/documents/' + selected.id} target="_blank" rel="noreferrer" className="text-sm font-semibold text-blue-700">Open original ↗</a>
                 </div>
                 <div className="mt-4 overflow-hidden border border-slate-200 bg-slate-50">
-                  <img src={selected.documentUrl} alt="Verification document" className="max-h-[560px] w-full object-contain" />
+                  <img src={'/api/verification/documents/' + selected.id} alt="Verification document" className="max-h-[560px] w-full object-contain" />
                 </div>
               </section>
 
