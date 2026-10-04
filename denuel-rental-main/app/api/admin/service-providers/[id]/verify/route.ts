@@ -17,7 +17,12 @@ export async function POST(
 
     const provider = await prisma.serviceProvider.update({
       where: { id },
-      data: { isVerified: true },
+      data: {
+        isVerified: true,
+        isActive: true,
+        verificationStatus: 'VERIFIED',
+        rejectionReason: null,
+      },
     });
 
     // TODO: Send notification to provider about verification
