@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, requireCsrf } from '@/lib/auth';
 
+export const dynamic = 'force-dynamic';
+
 // GET - Get viewing appointments
 export async function GET(req: NextRequest) {
   try {
