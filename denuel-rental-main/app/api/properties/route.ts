@@ -3,6 +3,8 @@ import prisma from '../../../lib/prisma';
 import { z } from 'zod';
 import { requireAuth } from '../../../lib/auth';
 
+export const dynamic = 'force-dynamic';
+
 const QuerySchema = z.object({
   q: z.string().optional(),
   city: z.string().optional(),
@@ -160,7 +162,7 @@ export async function POST(req: Request) {
         amenities: parsed.amenities || [],
         rules: parsed.rules || [],
         ownerId: user.id,
-        status: 'APPROVED', // Auto-approve properties for immediate visibility
+        status: user.role === 'ADMIN' ? 'APPROVED' : 'PENDING'
         images: parsed.images?.length ? { 
           create: parsed.images.map((img, idx) => {
             // Handle both legacy string URLs and new image objects
