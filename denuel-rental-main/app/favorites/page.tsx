@@ -1,109 +1,328 @@
-"use client";
-import React, { useEffect, useState } from 'react';
-import Header from '../../components/Header';
-import ListingsGrid from '../../components/ListingsGrid';
+'use client';
+
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import Header from '@/components/Header';
+import ListingCard from '@/components/ListingCard';
 
 export default function FavoritesPage() {
-  const [items, setItems] = useState<any[]>([]);
+  const [savedProperties, setSavedProperties] = useState<any[]>([]);
+  const [mostViewed, setMostViewed] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  const [favoritesError, setFavoritesError] = useState('');
+  const [mostViewedError, setMostViewedError] = useState('');
+
+  async function load() {
+    setLoading(true);
+    setFavoritesError('');
+    setMostViewedError('');
+
+    const [favoritesResult, mostViewedResult] = await Promise.allSettled([
+      fetch('/api/favorites'),
+      fetch('/api/properties/most-viewed?limit=8'),
+    ]);
+
+    try {
+      if (favoritesResult.status === 'rejected') {
+        throw new Error('Unable to load saved properties.');
+      }
+
+      const response = favoritesResult.value;
+
+      if (response.status === 401) {
+        window.location.href = '/auth/login?redirect=/favorites';
+        return;
+      }
+
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(
+          data.error || 'Unable to load saved properties.'
+        );
+      }
+
+      setSavedProperties(
+        Array.isArray(data.items)
+          ? data.items.map((item: any) => item.property)
+          : []
+      );
+    } catch (error) {
+      setFavoritesError(
+        error instanceof Error
+          ? error.message
+          : 'Unable to load saved properties.'
+      );
+      setSavedProperties([]);
+    }
+
+    try {
+      if (mostViewedResult.status === 'rejected') {
+        throw new Error('Unable to load most viewed properties.');
+      }
+
+      const response = mostViewedResult.value;
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(
+          data.error || 'Unable to load most viewed properties.'
+        );
+      }
+
+      setMostViewed(
+        Array.isArray(data.items) ? data.items : []
+      );
+    } catch (error) {
+      setMostViewedError(
+        error instanceof Error
+          ? error.message
+          : 'Unable to load most viewed properties.'
+      );
+      setMostViewed([]);
+    }
+
+    setLoading(false);
+  }
 
   useEffect(() => {
-    fetchFavorites();
+    load();
   }, []);
 
-  const fetchFavorites = async () => {
-    setLoading(true);
-    try {
-      const res = await fetch('/api/favorites');
-      if (!res.ok) {
-        if (res.status === 401) {
-          window.location.href = '/auth/login?redirect=/favorites';
-          return;
-        }
-        throw new Error('Failed to load favorites');
-      }
-      const json = await res.json();
-      setItems((json.items || []).map((i: any) => i.property));
-    } catch (err: any) {
-      setError(err.message || 'Failed to load favorites');
-    } finally {
-      setLoading(false);
-    }
-  };
+  const savedIds = useMemo(
+    () => new Set(savedProperties.map((property) => property.id)),
+    [savedProperties]
+  );
+
+  const totalViewers = useMemo(
+    () =>
+      mostViewed.reduce(
+        (sum, property) =>
+          sum + Number(property.viewerCount || 0),
+        0
+      ),
+    [mostViewed]
+  );
 
   return (
-    <main className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-[#F8F9FA]">
       <Header />
-      <div className="container mx-auto px-4 py-8">
-        {/* Header Section */}
-        <div className="mb-8">
-          <div className="flex items-center gap-3 mb-2">
-            <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center">
-              <svg className="w-6 h-6 text-red-600" fill="currentColor" viewBox="0 0 24 24">
-                <path d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
-              </svg>
+
+      <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
+        <div className="flex flex-col justify-between gap-4 border-b border-slate-200 pb-6 sm:flex-row sm:items-end">
+          <div>
+            <div className="text-sm font-semibold text-[#16A34A]">
+              Property shortlist
             </div>
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900">My Favorites</h1>
-              <p className="text-gray-600">Properties you've saved for later</p>
-            </div>
+            <h1 className="mt-2 text-3xl font-bold tracking-[-0.035em] text-slate-950">
+              Saved properties
+            </h1>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
+              Properties you genuinely saved to your Ng&apos;anda account.
+            </p>
           </div>
-          {!loading && !error && items.length > 0 && (
-            <div className="text-sm text-gray-500 mt-2">
-              {items.length} {items.length === 1 ? 'property' : 'properties'} saved
-            </div>
-          )}
+
+          <Link
+            href="/rent"
+            className="inline-flex w-fit bg-[#0F2B46] px-4 py-2.5 text-sm font-semibold text-white"
+          >
+            Browse properties
+          </Link>
         </div>
 
-        {/* Error State */}
-        {error && (
-          <div className="bg-red-50 border border-red-200 rounded-xl p-6 mb-8">
-            <div className="flex items-start gap-3">
-              <svg className="w-6 h-6 text-red-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-              <div>
-                <h3 className="font-semibold text-red-900 mb-1">Error Loading Favorites</h3>
-                <p className="text-red-700 text-sm mb-4">{error}</p>
-                <button
-                  onClick={fetchFavorites}
-                  className="text-sm bg-red-100 hover:bg-red-200 text-red-800 px-4 py-2 rounded-lg font-medium transition"
-                >
-                  Try Again
-                </button>
-              </div>
+        <section className="mt-7 grid border-l border-t border-slate-200 sm:grid-cols-3">
+          <div className="border-b border-r border-slate-200 bg-white p-5">
+            <div className="text-sm text-slate-500">Saved properties</div>
+            <div className="mt-2 text-2xl font-bold text-slate-950">
+              {savedProperties.length}
             </div>
+          </div>
+
+          <div className="border-b border-r border-slate-200 bg-white p-5">
+            <div className="text-sm text-slate-500">Most-viewed listings shown</div>
+            <div className="mt-2 text-2xl font-bold text-slate-950">
+              {mostViewed.length}
+            </div>
+          </div>
+
+          <div className="border-b border-r border-slate-200 bg-white p-5">
+            <div className="text-sm text-slate-500">Recorded viewers across these listings</div>
+            <div className="mt-2 text-2xl font-bold text-slate-950">
+              {totalViewers.toLocaleString()}
+            </div>
+          </div>
+        </section>
+
+        {favoritesError && (
+          <div className="mt-6 border border-red-200 bg-red-50 p-5">
+            <h2 className="font-semibold text-red-800">
+              Saved properties are temporarily unavailable
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-red-700">
+              {favoritesError}
+            </p>
+            <button
+              type="button"
+              onClick={load}
+              className="mt-4 bg-[#0F2B46] px-4 py-2.5 text-sm font-semibold text-white"
+            >
+              Try again
+            </button>
           </div>
         )}
 
-        {/* Empty State */}
-        {!loading && !error && items.length === 0 && (
-          <div className="text-center py-16 bg-white rounded-2xl shadow-sm">
-            <div className="w-24 h-24 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-6">
-              <svg className="w-12 h-12 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
-              </svg>
+        <section className="mt-8">
+          <div className="flex items-end justify-between gap-4">
+            <div>
+              <h2 className="text-2xl font-bold tracking-[-0.025em] text-slate-950">
+                Your saved properties
+              </h2>
+              <p className="mt-2 text-sm text-slate-500">
+                Remove a property by selecting the heart again.
+              </p>
             </div>
-            <h3 className="text-2xl font-bold text-gray-900 mb-2">No Favorites Yet</h3>
-            <p className="text-gray-600 mb-8 max-w-md mx-auto">
-              Start saving properties you love by clicking the heart icon on any listing. They'll appear here for easy access.
-            </p>
+          </div>
+
+          {loading ? (
+            <div className="mt-6 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+              {Array.from({ length: 4 }).map((_, index) => (
+                <div
+                  key={index}
+                  className="h-80 animate-pulse border border-slate-200 bg-white"
+                />
+              ))}
+            </div>
+          ) : !favoritesError && savedProperties.length === 0 ? (
+            <div className="mt-6 border border-slate-200 bg-white p-10">
+              <h3 className="text-xl font-semibold text-slate-950">
+                No saved properties yet
+              </h3>
+              <p className="mt-2 max-w-xl text-sm leading-6 text-slate-500">
+                Your shortlist starts empty. Save a real approved property and it
+                will appear here.
+              </p>
+              <Link
+                href="/rent"
+                className="mt-5 inline-flex bg-[#16A34A] px-4 py-2.5 text-sm font-semibold text-white"
+              >
+                Find a property
+              </Link>
+            </div>
+          ) : (
+            <div className="mt-6 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+              {savedProperties.map((property) => (
+                <ListingCard
+                  key={property.id}
+                  property={property}
+                  listingType={
+                    property.listingType === 'SALE'
+                      ? 'SALE'
+                      : 'RENT'
+                  }
+                  initialFavorited
+                  onFavoriteChange={(isFavorited) => {
+                    if (!isFavorited) {
+                      setSavedProperties((current) =>
+                        current.filter(
+                          (item) => item.id !== property.id
+                        )
+                      );
+                    }
+                  }}
+                />
+              ))}
+            </div>
+          )}
+        </section>
+
+        <section className="mt-14 border-t border-slate-200 pt-10">
+          <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
+            <div>
+              <div className="text-sm font-semibold text-[#16A34A]">
+                Real viewing activity
+              </div>
+              <h2 className="mt-2 text-2xl font-bold tracking-[-0.025em] text-slate-950">
+                Most viewed properties
+              </h2>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">
+                Ranked only from recorded visits to approved listings. Each
+                privacy-safe visitor signature counts once per property.
+              </p>
+            </div>
+
             <Link
               href="/rent"
-              className="inline-block bg-blue-600 text-white px-8 py-3 rounded-xl hover:bg-blue-700 transition-colors font-semibold shadow-md hover:shadow-lg"
+              className="w-fit text-sm font-semibold text-[#16A34A]"
             >
-              Browse Properties
+              Explore all properties
             </Link>
           </div>
-        )}
 
-        {/* Listings Grid */}
-        {!error && (
-          <ListingsGrid items={items} loading={loading} />
-        )}
-      </div>
-    </main>
+          {mostViewedError ? (
+            <div className="mt-6 border border-amber-200 bg-amber-50 p-5 text-sm text-amber-800">
+              {mostViewedError}
+            </div>
+          ) : loading ? (
+            <div className="mt-6 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+              {Array.from({ length: 4 }).map((_, index) => (
+                <div
+                  key={index}
+                  className="h-80 animate-pulse border border-slate-200 bg-white"
+                />
+              ))}
+            </div>
+          ) : mostViewed.length === 0 ? (
+            <div className="mt-6 border border-slate-200 bg-white p-8">
+              <h3 className="font-semibold text-slate-950">
+                No viewer data yet
+              </h3>
+              <p className="mt-2 text-sm leading-6 text-slate-500">
+                This section will populate naturally when real visitors open
+                approved property pages.
+              </p>
+            </div>
+          ) : (
+            <div className="mt-6 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+              {mostViewed.map((property) => (
+                <ListingCard
+                  key={property.id}
+                  property={property}
+                  listingType={
+                    property.listingType === 'SALE'
+                      ? 'SALE'
+                      : 'RENT'
+                  }
+                  initialFavorited={
+                    savedIds.has(property.id) ? true : undefined
+                  }
+                  showViewerCount
+                  onFavoriteChange={(isFavorited) => {
+                    if (isFavorited) {
+                      setSavedProperties((current) => {
+                        if (
+                          current.some(
+                            (item) => item.id === property.id
+                          )
+                        ) {
+                          return current;
+                        }
+
+                        return [...current, property];
+                      });
+                    } else {
+                      setSavedProperties((current) =>
+                        current.filter(
+                          (item) => item.id !== property.id
+                        )
+                      );
+                    }
+                  }}
+                />
+              ))}
+            </div>
+          )}
+        </section>
+      </main>
+    </div>
   );
 }
