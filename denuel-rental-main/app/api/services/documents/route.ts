@@ -27,6 +27,7 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ documents: provider.documents });
   } catch (error) {
+    if (error instanceof Response) return error;
     console.error('Error fetching documents:', error);
     return NextResponse.json({ message: 'Failed to fetch documents' }, { status: 500 });
   }
@@ -76,6 +77,7 @@ export async function POST(req: NextRequest) {
       document,
     });
   } catch (error) {
+    if (error instanceof Response) return error;
     console.error('Error uploading document:', error);
     return NextResponse.json({ message: 'Failed to upload document' }, { status: 500 });
   }
@@ -119,6 +121,7 @@ export async function DELETE(req: NextRequest) {
 
     return NextResponse.json({ message: 'Document deleted' });
   } catch (error) {
+    if (error instanceof Response) return error;
     console.error('Error deleting document:', error);
     return NextResponse.json({ message: 'Failed to delete document' }, { status: 500 });
   }
