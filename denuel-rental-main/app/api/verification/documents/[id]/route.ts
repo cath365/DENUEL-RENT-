@@ -4,6 +4,8 @@ import { requireAuth } from '@/lib/auth';
 import { createPresignedDownloadUrl } from '@/lib/s3';
 import { publicServerError } from '@/lib/publicError';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(
   req: NextRequest,
   { params }: { params: { id: string } }
