@@ -79,6 +79,7 @@ export async function GET(req: NextRequest) {
       documents: provider.documents.map(({ fileUrl, ...document }) => ({
         ...document,
         fileAccessUrl: '/api/services/documents/' + document.id + '/file',
+        storagePrivate: Boolean(fileUrl?.includes('.private.blob.vercel-storage.com')),
       })),
     }));
 
