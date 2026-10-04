@@ -1,22 +1,22 @@
 "use client";
-import React, { useState, useEffect, Suspense } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+
+import { Suspense, useEffect, useState } from 'react';
+import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { login } from '../../../lib/api';
 
-function LoginPageContent() {
+function LoginContent() {
+  const searchParams = useSearchParams();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-  const [successMessage, setSuccessMessage] = useState('');
-  const router = useRouter();
-  const searchParams = useSearchParams();
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    // Show success message for newly registered service providers
     if (searchParams.get('registered') === 'service_provider') {
-      setSuccessMessage('🎉 Registration successful! Please sign in to access your dashboard.');
+      setNotice('Registration complete. Sign in to continue.');
     }
   }, [searchParams]);
 
@@ -24,135 +24,113 @@ function LoginPageContent() {
     e.preventDefault();
     setError('');
     setLoading(true);
+
     try {
       const res = await login({ email: email.trim(), password: password.trim() });
+
       if (res?.error) {
         setError(res.error);
-        setLoading(false);
         return;
       }
-      
-      // Use window.location for full page reload to ensure cookies are properly sent
-      // Check for redirect parameter first
-      const redirectUrl = searchParams.get('redirect');
-      if (redirectUrl) {
-        window.location.href = redirectUrl;
+
+      const redirect = searchParams.get('redirect');
+      if (redirect) {
+        window.location.href = redirect;
         return;
       }
-      
-      // Redirect users based on their role to their appropriate dashboard
+
       const role = res?.user?.role;
-      switch (role) {
-        case 'DRIVER':
-          window.location.href = '/driver';
-          break;
-        case 'SERVICE_PROVIDER':
-          window.location.href = '/services/dashboard';
-          break;
-        case 'LANDLORD':
-        case 'AGENT':
-          window.location.href = '/dashboard/properties';
-          break;
-        case 'ADMIN':
-          window.location.href = '/admin';
-          break;
-        default:
-          // Regular users (renters/buyers)
-          window.location.href = '/dashboard';
-      }
+      if (role === 'DRIVER') window.location.href = '/driver';
+      else if (role === 'SERVICE_PROVIDER') window.location.href = '/services/dashboard';
+      else if (role === 'LANDLORD' || role === 'AGENT') window.location.href = '/dashboard/properties';
+      else if (role === 'ADMIN') window.location.href = '/admin';
+      else window.location.href = '/dashboard';
     } catch (err: any) {
-      setError(err?.message || 'Sign in failed');
+      setError(err?.message || 'Unable to sign in.');
+    } finally {
       setLoading(false);
     }
   }
 
   return (
-    <main className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 py-12 px-4">
-      <div className="max-w-4xl w-full grid grid-cols-1 md:grid-cols-2 gap-8 items-center">
-        <div className="hidden md:flex items-center justify-center bg-gradient-to-br from-blue-600 to-indigo-600 rounded-lg p-8 text-white">
-          <div className="space-y-4 text-center">
-            <svg className="mx-auto w-20 h-20 opacity-90" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-              <path d="M3 12l2-2 4 4 8-8 4 4" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-            <h3 className="text-2xl font-bold">Welcome back</h3>
-            <p className="opacity-90 max-w-xs mx-auto">Sign in to manage your applications, saved searches, and messages.</p>
+    <main className="min-h-screen bg-slate-50">
+      <div className="mx-auto grid min-h-screen max-w-7xl lg:grid-cols-[1fr_480px]">
+        <section className="hidden border-r border-slate-200 bg-white p-12 lg:flex lg:flex-col lg:justify-between">
+          <Link href="/" className="text-xl font-bold tracking-[-0.03em] text-slate-950">DENUEL</Link>
+          <div className="max-w-xl">
+            <p className="text-sm font-semibold text-blue-700">Your property account</p>
+            <h1 className="mt-3 text-5xl font-bold leading-tight tracking-[-0.045em] text-slate-950">
+              Keep your property search and management in one place.
+            </h1>
+            <p className="mt-5 max-w-lg text-base leading-7 text-slate-600">
+              Access saved properties, enquiries, applications, listings and account tools from one secure dashboard.
+            </p>
           </div>
-        </div>
+          <p className="text-sm text-slate-400">DENUEL · Zambia</p>
+        </section>
 
-        <div className="bg-white dark:bg-gray-800 p-8 rounded-lg shadow">
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-2xl font-semibold">Sign in</h2>
-            <a href="/" className="text-sm text-gray-500 hover:underline">Back to home</a>
-          </div>
-
-          {successMessage && (
-            <div className="bg-green-50 border border-green-200 text-green-800 rounded-lg p-4 mb-4">
-              {successMessage}
-            </div>
-          )}
-
-          {error && <div role="alert" aria-live="assertive" className="text-sm text-red-600 mb-4">{error}</div>}
-
-          <form onSubmit={handleSubmit} className="space-y-4" noValidate>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-              <input
-                type="email"
-                required
-                aria-required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="w-full p-3 rounded border focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="you@example.com"
-              />
+        <section className="flex items-center px-5 py-12 sm:px-10 lg:px-12">
+          <div className="mx-auto w-full max-w-md">
+            <div className="mb-8 lg:hidden">
+              <Link href="/" className="text-xl font-bold tracking-[-0.03em] text-slate-950">DENUEL</Link>
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
-              <div className="relative">
+            <h2 className="text-3xl font-bold tracking-[-0.035em] text-slate-950">Sign in</h2>
+            <p className="mt-2 text-sm text-slate-500">Use the email and password linked to your account.</p>
+
+            {notice && <div className="mt-6 border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">{notice}</div>}
+            {error && <div className="mt-6 border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
+
+            <form onSubmit={handleSubmit} className="mt-7 space-y-5">
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700">Email</label>
+                <input
+                  type="email"
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="you@example.com"
+                  className="h-12 w-full border border-slate-300 bg-white px-4 text-sm outline-none focus:border-slate-950"
+                />
+              </div>
+
+              <div>
+                <div className="mb-2 flex items-center justify-between">
+                  <label className="text-sm font-medium text-slate-700">Password</label>
+                  <button type="button" onClick={() => setShowPassword(!showPassword)} className="text-xs font-medium text-slate-500 hover:text-slate-950">
+                    {showPassword ? 'Hide' : 'Show'}
+                  </button>
+                </div>
                 <input
                   type={showPassword ? 'text' : 'password'}
                   required
-                  aria-required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full p-3 rounded border focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder="Enter your password"
+                  className="h-12 w-full border border-slate-300 bg-white px-4 text-sm outline-none focus:border-slate-950"
                 />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword((s) => !s)}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-sm text-gray-500"
-                  aria-label={showPassword ? 'Hide password' : 'Show password'}
-                >
-                  {showPassword ? 'Hide' : 'Show'}
-                </button>
               </div>
-            </div>
 
-            <div className="flex items-center justify-between">
-              <a href="/auth/register" className="text-sm text-blue-600 hover:underline">Create an account</a>
-              <a href="/" className="text-sm text-gray-500 hover:underline">Forgot password?</a>
-            </div>
+              <button
+                type="submit"
+                disabled={loading || !email || !password}
+                className="h-12 w-full bg-slate-950 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50"
+              >
+                {loading ? 'Signing in…' : 'Sign in'}
+              </button>
+            </form>
 
-            <button
-              type="submit"
-              disabled={loading || !email || !password}
-              className="w-full bg-blue-600 hover:bg-blue-700 text-white p-3 rounded font-medium disabled:opacity-60 transition"
-            >
-              {loading ? 'Signing in...' : 'Sign in'}
-            </button>
-          </form>
-        </div>
+            <div className="mt-6 flex items-center justify-between text-sm">
+              <Link href="/auth/register" className="font-semibold text-blue-700 hover:underline">Create account</Link>
+              <Link href="/" className="text-slate-500 hover:text-slate-950">Back to home</Link>
+            </div>
+          </div>
+        </section>
       </div>
     </main>
   );
 }
 
 export default function LoginPage() {
-  return (
-    <Suspense fallback={<div className="min-h-screen flex items-center justify-center">Loading...</div>}>
-      <LoginPageContent />
-    </Suspense>
-  );
+  return <Suspense fallback={<div className="min-h-screen bg-slate-50" />}><LoginContent /></Suspense>;
 }
