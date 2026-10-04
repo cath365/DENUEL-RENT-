@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 
 type ServiceCategory =
   | 'HOME_INSPECTOR' | 'MOVER' | 'CLEANER' | 'PHOTOGRAPHER' | 'CONTRACTOR'
@@ -126,8 +127,8 @@ export default function ServicesMarketplace({ defaultCategory, defaultCity = 'Lu
               className={`border px-3 py-2 text-sm font-medium ${category === item.value ? 'border-slate-950 bg-slate-950 text-white' : 'border-slate-300 text-slate-700'}`}
             >
               {item.label}
-            </button>
-          ))}
+            </Link>
+            ))}
         </div>
 
         <select value={city} onChange={(e) => setCity(e.target.value)} className="h-10 border border-slate-300 bg-white px-3 text-sm">
@@ -152,9 +153,9 @@ export default function ServicesMarketplace({ defaultCategory, defaultCity = 'Lu
         ) : providers.length ? (
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             {providers.map((provider) => (
-              <button
+              <Link
                 key={provider.id}
-                onClick={() => openProvider(provider.id)}
+                href={'/services/' + provider.id}
                 className="border border-slate-200 bg-white p-5 text-left transition hover:border-slate-400"
               >
                 <div className="flex items-start gap-4">
