@@ -15,7 +15,13 @@ const CreateLeaseSchema = z.object({
   startDate: z.string().min(1),
   endDate: z.string().min(1),
   terms: z.any().optional(),
-});
+}).refine(
+  (value) => Boolean(value.templateId || value.content?.trim()),
+  {
+    message: 'Lease content or a lease template is required.',
+    path: ['content'],
+  }
+);
 
 const LeaseActionSchema = z.object({
   leaseId: z.string().cuid(),
@@ -193,6 +199,56 @@ export async function POST(req: NextRequest) {
     if (property.ownerId === parsed.tenantId) {
       return NextResponse.json(
         { error: 'The property owner cannot also be the tenant.' },
+        { status: 409 }
+      );
+    }
+
+    if (user.role !== 'ADMIN') {
+      const approvedApplication = await prisma.application.findUnique({
+        where: {
+          userId_propertyId: {
+            userId: parsed.tenantId,
+            propertyId: property.id,
+          },
+        },
+        select: {
+          id: true,
+          status: true,
+        },
+      });
+
+      if (!approvedApplication || approvedApplication.status !== 'APPROVED') {
+        return NextResponse.json(
+          {
+            error:
+              'A landlord can only create a lease for an approved property application.',
+          },
+          { status: 409 }
+        );
+      }
+    }
+
+    const existingOpenLease = await prisma.leaseAgreement.findFirst({
+      where: {
+        propertyId: property.id,
+        status: {
+          in: ['DRAFT', 'PENDING_SIGNATURES', 'ACTIVE'],
+        },
+      },
+      select: {
+        id: true,
+        tenantId: true,
+        status: true,
+      },
+    });
+
+    if (existingOpenLease) {
+      return NextResponse.json(
+        {
+          error:
+            'This property already has an open lease. Resolve that lease before creating another.',
+          lease: existingOpenLease,
+        },
         { status: 409 }
       );
     }
