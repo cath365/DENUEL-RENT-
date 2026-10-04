@@ -26,7 +26,6 @@ const PROPERTY_TYPES = [
 const LISTING_TYPES = [
   { value: 'RENT', label: 'For rent' },
   { value: 'SALE', label: 'For sale' },
-  { value: 'BOTH', label: 'For rent or sale' },
 ];
 
 type YesNo = '' | 'yes' | 'no';
