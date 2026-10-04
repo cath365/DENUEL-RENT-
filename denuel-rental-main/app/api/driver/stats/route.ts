@@ -6,10 +6,7 @@ export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
   try {
-    const user = await requireAuth(req);
-    if (!user || user.role !== 'DRIVER') {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const user = await requireAuth(req, ['DRIVER']);
 
     // Get driver profile
     const driver = await prisma.driverProfile.findUnique({
@@ -157,6 +154,7 @@ export async function GET(req: NextRequest) {
       },
     });
   } catch (error) {
+    if (error instanceof Response) return error;
     console.error('Failed to fetch driver stats:', error);
     return NextResponse.json(
       { error: 'Failed to fetch driver stats' },
