@@ -1,405 +1,588 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Header from '../../../components/Header';
 import Link from 'next/link';
 
-interface Payment {
+type PlatformPayment = {
+  id: string;
+  amount: number;
+  currency: string;
+  status: string;
+  paymentMethod: string;
+  transactionRef?: string | null;
+  phoneNumber?: string | null;
+  description?: string | null;
+  failureReason?: string | null;
+  paidAt?: string | null;
+  createdAt: string;
+  user: {
+    id: string;
+    name?: string | null;
+    email: string;
+  };
+};
+
+type RentPayment = {
   id: string;
   amount: number;
   status: string;
-  type: string;
-  createdAt: string;
-  payer: {
+  dueDate: string;
+  paidDate?: string | null;
+  lateFee?: number | null;
+  paymentMethod?: string | null;
+  transactionId?: string | null;
+  tenant: {
     id: string;
-    name: string;
+    name?: string | null;
     email: string;
   };
-  recipient: {
+  lease: {
     id: string;
-    name: string;
-    email: string;
+    landlord: {
+      id: string;
+      name?: string | null;
+      email: string;
+    };
+    property: {
+      id: string;
+      title: string;
+    };
   };
-  property?: {
-    id: string;
-    title: string;
-  };
-  stripePaymentId?: string;
+};
+
+type Stats = {
+  completedVolume: number;
+  thisMonthCompletedVolume: number;
+  pendingVolume: number;
+  completedPayments: number;
+  recordedPaidRent: number;
+};
+
+type Tab = 'platform' | 'rent';
+type Filter = 'all' | 'completed' | 'pending' | 'failed' | 'refunded';
+
+function money(value?: number | null) {
+  return 'K' + Number(value || 0).toLocaleString();
 }
 
-interface PaymentStats {
-  totalRevenue: number;
-  thisMonthRevenue: number;
-  pendingPayouts: number;
-  completedPayments: number;
+function humanize(value?: string | null) {
+  if (!value) return 'Not specified';
+  return value
+    .replaceAll('_', ' ')
+    .toLowerCase()
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function statusClass(status: string) {
+  if (status === 'COMPLETED' || status === 'PAID') {
+    return 'border-emerald-200 bg-emerald-50 text-emerald-800';
+  }
+  if (status === 'FAILED') {
+    return 'border-red-200 bg-red-50 text-red-800';
+  }
+  if (status === 'REFUNDED' || status === 'WAIVED') {
+    return 'border-slate-300 bg-slate-100 text-slate-700';
+  }
+  if (status === 'PARTIAL') {
+    return 'border-blue-200 bg-blue-50 text-blue-800';
+  }
+  return 'border-amber-200 bg-amber-50 text-amber-800';
+}
+
+async function readResponse(res: Response) {
+  const text = await res.text();
+  let data: any = {};
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    data = {};
+  }
+  return { text, data };
 }
 
 export default function AdminPaymentsPage() {
-  const [payments, setPayments] = useState<Payment[]>([]);
-  const [stats, setStats] = useState<PaymentStats | null>(null);
+  const [payments, setPayments] = useState<PlatformPayment[]>([]);
+  const [rentPayments, setRentPayments] = useState<RentPayment[]>([]);
+  const [stats, setStats] = useState<Stats>({
+    completedVolume: 0,
+    thisMonthCompletedVolume: 0,
+    pendingVolume: 0,
+    completedPayments: 0,
+    recordedPaidRent: 0,
+  });
+  const [tab, setTab] = useState<Tab>('platform');
+  const [filter, setFilter] = useState<Filter>('all');
+  const [query, setQuery] = useState('');
+  const [selectedPayment, setSelectedPayment] = useState<PlatformPayment | null>(null);
+  const [selectedRentPayment, setSelectedRentPayment] = useState<RentPayment | null>(null);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<'all' | 'completed' | 'pending' | 'failed'>('all');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedPayment, setSelectedPayment] = useState<Payment | null>(null);
+  const [error, setError] = useState('');
 
-  useEffect(() => {
-    fetchPayments();
-  }, [filter]);
-
-  const fetchPayments = async () => {
+  async function loadPayments() {
     setLoading(true);
+    setError('');
+
     try {
       const params = new URLSearchParams();
-      if (filter !== 'all') params.append('status', filter);
-      
-      const res = await fetch(`/api/admin/payments?${params}`);
-      if (res.ok) {
-        const data = await res.json();
-        setPayments(data.payments || []);
-        setStats(data.stats || {
-          totalRevenue: 2547000,
-          thisMonthRevenue: 287500,
-          pendingPayouts: 45600,
-          completedPayments: 4521,
-        });
-      } else {
-        // Mock data for demo
-        setPayments([
-          {
-            id: '1',
-            amount: 3500,
-            status: 'COMPLETED',
-            type: 'RENT',
-            createdAt: new Date().toISOString(),
-            payer: { id: '1', name: 'John Mwamba', email: 'john@example.com' },
-            recipient: { id: '2', name: 'Mary Phiri', email: 'mary@example.com' },
-            property: { id: '1', title: '2 Bedroom Apartment in Kabulonga' },
-            stripePaymentId: 'pi_123456789',
-          },
-          {
-            id: '2',
-            amount: 2800,
-            status: 'PENDING',
-            type: 'RENT',
-            createdAt: new Date(Date.now() - 86400000).toISOString(),
-            payer: { id: '3', name: 'Peter Zulu', email: 'peter@example.com' },
-            recipient: { id: '4', name: 'Grace Banda', email: 'grace@example.com' },
-            property: { id: '2', title: 'Studio in Woodlands' },
-          },
-          {
-            id: '3',
-            amount: 5000,
-            status: 'COMPLETED',
-            type: 'DEPOSIT',
-            createdAt: new Date(Date.now() - 172800000).toISOString(),
-            payer: { id: '5', name: 'Sarah Tembo', email: 'sarah@example.com' },
-            recipient: { id: '6', name: 'David Mulenga', email: 'david@example.com' },
-            property: { id: '3', title: '3 Bedroom House in Roma' },
-            stripePaymentId: 'pi_987654321',
-          },
-        ]);
-        setStats({
-          totalRevenue: 2547000,
-          thisMonthRevenue: 287500,
-          pendingPayouts: 45600,
-          completedPayments: 4521,
-        });
-      }
-    } catch (error) {
-      console.error('Error fetching payments:', error);
-    }
-    setLoading(false);
-  };
+      if (filter !== 'all') params.set('status', filter);
 
-  const handleRefund = async (paymentId: string) => {
-    if (!confirm('Are you sure you want to refund this payment?')) return;
-    
-    try {
-      const res = await fetch(`/api/admin/payments/${paymentId}/refund`, {
-        method: 'POST',
+      const res = await fetch('/api/admin/payments?' + params.toString(), {
+        credentials: 'same-origin',
+        cache: 'no-store',
       });
-      if (res.ok) {
-        fetchPayments();
-        setSelectedPayment(null);
+      const { text, data } = await readResponse(res);
+
+      if (res.status === 401 || res.status === 403) {
+        window.location.href =
+          '/auth/login?redirect=' + encodeURIComponent('/admin/payments');
+        return;
       }
-    } catch (error) {
-      console.error('Error refunding payment:', error);
+
+      if (!res.ok) {
+        throw new Error(
+          data?.error || text || 'Unable to load payment records.'
+        );
+      }
+
+      setPayments(Array.isArray(data.payments) ? data.payments : []);
+      setRentPayments(
+        Array.isArray(data.rentPayments) ? data.rentPayments : []
+      );
+      setStats(
+        data.stats || {
+          completedVolume: 0,
+          thisMonthCompletedVolume: 0,
+          pendingVolume: 0,
+          completedPayments: 0,
+          recordedPaidRent: 0,
+        }
+      );
+    } catch (err) {
+      setPayments([]);
+      setRentPayments([]);
+      setError(
+        err instanceof Error
+          ? err.message
+          : 'Unable to load payment records.'
+      );
+    } finally {
+      setLoading(false);
     }
-  };
+  }
 
-  const getStatusBadge = (status: string) => {
-    const colors: Record<string, string> = {
-      'COMPLETED': 'bg-green-100 text-green-800',
-      'PENDING': 'bg-yellow-100 text-yellow-800',
-      'FAILED': 'bg-red-100 text-red-800',
-      'REFUNDED': 'bg-gray-100 text-gray-800',
-    };
-    return colors[status] || 'bg-gray-100 text-gray-800';
-  };
+  useEffect(() => {
+    loadPayments();
+  }, [filter]);
 
-  const getTypeBadge = (type: string) => {
-    const colors: Record<string, string> = {
-      'RENT': 'bg-blue-100 text-blue-800',
-      'DEPOSIT': 'bg-purple-100 text-purple-800',
-      'SERVICE_FEE': 'bg-orange-100 text-orange-800',
-      'TRANSPORT': 'bg-teal-100 text-teal-800',
-    };
-    return colors[type] || 'bg-gray-100 text-gray-800';
-  };
+  const filteredPlatform = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return payments;
 
-  const formatCurrency = (amount: number) => {
-    return `K ${amount.toLocaleString()}`;
-  };
+    return payments.filter((payment) =>
+      [
+        payment.id,
+        payment.transactionRef,
+        payment.user.name,
+        payment.user.email,
+        payment.description,
+        payment.paymentMethod,
+      ]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(q))
+    );
+  }, [payments, query]);
 
-  const filteredPayments = payments.filter(payment =>
-    payment.payer.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    payment.payer.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    payment.recipient.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    payment.property?.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    payment.id.includes(searchQuery)
-  );
+  const filteredRent = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return rentPayments;
+
+    return rentPayments.filter((payment) =>
+      [
+        payment.id,
+        payment.transactionId,
+        payment.tenant.name,
+        payment.tenant.email,
+        payment.lease.landlord.name,
+        payment.lease.landlord.email,
+        payment.lease.property.title,
+        payment.paymentMethod,
+      ]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(q))
+    );
+  }, [rentPayments, query]);
 
   return (
-    <main className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-slate-50 text-slate-950">
       <Header />
-      
-      <div className="container mx-auto px-4 py-8">
-        {/* Breadcrumb */}
-        <div className="flex items-center gap-2 text-sm text-gray-600 mb-6">
-          <Link href="/admin" className="hover:text-blue-600">Admin</Link>
-          <span>/</span>
-          <span className="text-gray-900">Payments</span>
-        </div>
 
-        <div className="flex justify-between items-center mb-6">
+      <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
+        <section className="flex flex-col justify-between gap-5 border-b border-slate-200 pb-6 lg:flex-row lg:items-end">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900">Payment Management</h1>
-            <p className="text-gray-600 mt-1">Monitor and manage all platform payments</p>
+            <Link href="/admin" className="text-sm font-semibold text-blue-700">
+              ← Admin dashboard
+            </Link>
+            <h1 className="mt-3 text-3xl font-bold tracking-[-0.035em]">
+              Payment records
+            </h1>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
+              Review payment records that actually exist in DENUEL. This page does not create fallback transactions, revenue or refund actions when a gateway is unavailable.
+            </p>
           </div>
-        </div>
 
-        {/* Stats Cards */}
-        {stats && (
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
-              <p className="text-sm text-gray-600">Total Revenue</p>
-              <p className="text-2xl font-bold text-gray-900">{formatCurrency(stats.totalRevenue)}</p>
-            </div>
-            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
-              <p className="text-sm text-gray-600">This Month</p>
-              <p className="text-2xl font-bold text-green-600">{formatCurrency(stats.thisMonthRevenue)}</p>
-            </div>
-            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
-              <p className="text-sm text-gray-600">Pending Payouts</p>
-              <p className="text-2xl font-bold text-yellow-600">{formatCurrency(stats.pendingPayouts)}</p>
-            </div>
-            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
-              <p className="text-sm text-gray-600">Completed Payments</p>
-              <p className="text-2xl font-bold text-blue-600">{stats.completedPayments.toLocaleString()}</p>
-            </div>
-          </div>
+          <button
+            type="button"
+            onClick={loadPayments}
+            className="border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700"
+          >
+            Refresh
+          </button>
+        </section>
+
+        {error && (
+          <section className="mt-6 border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+            {error}
+          </section>
         )}
 
-        {/* Search and Filter */}
-        <div className="flex flex-col sm:flex-row gap-4 mb-6">
-          <div className="flex-1 relative">
-            <svg className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-            </svg>
-            <input
-              type="text"
-              placeholder="Search by name, email, or payment ID..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-3 rounded-lg border border-gray-200 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            />
-          </div>
+        <section className="mt-7 grid grid-cols-2 border-l border-t border-slate-200 bg-white lg:grid-cols-5">
+          {[
+            ['Completed platform volume', money(stats.completedVolume)],
+            ['This month completed', money(stats.thisMonthCompletedVolume)],
+            ['Pending platform volume', money(stats.pendingVolume)],
+            ['Completed platform payments', stats.completedPayments.toLocaleString()],
+            ['Recorded paid rent', money(stats.recordedPaidRent)],
+          ].map(([label, value]) => (
+            <div key={String(label)} className="border-b border-r border-slate-200 p-4">
+              <div className="text-xs text-slate-500">{label}</div>
+              <div className="mt-2 text-xl font-bold">
+                {loading ? '—' : value}
+              </div>
+            </div>
+          ))}
+        </section>
+
+        <section className="mt-6 flex flex-col gap-3 border border-slate-200 bg-white p-4 lg:flex-row lg:items-center">
           <div className="flex gap-2">
-            {[
-              { id: 'all', label: 'All' },
-              { id: 'completed', label: 'Completed' },
-              { id: 'pending', label: 'Pending' },
-              { id: 'failed', label: 'Failed' },
-            ].map((tab) => (
+            {([
+              ['platform', 'Platform payments'],
+              ['rent', 'Rent records'],
+            ] as const).map(([value, label]) => (
               <button
-                key={tab.id}
-                onClick={() => setFilter(tab.id as any)}
-                className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                  filter === tab.id
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50'
-                }`}
+                key={value}
+                type="button"
+                onClick={() => {
+                  setTab(value);
+                  setSelectedPayment(null);
+                  setSelectedRentPayment(null);
+                }}
+                className={
+                  'border px-3 py-2 text-sm font-semibold ' +
+                  (tab === value
+                    ? 'border-slate-950 bg-slate-950 text-white'
+                    : 'border-slate-300 bg-white text-slate-600')
+                }
               >
-                {tab.label}
+                {label}
               </button>
             ))}
           </div>
-        </div>
 
-        {loading ? (
-          <div className="flex justify-center py-12">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-          </div>
-        ) : filteredPayments.length === 0 ? (
-          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-12 text-center">
-            <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
+          <input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Search ID, reference, user, property or method"
+            className="h-10 min-w-0 flex-1 border border-slate-300 px-3 text-sm outline-none focus:border-slate-950"
+          />
+
+          {tab === 'platform' && (
+            <div className="flex flex-wrap gap-2">
+              {([
+                ['all', 'All'],
+                ['completed', 'Completed'],
+                ['pending', 'Pending'],
+                ['failed', 'Failed'],
+                ['refunded', 'Refunded'],
+              ] as const).map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setFilter(value)}
+                  className={
+                    'border px-3 py-2 text-xs font-semibold ' +
+                    (filter === value
+                      ? 'border-blue-700 bg-blue-50 text-blue-800'
+                      : 'border-slate-200 bg-white text-slate-600')
+                  }
+                >
+                  {label}
+                </button>
+              ))}
             </div>
-            <h3 className="text-xl font-semibold text-gray-900 mb-2">No payments found</h3>
-            <p className="text-gray-600">No payments match your search criteria</p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Payments List */}
-            <div className="lg:col-span-2">
-              <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-                <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead className="bg-gray-50 border-b border-gray-100">
-                      <tr>
-                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Transaction</th>
-                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Amount</th>
-                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Type</th>
-                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Status</th>
-                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Date</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100">
-                      {filteredPayments.map((payment) => (
-                        <tr
-                          key={payment.id}
-                          onClick={() => setSelectedPayment(payment)}
-                          className={`cursor-pointer hover:bg-gray-50 ${
-                            selectedPayment?.id === payment.id ? 'bg-blue-50' : ''
-                          }`}
-                        >
-                          <td className="px-4 py-4">
-                            <div>
-                              <p className="font-medium text-gray-900">{payment.payer.name}</p>
-                              <p className="text-sm text-gray-500">→ {payment.recipient.name}</p>
-                            </div>
-                          </td>
-                          <td className="px-4 py-4">
-                            <span className="font-semibold text-gray-900">{formatCurrency(payment.amount)}</span>
-                          </td>
-                          <td className="px-4 py-4">
-                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${getTypeBadge(payment.type)}`}>
-                              {payment.type}
-                            </span>
-                          </td>
-                          <td className="px-4 py-4">
-                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusBadge(payment.status)}`}>
-                              {payment.status}
-                            </span>
-                          </td>
-                          <td className="px-4 py-4 text-sm text-gray-500">
-                            {new Date(payment.createdAt).toLocaleDateString()}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+          )}
+        </section>
+
+        <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
+          <section className="overflow-hidden border border-slate-200 bg-white">
+            <div className="border-b border-slate-200 px-5 py-4">
+              <h2 className="font-semibold">
+                {tab === 'platform'
+                  ? 'Platform Payment records'
+                  : 'Lease rent-payment records'}
+              </h2>
+              <p className="mt-1 text-xs text-slate-500">
+                Latest stored records only.
+              </p>
+            </div>
+
+            {loading ? (
+              <div className="space-y-4 p-5">
+                {Array.from({ length: 5 }).map((_, index) => (
+                  <div key={index} className="h-20 animate-pulse bg-slate-100" />
+                ))}
               </div>
-            </div>
-
-            {/* Payment Detail Panel */}
-            {selectedPayment ? (
-              <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 sticky top-24 h-fit">
-                <h2 className="text-xl font-bold text-gray-900 mb-4">Payment Details</h2>
-
-                <div className="space-y-4">
-                  {/* Amount */}
-                  <div className="bg-gray-50 rounded-lg p-4 text-center">
-                    <p className="text-sm text-gray-600">Amount</p>
-                    <p className="text-3xl font-bold text-gray-900">{formatCurrency(selectedPayment.amount)}</p>
-                    <div className="flex justify-center gap-2 mt-2">
-                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${getTypeBadge(selectedPayment.type)}`}>
-                        {selectedPayment.type}
-                      </span>
-                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusBadge(selectedPayment.status)}`}>
-                        {selectedPayment.status}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Parties */}
-                  <div className="space-y-3">
-                    <div className="p-3 border border-gray-200 rounded-lg">
-                      <p className="text-xs text-gray-500 mb-1">FROM</p>
-                      <p className="font-medium">{selectedPayment.payer.name}</p>
-                      <p className="text-sm text-gray-500">{selectedPayment.payer.email}</p>
-                    </div>
-                    <div className="flex justify-center">
-                      <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
-                      </svg>
-                    </div>
-                    <div className="p-3 border border-gray-200 rounded-lg">
-                      <p className="text-xs text-gray-500 mb-1">TO</p>
-                      <p className="font-medium">{selectedPayment.recipient.name}</p>
-                      <p className="text-sm text-gray-500">{selectedPayment.recipient.email}</p>
-                    </div>
-                  </div>
-
-                  {/* Property */}
-                  {selectedPayment.property && (
-                    <div>
-                      <p className="text-sm text-gray-600 mb-1">Property</p>
-                      <Link
-                        href={`/property/${selectedPayment.property.id}`}
-                        className="text-blue-600 hover:underline"
-                        target="_blank"
+            ) : tab === 'platform' ? (
+              filteredPlatform.length ? (
+                <div className="divide-y divide-slate-100">
+                  {filteredPlatform.map((payment) => (
+                    <button
+                      key={payment.id}
+                      type="button"
+                      onClick={() => setSelectedPayment(payment)}
+                      className="grid w-full gap-4 px-5 py-4 text-left transition hover:bg-slate-50 md:grid-cols-[minmax(0,1fr)_130px_130px_120px] md:items-center"
+                    >
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-semibold">
+                          {payment.user.name || payment.user.email}
+                        </div>
+                        <div className="mt-1 truncate text-xs text-slate-500">
+                          {payment.description || 'No description'}
+                        </div>
+                        <div className="mt-1 truncate text-xs text-slate-400">
+                          {payment.transactionRef || payment.id}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-xs text-slate-400">Amount</div>
+                        <div className="mt-1 text-sm font-semibold">
+                          {money(payment.amount)}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-xs text-slate-400">Method</div>
+                        <div className="mt-1 text-sm font-semibold">
+                          {humanize(payment.paymentMethod)}
+                        </div>
+                      </div>
+                      <span
+                        className={
+                          'w-fit border px-2.5 py-1 text-xs font-semibold ' +
+                          statusClass(payment.status)
+                        }
                       >
-                        {selectedPayment.property.title}
-                      </Link>
+                        {humanize(payment.status)}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div className="p-10 text-center">
+                  <h3 className="font-semibold">No platform payments found</h3>
+                  <p className="mt-2 text-sm text-slate-500">
+                    No real Payment records match this view.
+                  </p>
+                </div>
+              )
+            ) : filteredRent.length ? (
+              <div className="divide-y divide-slate-100">
+                {filteredRent.map((payment) => (
+                  <button
+                    key={payment.id}
+                    type="button"
+                    onClick={() => setSelectedRentPayment(payment)}
+                    className="grid w-full gap-4 px-5 py-4 text-left transition hover:bg-slate-50 md:grid-cols-[minmax(0,1fr)_130px_150px_120px] md:items-center"
+                  >
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-semibold">
+                        {payment.lease.property.title}
+                      </div>
+                      <div className="mt-1 truncate text-xs text-slate-500">
+                        Tenant: {payment.tenant.name || payment.tenant.email}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-slate-400">Scheduled amount</div>
+                      <div className="mt-1 text-sm font-semibold">
+                        {money(payment.amount)}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-slate-400">Due</div>
+                      <div className="mt-1 text-sm font-semibold">
+                        {new Date(payment.dueDate).toLocaleDateString('en-ZM')}
+                      </div>
+                    </div>
+                    <span
+                      className={
+                        'w-fit border px-2.5 py-1 text-xs font-semibold ' +
+                        statusClass(payment.status)
+                      }
+                    >
+                      {humanize(payment.status)}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div className="p-10 text-center">
+                <h3 className="font-semibold">No rent-payment records found</h3>
+                <p className="mt-2 text-sm text-slate-500">
+                  Lease schedules will appear here when they exist.
+                </p>
+              </div>
+            )}
+          </section>
+
+          <aside className="border border-slate-200 bg-white p-5 xl:sticky xl:top-24 xl:h-fit">
+            {tab === 'platform' && selectedPayment ? (
+              <div>
+                <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                  Platform payment
+                </div>
+                <div className="mt-2 text-3xl font-bold">
+                  {money(selectedPayment.amount)}
+                </div>
+                <span
+                  className={
+                    'mt-3 inline-flex border px-2.5 py-1 text-xs font-semibold ' +
+                    statusClass(selectedPayment.status)
+                  }
+                >
+                  {humanize(selectedPayment.status)}
+                </span>
+
+                <div className="mt-6 space-y-4 text-sm">
+                  <div>
+                    <div className="text-xs text-slate-400">User</div>
+                    <div className="mt-1 font-semibold">
+                      {selectedPayment.user.name || selectedPayment.user.email}
+                    </div>
+                    <div className="mt-1 text-xs text-slate-500">
+                      {selectedPayment.user.email}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-slate-400">Payment method</div>
+                    <div className="mt-1 font-semibold">
+                      {humanize(selectedPayment.paymentMethod)}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-slate-400">Reference</div>
+                    <div className="mt-1 break-all font-mono text-xs">
+                      {selectedPayment.transactionRef || 'No external reference recorded'}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-slate-400">Created</div>
+                    <div className="mt-1 font-semibold">
+                      {new Date(selectedPayment.createdAt).toLocaleString('en-ZM')}
+                    </div>
+                  </div>
+                  {selectedPayment.paidAt && (
+                    <div>
+                      <div className="text-xs text-slate-400">Paid at</div>
+                      <div className="mt-1 font-semibold">
+                        {new Date(selectedPayment.paidAt).toLocaleString('en-ZM')}
+                      </div>
                     </div>
                   )}
-
-                  {/* Transaction Info */}
-                  <div className="border-t border-gray-100 pt-4 space-y-2">
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-600">Payment ID</span>
-                      <span className="font-mono text-gray-900">{selectedPayment.id.slice(0, 8)}...</span>
+                  {selectedPayment.failureReason && (
+                    <div className="border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                      {selectedPayment.failureReason}
                     </div>
-                    {selectedPayment.stripePaymentId && (
-                      <div className="flex justify-between text-sm">
-                        <span className="text-gray-600">Stripe ID</span>
-                        <span className="font-mono text-gray-900">{selectedPayment.stripePaymentId}</span>
-                      </div>
-                    )}
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-600">Date</span>
-                      <span className="text-gray-900">{new Date(selectedPayment.createdAt).toLocaleString()}</span>
+                  )}
+                </div>
+              </div>
+            ) : tab === 'rent' && selectedRentPayment ? (
+              <div>
+                <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                  Rent record
+                </div>
+                <div className="mt-2 text-2xl font-bold">
+                  {selectedRentPayment.lease.property.title}
+                </div>
+                <div className="mt-2 text-lg font-semibold">
+                  {money(selectedRentPayment.amount)}
+                </div>
+                <span
+                  className={
+                    'mt-3 inline-flex border px-2.5 py-1 text-xs font-semibold ' +
+                    statusClass(selectedRentPayment.status)
+                  }
+                >
+                  {humanize(selectedRentPayment.status)}
+                </span>
+
+                <div className="mt-6 space-y-4 text-sm">
+                  <div>
+                    <div className="text-xs text-slate-400">Tenant</div>
+                    <div className="mt-1 font-semibold">
+                      {selectedRentPayment.tenant.name ||
+                        selectedRentPayment.tenant.email}
+                    </div>
+                    <div className="mt-1 text-xs text-slate-500">
+                      {selectedRentPayment.tenant.email}
                     </div>
                   </div>
-
-                  {/* Actions */}
-                  {selectedPayment.status === 'COMPLETED' && (
-                    <button
-                      onClick={() => handleRefund(selectedPayment.id)}
-                      className="w-full bg-red-600 text-white py-3 rounded-lg font-semibold hover:bg-red-700 transition-colors"
-                    >
-                      Issue Refund
-                    </button>
+                  <div>
+                    <div className="text-xs text-slate-400">Landlord</div>
+                    <div className="mt-1 font-semibold">
+                      {selectedRentPayment.lease.landlord.name ||
+                        selectedRentPayment.lease.landlord.email}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-slate-400">Due date</div>
+                    <div className="mt-1 font-semibold">
+                      {new Date(selectedRentPayment.dueDate).toLocaleDateString('en-ZM')}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-slate-400">Recorded method</div>
+                    <div className="mt-1 font-semibold">
+                      {humanize(selectedRentPayment.paymentMethod)}
+                    </div>
+                  </div>
+                  {selectedRentPayment.transactionId && (
+                    <div>
+                      <div className="text-xs text-slate-400">Reference</div>
+                      <div className="mt-1 break-all font-mono text-xs">
+                        {selectedRentPayment.transactionId}
+                      </div>
+                    </div>
                   )}
                 </div>
               </div>
             ) : (
-              <div className="bg-gray-100 rounded-xl p-12 flex items-center justify-center">
-                <div className="text-center text-gray-500">
-                  <svg className="w-16 h-16 mx-auto mb-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  <p>Select a payment to view details</p>
-                </div>
+              <div>
+                <h2 className="font-semibold">Select a record</h2>
+                <p className="mt-2 text-sm leading-6 text-slate-500">
+                  Choose a real payment record to inspect its stored details.
+                </p>
               </div>
             )}
-          </div>
-        )}
-      </div>
-    </main>
+
+            <div className="mt-6 border-t border-slate-200 pt-5">
+              <h3 className="text-sm font-semibold">Gateway actions</h3>
+              <p className="mt-2 text-xs leading-5 text-slate-500">
+                Refund and online settlement buttons are intentionally unavailable until DENUEL has a production gateway integration that can verify those actions.
+              </p>
+            </div>
+          </aside>
+        </div>
+      </main>
+    </div>
   );
 }
