@@ -3,6 +3,8 @@ import { prisma } from '@/lib/prisma';
 import { requireAuth } from '@/lib/auth';
 
 // GET - Get rent payments
+export const dynamic = 'force-dynamic';
+
 export async function GET(req: NextRequest) {
   try {
     const user = await requireAuth(req);
@@ -66,6 +68,7 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ payments, stats });
   } catch (error) {
+    if (error instanceof Response) return error;
     console.error('Fetch rent payments error:', error);
     return NextResponse.json({ error: 'Failed to fetch payments' }, { status: 500 });
   }
@@ -138,6 +141,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json(updated);
   } catch (error) {
+    if (error instanceof Response) return error;
     console.error('Record rent payment error:', error);
     return NextResponse.json({ error: 'Failed to record payment' }, { status: 500 });
   }
@@ -179,6 +183,7 @@ export async function PUT(req: NextRequest) {
 
     return NextResponse.json(updated);
   } catch (error) {
+    if (error instanceof Response) return error;
     console.error('Update rent payment error:', error);
     return NextResponse.json({ error: 'Failed to update payment' }, { status: 500 });
   }
