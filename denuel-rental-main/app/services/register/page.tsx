@@ -1,804 +1,219 @@
 'use client';
 
-import React, { useState } from 'react';
+import { FormEvent, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
 import Header from '@/components/Header';
 
-const SERVICE_CATEGORIES = [
-  { value: 'GARDENER', label: 'Garden Boy / Landscaping', icon: '🌿' },
-  { value: 'LANDSCAPER', label: 'Professional Landscaper', icon: '🏡' },
-  { value: 'PEST_CONTROL', label: 'Pest Control', icon: '🐜' },
-  { value: 'MOVER', label: 'Moving Services', icon: '🚚' },
-  { value: 'CLEANER', label: 'Cleaning Services', icon: '🧹' },
-  { value: 'MAID', label: 'Maid / Housekeeper', icon: '👩‍🦰' },
-  { value: 'PAINTER', label: 'Painting', icon: '🎨' },
-  { value: 'PLUMBER', label: 'Plumbing', icon: '🔧' },
-  { value: 'SECURITY', label: 'Security Services', icon: '🔒' },
-  { value: 'INTERIOR_DESIGNER', label: 'Interior Design', icon: '🛋️' },
-  { value: 'ELECTRICIAN', label: 'Electrician', icon: '⚡' },
-  { value: 'CONTRACTOR', label: 'General Contractor', icon: '🏗️' },
+const categories = [
+  ['SECURITY', 'Security'],
+  ['PEST_CONTROL', 'Pest control'],
+  ['LANDSCAPER', 'Gardening & landscaping'],
+  ['PAINTER', 'Painting'],
+  ['ELECTRICIAN', 'Electrical'],
+  ['PLUMBER', 'Plumbing'],
+  ['CLEANER', 'Cleaning'],
+  ['MOVER', 'Moving'],
+  ['CONTRACTOR', 'Construction / contractor'],
+  ['HOME_INSPECTOR', 'Home inspection'],
+  ['INTERIOR_DESIGNER', 'Interior design'],
+  ['OTHER', 'Other property service'],
 ];
 
-const CITIES = ['Lusaka', 'Kitwe', 'Ndola', 'Livingstone', 'Kabwe', 'Chingola', 'Mufulira', 'Luanshya'];
-
-export default function ServiceProviderRegistration() {
+export default function ServiceProviderRegisterPage() {
   const router = useRouter();
-  const [step, setStep] = useState(1);
-  const [loading, setLoading] = useState(false);
+  const [providerType, setProviderType] = useState<'COMPANY' | 'INDIVIDUAL'>('COMPANY');
+  const [category, setCategory] = useState('SECURITY');
+  const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-  
-  // Step 1: Account Details
-  const [accountData, setAccountData] = useState({
-    name: '',
-    email: '',
-    phone: '',
-    password: '',
-    confirmPassword: '',
-  });
+  const isCompany = providerType === 'COMPANY';
+  const isSecurity = category === 'SECURITY';
 
-  // Step 2: Business Details
-  const [businessData, setBusinessData] = useState({
-    businessName: '',
-    category: '',
-    description: '',
-    yearsInBusiness: '',
-    hourlyRate: '',
-    minimumCharge: '',
-    priceRange: '',
-  });
+  const heading = useMemo(() => isCompany ? 'Register your company' : 'Register as an individual professional', [isCompany]);
 
-  // Step 3: Location & Contact
-  const [locationData, setLocationData] = useState({
-    city: '',
-    area: '',
-    address: '',
-    website: '',
-    serviceAreas: [] as string[],
-  });
-
-  // Step 4: Documents
-  const [documents, setDocuments] = useState<{
-    nrc: File | null;
-    certificate: File | null;
-    license: File | null;
-    profilePhoto: File | null;
-  }>({
-    nrc: null,
-    certificate: null,
-    license: null,
-    profilePhoto: null,
-  });
-
-  const handleAccountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setAccountData({ ...accountData, [e.target.name]: e.target.value });
-  };
-
-  const handleBusinessChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
-    setBusinessData({ ...businessData, [e.target.name]: e.target.value });
-  };
-
-  const handleLocationChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-    setLocationData({ ...locationData, [e.target.name]: e.target.value });
-  };
-
-  const handleServiceAreaToggle = (area: string) => {
-    setLocationData(prev => ({
-      ...prev,
-      serviceAreas: prev.serviceAreas.includes(area)
-        ? prev.serviceAreas.filter(a => a !== area)
-        : [...prev.serviceAreas, area]
-    }));
-  };
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>, type: keyof typeof documents) => {
-    if (e.target.files?.[0]) {
-      setDocuments({ ...documents, [type]: e.target.files[0] });
-    }
-  };
-
-  const validateStep = (stepNum: number): boolean => {
-    setError('');
-    
-    if (stepNum === 1) {
-      if (!accountData.name || !accountData.email || !accountData.phone || !accountData.password) {
-        setError('Please fill in all required fields');
-        return false;
-      }
-      if (accountData.password !== accountData.confirmPassword) {
-        setError('Passwords do not match');
-        return false;
-      }
-      if (accountData.password.length < 8) {
-        setError('Password must be at least 8 characters');
-        return false;
-      }
-    }
-    
-    if (stepNum === 2) {
-      if (!businessData.businessName || !businessData.category || !businessData.description) {
-        setError('Please fill in all required fields');
-        return false;
-      }
-    }
-    
-    if (stepNum === 3) {
-      if (!locationData.city) {
-        setError('Please select your city');
-        return false;
-      }
-    }
-    
-    return true;
-  };
-
-  const nextStep = () => {
-    if (validateStep(step)) {
-      setStep(step + 1);
-    }
-  };
-
-  const prevStep = () => {
-    setStep(step - 1);
-    setError('');
-  };
-
-  const handleSubmit = async () => {
-    if (!validateStep(4)) return;
-    
-    setLoading(true);
+  async function submit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setSaving(true);
     setError('');
 
-    try {
-      // First, create the user account
-      const userRes = await fetch('/api/auth/register', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: accountData.name,
-          email: accountData.email,
-          phone: accountData.phone,
-          password: accountData.password,
-          role: 'SERVICE_PROVIDER',
-        }),
-      });
+    const form = new FormData(e.currentTarget);
+    const services = String(form.get('servicesOffered') || '').split(',').map((x) => x.trim()).filter(Boolean);
+    const areas = String(form.get('serviceAreas') || '').split(',').map((x) => x.trim()).filter(Boolean);
+    const languages = String(form.get('languages') || '').split(',').map((x) => x.trim()).filter(Boolean);
 
-      if (!userRes.ok) {
-        const userData = await userRes.json();
-        // Handle Zod validation errors (array format)
-        let errorMsg = 'Failed to create account';
-        if (Array.isArray(userData.error)) {
-          errorMsg = userData.error.map((e: any) => e.message || e.path?.join('.')).join(', ');
-        } else if (typeof userData.error === 'string') {
-          errorMsg = userData.error;
-        } else if (userData.message) {
-          errorMsg = userData.message;
-        }
-        throw new Error(errorMsg);
-      }
+    const payload: any = {
+      providerType,
+      category,
+      businessName: String(form.get('businessName') || ''),
+      contactPersonName: String(form.get('contactPersonName') || ''),
+      contactPersonRole: String(form.get('contactPersonRole') || ''),
+      description: String(form.get('description') || ''),
+      bio: String(form.get('description') || ''),
+      phone: String(form.get('phone') || ''),
+      whatsappNumber: String(form.get('whatsappNumber') || ''),
+      email: String(form.get('email') || ''),
+      website: String(form.get('website') || ''),
+      address: String(form.get('address') || ''),
+      city: String(form.get('city') || ''),
+      area: String(form.get('area') || ''),
+      yearsInBusiness: Number(form.get('yearsInBusiness') || 0) || null,
+      teamSize: Number(form.get('teamSize') || 0) || null,
+      companyRegistrationNumber: String(form.get('companyRegistrationNumber') || ''),
+      tpinNumber: String(form.get('tpinNumber') || ''),
+      licenseNumber: String(form.get('licenseNumber') || ''),
+      nrcNumber: String(form.get('nrcNumber') || ''),
+      insured: form.get('insured') === 'on',
+      insuranceProvider: String(form.get('insuranceProvider') || ''),
+      backgroundCheckedStaff: form.get('backgroundCheckedStaff') === 'on',
+      emergencyService: form.get('emergencyService') === 'on',
+      responseTimeText: String(form.get('responseTimeText') || ''),
+      servicesOffered: services,
+      serviceAreas: areas,
+      languages,
+      priceRange: String(form.get('priceRange') || ''),
+      categoryDetails: isSecurity ? {
+        guardingServices: String(form.get('guardingServices') || ''),
+        cctv: String(form.get('cctv') || ''),
+        alarmResponse: String(form.get('alarmResponse') || ''),
+        patrolServices: String(form.get('patrolServices') || ''),
+        controlRoom: String(form.get('controlRoom') || ''),
+        coverageModel: String(form.get('coverageModel') || ''),
+      } : undefined,
+    };
 
-      const { user } = await userRes.json();
-
-      // Upload documents if provided
-      const uploadedDocs: { type: string; url: string; name: string }[] = [];
-      
-      for (const [type, file] of Object.entries(documents)) {
-        if (file) {
-          const formData = new FormData();
-          formData.append('file', file);
-          formData.append('type', type.toUpperCase());
-          
-          const uploadRes = await fetch('/api/uploads', {
-            method: 'POST',
-            body: formData,
-          });
-          
-          if (uploadRes.ok) {
-            const { url } = await uploadRes.json();
-            uploadedDocs.push({ 
-              type: type === 'profilePhoto' ? 'ID_PHOTO' : type.toUpperCase(), 
-              url, 
-              name: file.name 
-            });
-          }
-        }
-      }
-
-      // Create the service provider profile
-      const providerRes = await fetch('/api/services/register', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId: user.id,
-          businessName: businessData.businessName,
-          category: businessData.category,
-          description: businessData.description,
-          yearsInBusiness: parseInt(businessData.yearsInBusiness) || 0,
-          hourlyRate: parseFloat(businessData.hourlyRate) || null,
-          minimumCharge: parseFloat(businessData.minimumCharge) || null,
-          priceRange: businessData.priceRange,
-          phone: accountData.phone,
-          email: accountData.email,
-          city: locationData.city,
-          area: locationData.area,
-          address: locationData.address,
-          website: locationData.website,
-          serviceAreas: locationData.serviceAreas,
-          profilePhotoUrl: uploadedDocs.find(d => d.type === 'ID_PHOTO')?.url,
-          documents: uploadedDocs,
-        }),
-      });
-
-      if (!providerRes.ok) {
-        const providerData = await providerRes.json();
-        throw new Error(providerData.message || 'Failed to create provider profile');
-      }
-
-      // Redirect to login page - user needs to login to access dashboard
-      router.push('/auth/login?registered=service_provider&redirect=/services/dashboard');
-    } catch (err: any) {
-      setError(err.message || 'Registration failed. Please try again.');
+    if (isCompany && (!payload.companyRegistrationNumber || !payload.tpinNumber)) {
+      setError('Company registration number and TPIN are required for company profiles.');
+      setSaving(false);
+      return;
+    }
+    if (!isCompany && !payload.nrcNumber) {
+      setError('NRC / identity number is required for individual providers.');
+      setSaving(false);
+      return;
+    }
+    if (isSecurity && !payload.licenseNumber) {
+      setError('Please provide the applicable security or operating licence number for verification.');
+      setSaving(false);
+      return;
     }
 
-    setLoading(false);
-  };
+    const res = await fetch('/api/services', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json().catch(() => ({}));
+    setSaving(false);
+
+    if (!res.ok) {
+      setError(data.error || 'Unable to create the service profile.');
+      return;
+    }
+
+    router.push('/services/' + data.id);
+  }
+
+  const input = 'h-11 w-full border border-slate-300 bg-white px-3 text-sm outline-none focus:border-blue-600';
+  const label = 'mb-1.5 block text-sm font-semibold text-slate-800';
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-slate-50">
       <Header />
-      
-      <div className="max-w-3xl mx-auto px-4 py-8">
-        {/* Progress Steps */}
-        <div className="mb-8">
-          <div className="flex items-center justify-between">
-            {[1, 2, 3, 4].map((s) => (
-              <div key={s} className="flex items-center">
-                <div className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold ${
-                  s <= step ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-500'
-                }`}>
-                  {s < step ? '✓' : s}
-                </div>
-                {s < 4 && (
-                  <div className={`w-full h-1 mx-2 ${
-                    s < step ? 'bg-blue-600' : 'bg-gray-200'
-                  }`} style={{ width: '60px' }} />
-                )}
-              </div>
-            ))}
-          </div>
-          <div className="flex justify-between mt-2 text-sm text-gray-600">
-            <span>Account</span>
-            <span>Business</span>
-            <span>Location</span>
-            <span>Documents</span>
-          </div>
+      <main className="mx-auto max-w-5xl px-4 py-8 sm:px-6">
+        <div className="border-b border-slate-200 pb-6">
+          <h1 className="text-3xl font-bold tracking-[-0.035em] text-slate-950">Create a professional service profile</h1>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">Your public profile helps clients understand who you are, what you do and which details DENUEL has verified.</p>
         </div>
 
-        <div className="bg-white rounded-xl shadow-lg p-8">
-          <h1 className="text-2xl font-bold text-gray-800 mb-6">
-            {step === 1 && 'Create Your Account'}
-            {step === 2 && 'Business Information'}
-            {step === 3 && 'Location & Service Areas'}
-            {step === 4 && 'Upload Documents'}
-          </h1>
-
-          {error && (
-            <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700">
-              {error}
-            </div>
-          )}
-
-          {/* Step 1: Account Details */}
-          {step === 1 && (
-            <div className="space-y-6">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Full Name *
-                </label>
-                <input
-                  type="text"
-                  name="name"
-                  value={accountData.name}
-                  onChange={handleAccountChange}
-                  className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                  placeholder="John Mwansa"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Email Address *
-                </label>
-                <input
-                  type="email"
-                  name="email"
-                  value={accountData.email}
-                  onChange={handleAccountChange}
-                  className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                  placeholder="john@example.com"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Phone Number *
-                </label>
-                <input
-                  type="tel"
-                  name="phone"
-                  value={accountData.phone}
-                  onChange={handleAccountChange}
-                  className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                  placeholder="+260 97 1234567"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Password *
-                </label>
-                <input
-                  type="password"
-                  name="password"
-                  value={accountData.password}
-                  onChange={handleAccountChange}
-                  className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                  placeholder="Minimum 6 characters"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Confirm Password *
-                </label>
-                <input
-                  type="password"
-                  name="confirmPassword"
-                  value={accountData.confirmPassword}
-                  onChange={handleAccountChange}
-                  className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                  placeholder="Re-enter your password"
-                />
-              </div>
-
-              <p className="text-sm text-gray-500">
-                Already have an account?{' '}
-                <Link href="/auth/login" className="text-blue-600 hover:underline">
-                  Sign in here
-                </Link>
-              </p>
-            </div>
-          )}
-
-          {/* Step 2: Business Details */}
-          {step === 2 && (
-            <div className="space-y-6">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Business / Professional Name *
-                </label>
-                <input
-                  type="text"
-                  name="businessName"
-                  value={businessData.businessName}
-                  onChange={handleBusinessChange}
-                  className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                  placeholder="e.g., John's Cleaning Services"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Service Category *
-                </label>
-                <select
-                  name="category"
-                  value={businessData.category}
-                  onChange={handleBusinessChange}
-                  className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="">Select a category</option>
-                  {SERVICE_CATEGORIES.map((cat) => (
-                    <option key={cat.value} value={cat.value}>
-                      {cat.icon} {cat.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Description of Services *
-                </label>
-                <textarea
-                  name="description"
-                  value={businessData.description}
-                  onChange={handleBusinessChange}
-                  rows={4}
-                  className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                  placeholder="Describe your services, experience, and what makes you stand out..."
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Years in Business
-                  </label>
-                  <input
-                    type="number"
-                    name="yearsInBusiness"
-                    value={businessData.yearsInBusiness}
-                    onChange={handleBusinessChange}
-                    className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                    placeholder="e.g., 5"
-                    min="0"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Hourly Rate (K)
-                  </label>
-                  <input
-                    type="number"
-                    name="hourlyRate"
-                    value={businessData.hourlyRate}
-                    onChange={handleBusinessChange}
-                    className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                    placeholder="e.g., 150"
-                    min="0"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Minimum Charge (K)
-                  </label>
-                  <input
-                    type="number"
-                    name="minimumCharge"
-                    value={businessData.minimumCharge}
-                    onChange={handleBusinessChange}
-                    className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                    placeholder="e.g., 200"
-                    min="0"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Price Range
-                  </label>
-                  <input
-                    type="text"
-                    name="priceRange"
-                    value={businessData.priceRange}
-                    onChange={handleBusinessChange}
-                    className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                    placeholder="e.g., K200-K1000"
-                  />
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Step 3: Location & Service Areas */}
-          {step === 3 && (
-            <div className="space-y-6">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  City *
-                </label>
-                <select
-                  name="city"
-                  value={locationData.city}
-                  onChange={handleLocationChange}
-                  className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="">Select your city</option>
-                  {CITIES.map((city) => (
-                    <option key={city} value={city}>{city}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Area / Neighborhood
-                </label>
-                <input
-                  type="text"
-                  name="area"
-                  value={locationData.area}
-                  onChange={handleLocationChange}
-                  className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                  placeholder="e.g., Kabulonga"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Full Address
-                </label>
-                <input
-                  type="text"
-                  name="address"
-                  value={locationData.address}
-                  onChange={handleLocationChange}
-                  className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                  placeholder="Street address"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Website (optional)
-                </label>
-                <input
-                  type="url"
-                  name="website"
-                  value={locationData.website}
-                  onChange={handleLocationChange}
-                  className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                  placeholder="https://www.yourwebsite.com"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Service Areas (select all that apply)
-                </label>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                  {['Kabulonga', 'Rhodes Park', 'Woodlands', 'Ibex Hill', 'Roma', 'Northmead', 'Chelston', 'Kabwata', 'Chilenje', 'Matero', 'Emmasdale', 'Avondale'].map((area) => (
-                    <label
-                      key={area}
-                      className={`flex items-center p-2 border rounded-lg cursor-pointer ${
-                        locationData.serviceAreas.includes(area)
-                          ? 'bg-blue-50 border-blue-500'
-                          : 'hover:bg-gray-50'
-                      }`}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={locationData.serviceAreas.includes(area)}
-                        onChange={() => handleServiceAreaToggle(area)}
-                        className="mr-2"
-                      />
-                      <span className="text-sm">{area}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Step 4: Documents */}
-          {step === 4 && (
-            <div className="space-y-6">
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
-                <h3 className="font-medium text-blue-800 mb-1">📄 Document Verification</h3>
-                <p className="text-sm text-blue-600">
-                  Upload your documents to get verified and build trust with customers.
-                  Verified providers get more bookings!
-                </p>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Profile Photo
-                </label>
-                <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
-                  {documents.profilePhoto ? (
-                    <div>
-                      <span className="text-green-600">✓ {documents.profilePhoto.name}</span>
-                      <button
-                        type="button"
-                        onClick={() => setDocuments({ ...documents, profilePhoto: null })}
-                        className="ml-2 text-red-500 text-sm"
-                      >
-                        Remove
-                      </button>
-                    </div>
-                  ) : (
-                    <div>
-                      <span className="text-4xl block mb-2">📷</span>
-                      <p className="text-gray-600 mb-2">Upload a professional photo</p>
-                      <input
-                        type="file"
-                        accept="image/*"
-                        onChange={(e) => handleFileChange(e, 'profilePhoto')}
-                        className="hidden"
-                        id="profilePhoto"
-                      />
-                      <label
-                        htmlFor="profilePhoto"
-                        className="inline-block px-4 py-2 bg-blue-600 text-white rounded-lg cursor-pointer hover:bg-blue-700"
-                      >
-                        Choose Photo
-                      </label>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  National Registration Card (NRC) *
-                </label>
-                <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
-                  {documents.nrc ? (
-                    <div>
-                      <span className="text-green-600">✓ {documents.nrc.name}</span>
-                      <button
-                        type="button"
-                        onClick={() => setDocuments({ ...documents, nrc: null })}
-                        className="ml-2 text-red-500 text-sm"
-                      >
-                        Remove
-                      </button>
-                    </div>
-                  ) : (
-                    <div>
-                      <span className="text-4xl block mb-2">🪪</span>
-                      <p className="text-gray-600 mb-2">Upload a copy of your NRC</p>
-                      <input
-                        type="file"
-                        accept="image/*,.pdf"
-                        onChange={(e) => handleFileChange(e, 'nrc')}
-                        className="hidden"
-                        id="nrc"
-                      />
-                      <label
-                        htmlFor="nrc"
-                        className="inline-block px-4 py-2 bg-blue-600 text-white rounded-lg cursor-pointer hover:bg-blue-700"
-                      >
-                        Upload NRC
-                      </label>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Professional Certificate / Qualification
-                </label>
-                <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
-                  {documents.certificate ? (
-                    <div>
-                      <span className="text-green-600">✓ {documents.certificate.name}</span>
-                      <button
-                        type="button"
-                        onClick={() => setDocuments({ ...documents, certificate: null })}
-                        className="ml-2 text-red-500 text-sm"
-                      >
-                        Remove
-                      </button>
-                    </div>
-                  ) : (
-                    <div>
-                      <span className="text-4xl block mb-2">📜</span>
-                      <p className="text-gray-600 mb-2">Training certificates, qualifications</p>
-                      <input
-                        type="file"
-                        accept="image/*,.pdf"
-                        onChange={(e) => handleFileChange(e, 'certificate')}
-                        className="hidden"
-                        id="certificate"
-                      />
-                      <label
-                        htmlFor="certificate"
-                        className="inline-block px-4 py-2 bg-gray-600 text-white rounded-lg cursor-pointer hover:bg-gray-700"
-                      >
-                        Upload Certificate
-                      </label>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Business License (if applicable)
-                </label>
-                <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
-                  {documents.license ? (
-                    <div>
-                      <span className="text-green-600">✓ {documents.license.name}</span>
-                      <button
-                        type="button"
-                        onClick={() => setDocuments({ ...documents, license: null })}
-                        className="ml-2 text-red-500 text-sm"
-                      >
-                        Remove
-                      </button>
-                    </div>
-                  ) : (
-                    <div>
-                      <span className="text-4xl block mb-2">📋</span>
-                      <p className="text-gray-600 mb-2">Business registration, trade license</p>
-                      <input
-                        type="file"
-                        accept="image/*,.pdf"
-                        onChange={(e) => handleFileChange(e, 'license')}
-                        className="hidden"
-                        id="license"
-                      />
-                      <label
-                        htmlFor="license"
-                        className="inline-block px-4 py-2 bg-gray-600 text-white rounded-lg cursor-pointer hover:bg-gray-700"
-                      >
-                        Upload License
-                      </label>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Navigation Buttons */}
-          <div className="flex justify-between mt-8 pt-6 border-t">
-            {step > 1 ? (
-              <button
-                type="button"
-                onClick={prevStep}
-                className="px-6 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
-              >
-                ← Back
-              </button>
-            ) : (
-              <Link
-                href="/services"
-                className="px-6 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
-              >
-                Cancel
-              </Link>
-            )}
-
-            {step < 4 ? (
-              <button
-                type="button"
-                onClick={nextStep}
-                className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-              >
-                Continue →
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={handleSubmit}
-                disabled={loading}
-                className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
-              >
-                {loading ? 'Creating Account...' : 'Complete Registration'}
-              </button>
-            )}
-          </div>
+        <div className="mt-6 grid grid-cols-2 border border-slate-300 bg-white p-1">
+          <button type="button" onClick={() => setProviderType('COMPANY')} className={`px-4 py-3 text-sm font-semibold ${isCompany ? 'bg-slate-950 text-white' : 'text-slate-600'}`}>Company / organisation</button>
+          <button type="button" onClick={() => setProviderType('INDIVIDUAL')} className={`px-4 py-3 text-sm font-semibold ${!isCompany ? 'bg-slate-950 text-white' : 'text-slate-600'}`}>Individual professional</button>
         </div>
 
-        {/* Benefits Section */}
-        <div className="mt-8 grid md:grid-cols-3 gap-4">
-          <div className="bg-white rounded-lg p-4 text-center">
-            <span className="text-3xl block mb-2">💰</span>
-            <h3 className="font-medium text-gray-800">Earn More</h3>
-            <p className="text-sm text-gray-600">Connect with clients actively looking for your services</p>
-          </div>
-          <div className="bg-white rounded-lg p-4 text-center">
-            <span className="text-3xl block mb-2">✓</span>
-            <h3 className="font-medium text-gray-800">Get Verified</h3>
-            <p className="text-sm text-gray-600">Build trust with verification badges</p>
-          </div>
-          <div className="bg-white rounded-lg p-4 text-center">
-            <span className="text-3xl block mb-2">⭐</span>
-            <h3 className="font-medium text-gray-800">Build Reviews</h3>
-            <p className="text-sm text-gray-600">Grow your reputation with customer reviews</p>
-          </div>
-        </div>
-      </div>
+        <form onSubmit={submit} className="mt-6 space-y-6">
+          {error && <div className="border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">{error}</div>}
+
+          <section className="border border-slate-200 bg-white p-6">
+            <h2 className="text-xl font-bold text-slate-950">{heading}</h2>
+            <div className="mt-5 grid gap-4 sm:grid-cols-2">
+              <div><label className={label}>{isCompany ? 'Company name' : 'Professional / trading name'}</label><input name="businessName" required className={input} /></div>
+              <div><label className={label}>Service category</label><select value={category} onChange={(e) => setCategory(e.target.value)} className={input}>{categories.map(([v,l]) => <option key={v} value={v}>{l}</option>)}</select></div>
+              {isCompany && <><div><label className={label}>Contact person</label><input name="contactPersonName" required className={input} /></div><div><label className={label}>Position / role</label><input name="contactPersonRole" className={input} placeholder="Operations Manager" /></div></>}
+              <div><label className={label}>Phone</label><input name="phone" required className={input} /></div>
+              <div><label className={label}>WhatsApp</label><input name="whatsappNumber" className={input} placeholder="260..." /></div>
+              <div><label className={label}>Email</label><input type="email" name="email" required className={input} /></div>
+              <div><label className={label}>Website</label><input name="website" className={input} placeholder="https://..." /></div>
+              <div><label className={label}>City</label><input name="city" required className={input} defaultValue="Lusaka" /></div>
+              <div><label className={label}>Area</label><input name="area" className={input} placeholder="Kabulonga, Roma, Kitwe..." /></div>
+              <div className="sm:col-span-2"><label className={label}>Business / work address</label><input name="address" className={input} /></div>
+            </div>
+          </section>
+
+          <section className="border border-slate-200 bg-white p-6">
+            <h2 className="text-xl font-bold text-slate-950">Identity & verification</h2>
+            <p className="mt-1 text-sm text-slate-500">Sensitive verification documents are reviewed privately. Public profiles show verification status rather than exposing private documents.</p>
+            <div className="mt-5 grid gap-4 sm:grid-cols-2">
+              {isCompany ? (
+                <>
+                  <div><label className={label}>Company registration number *</label><input name="companyRegistrationNumber" required className={input} /></div>
+                  <div><label className={label}>TPIN *</label><input name="tpinNumber" required className={input} /></div>
+                  <div><label className={label}>Team size</label><input type="number" min="1" name="teamSize" className={input} /></div>
+                </>
+              ) : (
+                <>
+                  <div><label className={label}>NRC / identity number *</label><input name="nrcNumber" required className={input} /></div>
+                  <div><label className={label}>Years of professional experience</label><input type="number" min="0" name="yearsInBusiness" className={input} /></div>
+                </>
+              )}
+              <div><label className={label}>{isSecurity ? 'Security / operating licence *' : 'Professional / trade licence'}</label><input name="licenseNumber" required={isSecurity} className={input} /></div>
+              {isCompany && <div><label className={label}>Years in business</label><input type="number" min="0" name="yearsInBusiness" className={input} /></div>}
+              <div><label className={label}>Insurance provider</label><input name="insuranceProvider" className={input} /></div>
+              <div><label className={label}>Typical response time</label><input name="responseTimeText" className={input} placeholder="Usually within 30 minutes" /></div>
+            </div>
+            <div className="mt-5 flex flex-wrap gap-5 text-sm text-slate-700">
+              <label className="flex items-center gap-2"><input type="checkbox" name="insured" /> Insured</label>
+              <label className="flex items-center gap-2"><input type="checkbox" name="backgroundCheckedStaff" /> {isCompany ? 'Staff are background checked' : 'Background check available'}</label>
+              <label className="flex items-center gap-2"><input type="checkbox" name="emergencyService" /> Emergency / after-hours service</label>
+            </div>
+          </section>
+
+          <section className="border border-slate-200 bg-white p-6">
+            <h2 className="text-xl font-bold text-slate-950">Professional profile</h2>
+            <div className="mt-5 grid gap-4 sm:grid-cols-2">
+              <div className="sm:col-span-2"><label className={label}>About {isCompany ? 'the company' : 'you'}</label><textarea name="description" required rows={5} className="w-full border border-slate-300 p-3 text-sm" placeholder="Experience, strengths, how you work and what clients should know." /></div>
+              <div className="sm:col-span-2"><label className={label}>Services offered</label><input name="servicesOffered" required className={input} placeholder="Separate services with commas" /></div>
+              <div><label className={label}>Service areas</label><input name="serviceAreas" required className={input} placeholder="Lusaka, Chongwe, Kafue" /></div>
+              <div><label className={label}>Languages</label><input name="languages" className={input} placeholder="English, Nyanja, Bemba" /></div>
+              <div><label className={label}>Price range</label><input name="priceRange" className={input} placeholder="K500–K2,000 or Contact for quote" /></div>
+            </div>
+          </section>
+
+          {isSecurity && (
+            <section className="border border-slate-200 bg-white p-6">
+              <h2 className="text-xl font-bold text-slate-950">Security capabilities</h2>
+              <p className="mt-1 text-sm text-slate-500">Give clients enough operational information to understand the security services you can actually provide.</p>
+              <div className="mt-5 grid gap-4 sm:grid-cols-2">
+                <div><label className={label}>Guarding services</label><input name="guardingServices" className={input} placeholder="Residential, commercial, event..." /></div>
+                <div><label className={label}>CCTV & surveillance</label><input name="cctv" className={input} placeholder="Installation, monitoring, maintenance..." /></div>
+                <div><label className={label}>Alarm response</label><input name="alarmResponse" className={input} /></div>
+                <div><label className={label}>Patrol services</label><input name="patrolServices" className={input} /></div>
+                <div><label className={label}>Control room capability</label><input name="controlRoom" className={input} /></div>
+                <div><label className={label}>Coverage model</label><input name="coverageModel" className={input} placeholder="24/7, scheduled shifts, call-out..." /></div>
+              </div>
+            </section>
+          )}
+
+          <section className="border border-blue-200 bg-blue-50 p-5">
+            <h2 className="font-semibold text-slate-950">Verification documents</h2>
+            <p className="mt-2 text-sm leading-6 text-slate-600">
+              After creating the profile, the provider should upload the applicable identity, registration, tax, licence, insurance, qualification and supporting documents for DENUEL review. The public profile should only show which checks passed.
+            </p>
+          </section>
+
+          <button disabled={saving} className="w-full bg-slate-950 px-5 py-3.5 text-sm font-semibold text-white disabled:opacity-60">
+            {saving ? 'Creating profile…' : 'Create profile and continue to verification'}
+          </button>
+        </form>
+      </main>
     </div>
   );
 }
