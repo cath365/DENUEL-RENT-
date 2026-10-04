@@ -102,6 +102,9 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const {
       businessName,
+      providerType,
+      contactPersonName,
+      contactPersonPosition,
       category,
       description,
       phone,
@@ -146,6 +149,9 @@ export async function POST(req: NextRequest) {
       data: {
         userId: user?.id,
         businessName,
+        providerType: providerType === 'COMPANY' ? 'COMPANY' : 'INDIVIDUAL',
+        contactPersonName,
+        contactPersonPosition,
         category,
         description,
         phone,
