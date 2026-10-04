@@ -42,6 +42,7 @@ enum PowerBackup {
 enum VehicleType {
   MOTORBIKE
   CAR
+  SUV
   VAN
   TRUCK_SMALL
   TRUCK_MEDIUM
@@ -458,24 +459,52 @@ model RefreshToken {
 }
 
 model DriverProfile {
-  id               String    @id @default(cuid())
-  user             User      @relation(fields: [userId], references: [id])
-  userId           String    @unique
-  licenseNumber    String
-  vehicleType      VehicleType
-  vehiclePlate     String
+  id                String    @id @default(cuid())
+  user              User      @relation(fields: [userId], references: [id])
+  userId            String    @unique
+  licenseNumber     String
+  nrcNumber         String?
+  vehicleType       VehicleType
+  vehiclePlate      String
+  vehicleMake       String?
+  vehicleModel      String?
+  vehicleYear       Int?
+  vehicleColor      String?
   vehicleCapacityKg Int?
-  isApproved       Boolean   @default(false)
-  isOnline         Boolean   @default(false)
-  currentLat       Float?
-  currentLng       Float?
-  ratingAvg        Float     @default(0)
-  ratingCount      Int       @default(0)
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
+  experience        String?
+  bio               String?   @db.Text
+  serviceAreas      Json?
+  verificationStatus String    @default("PENDING")
+  rejectionReason   String?    @db.Text
+  isApproved        Boolean    @default(false)
+  isOnline          Boolean    @default(false)
+  currentLat        Float?
+  currentLng        Float?
+  ratingAvg         Float      @default(0)
+  ratingCount       Int        @default(0)
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
   TransportRequests TransportRequest[] @relation("driver_requests")
-  DriverEarnings   DriverEarning[]
-  Ratings          Rating[]
+  DriverEarnings    DriverEarning[]
+  Ratings           Rating[]
+  documents         DriverDocument[]
+}
+
+model DriverDocument {
+  id          String        @id @default(cuid())
+  driver      DriverProfile @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  driverId    String
+  type        String
+  name        String
+  fileUrl     String        @db.Text
+  fileSize    Int?
+  mimeType    String?
+  isVerified  Boolean       @default(false)
+  verifiedAt  DateTime?
+  uploadedAt  DateTime      @default(now())
+
+  @@unique([driverId, type])
+  @@index([driverId])
 }
 
 model TransportRequest {
