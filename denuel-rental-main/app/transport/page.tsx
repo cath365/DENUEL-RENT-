@@ -1,432 +1,710 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import { useState } from 'react';
 import Header from '../../components/Header';
 import Link from 'next/link';
+import { csrfFetch } from '../../lib/csrf';
 
-interface Driver {
+type TransportMode = 'ride' | 'moving' | 'delivery';
+type VehicleType =
+  | 'MOTORBIKE'
+  | 'CAR'
+  | 'SUV'
+  | 'VAN'
+  | 'TRUCK_SMALL'
+  | 'TRUCK_MEDIUM'
+  | 'TRUCK_LARGE';
+
+type LocationResult = {
   id: string;
-  user: { name: string; image?: string };
-  vehicleType: string;
-  vehiclePlate: string;
-  rating: number;
-  totalTrips: number;
-  isOnline: boolean;
+  label: string;
+  latitude: number;
+  longitude: number;
+};
+
+type EstimatePayload = {
+  distanceKm: number;
+  durationMin: number;
+  estimate: {
+    components: {
+      base: number;
+      distanceCost: number;
+      timeCost: number;
+      rawPrice: number;
+    };
+    multipliers: {
+      surge: { value: number; applied: boolean; reason?: string };
+      night: { value: number; applied: boolean; reason?: string };
+      weather: { value: number; applied: boolean; reason?: string };
+      totalMultiplier: number;
+    };
+    finalPrice: number;
+  };
+};
+
+type CreatedRequest = {
+  id: string;
+  status: string;
+  expiresAt?: string | null;
+  notifiedDrivers: number;
+};
+
+const VEHICLES: Array<{
+  id: VehicleType;
+  name: string;
+  description: string;
+  modes: TransportMode[];
+}> = [
+  {
+    id: 'MOTORBIKE',
+    name: 'Motorbike',
+    description: 'Small deliveries and light transport.',
+    modes: ['delivery'],
+  },
+  {
+    id: 'CAR',
+    name: 'Car / sedan',
+    description: 'Passenger transport and light luggage.',
+    modes: ['ride', 'delivery'],
+  },
+  {
+    id: 'SUV',
+    name: 'SUV',
+    description: 'Passenger transport with additional luggage space.',
+    modes: ['ride', 'delivery'],
+  },
+  {
+    id: 'VAN',
+    name: 'Van / minibus',
+    description: 'Groups, medium cargo and smaller moving jobs.',
+    modes: ['ride', 'moving', 'delivery'],
+  },
+  {
+    id: 'TRUCK_SMALL',
+    name: 'Small truck',
+    description: 'Furniture, appliances and small moving jobs.',
+    modes: ['moving', 'delivery'],
+  },
+  {
+    id: 'TRUCK_MEDIUM',
+    name: 'Medium truck',
+    description: 'Larger moving and cargo jobs.',
+    modes: ['moving', 'delivery'],
+  },
+  {
+    id: 'TRUCK_LARGE',
+    name: 'Large truck',
+    description: 'Heavy or high-volume moving and cargo jobs.',
+    modes: ['moving'],
+  },
+];
+
+function money(value?: number | null) {
+  return 'K' + Number(value || 0).toLocaleString();
+}
+
+function humanize(value?: string | null) {
+  if (!value) return 'Not specified';
+  return value.replaceAll('_', ' ').toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+async function readResponse(res: Response) {
+  const text = await res.text();
+  let data: any = {};
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    data = {};
+  }
+  return { text, data };
+}
+
+function LocationField({
+  label,
+  placeholder,
+  value,
+  onChange,
+  onSelect,
+  onUnauthorized,
+}: {
+  label: string;
+  placeholder: string;
+  value: string;
+  onChange: (value: string) => void;
+  onSelect: (location: LocationResult) => void;
+  onUnauthorized: () => void;
+}) {
+  const [results, setResults] = useState<LocationResult[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [message, setMessage] = useState('');
+
+  async function searchLocation() {
+    const query = value.trim();
+    setMessage('');
+
+    if (query.length < 3) {
+      setResults([]);
+      setMessage('Enter at least 3 characters.');
+      return;
+    }
+
+    setSearching(true);
+
+    try {
+      const res = await fetch('/api/transport/geocode?q=' + encodeURIComponent(query), {
+        credentials: 'same-origin',
+      });
+      const { text, data } = await readResponse(res);
+
+      if (res.status === 401) {
+        onUnauthorized();
+        return;
+      }
+
+      if (!res.ok) {
+        throw new Error(data?.error || text || 'Unable to search for this location.');
+      }
+
+      const next = Array.isArray(data.results) ? data.results : [];
+      setResults(next);
+      if (!next.length) setMessage('No Zambia locations matched this search.');
+    } catch (error) {
+      setResults([]);
+      setMessage(error instanceof Error ? error.message : 'Unable to search for this location.');
+    } finally {
+      setSearching(false);
+    }
+  }
+
+  return (
+    <div>
+      <label className="block text-sm font-semibold text-slate-800">{label}</label>
+      <div className="mt-2 flex gap-2">
+        <input
+          type="text"
+          value={value}
+          onChange={(event) => {
+            onChange(event.target.value);
+            setResults([]);
+            setMessage('');
+          }}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') {
+              event.preventDefault();
+              searchLocation();
+            }
+          }}
+          placeholder={placeholder}
+          className="h-12 min-w-0 flex-1 border border-slate-300 px-3 text-sm outline-none focus:border-slate-950"
+        />
+        <button
+          type="button"
+          onClick={searchLocation}
+          disabled={searching}
+          className="border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 disabled:opacity-50"
+        >
+          {searching ? 'Searching…' : 'Find'}
+        </button>
+      </div>
+
+      {message && <p className="mt-2 text-xs text-slate-500">{message}</p>}
+
+      {results.length > 0 && (
+        <div className="mt-2 divide-y divide-slate-100 border border-slate-200 bg-white">
+          {results.map((result) => (
+            <button
+              key={result.id}
+              type="button"
+              onClick={() => {
+                onSelect(result);
+                setResults([]);
+                setMessage('');
+              }}
+              className="block w-full px-3 py-3 text-left text-sm text-slate-700 hover:bg-slate-50"
+            >
+              {result.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default function TransportPage() {
-  const [pickupAddress, setPickupAddress] = useState('');
-  const [dropoffAddress, setDropoffAddress] = useState('');
-  const [vehicleType, setVehicleType] = useState('car');
-  const [scheduledDate, setScheduledDate] = useState('');
-  const [scheduledTime, setScheduledTime] = useState('');
+  const [mode, setMode] = useState<TransportMode>('ride');
+  const [vehicleType, setVehicleType] = useState<VehicleType>('CAR');
+  const [pickupText, setPickupText] = useState('');
+  const [dropoffText, setDropoffText] = useState('');
+  const [pickup, setPickup] = useState<LocationResult | null>(null);
+  const [dropoff, setDropoff] = useState<LocationResult | null>(null);
+  const [estimate, setEstimate] = useState<EstimatePayload | null>(null);
+  const [createdRequest, setCreatedRequest] = useState<CreatedRequest | null>(null);
   const [estimating, setEstimating] = useState(false);
-  const [estimate, setEstimate] = useState<{ price: number; duration: string; distance: string } | null>(null);
   const [booking, setBooking] = useState(false);
-  const [bookingSuccess, setBookingSuccess] = useState(false);
-  const [availableDrivers, setAvailableDrivers] = useState<Driver[]>([]);
-  const [activeTab, setActiveTab] = useState<'book' | 'moving' | 'deliveries'>('book');
+  const [error, setError] = useState('');
 
-  const vehicleTypes = [
-    { id: 'car', name: 'Standard Car', icon: '🚗', description: 'Comfortable sedan for 4 passengers', basePrice: 50 },
-    { id: 'suv', name: 'SUV', icon: '🚙', description: 'Spacious SUV for 6 passengers', basePrice: 80 },
-    { id: 'van', name: 'Mini Van', icon: '🚐', description: 'Van for groups up to 12', basePrice: 120 },
-    { id: 'truck', name: 'Pickup Truck', icon: '🛻', description: 'For moving small items', basePrice: 150 },
-    { id: 'moving', name: 'Moving Truck', icon: '🚚', description: 'Full-size moving truck', basePrice: 300 },
-  ];
+  const visibleVehicles = VEHICLES.filter((vehicle) => vehicle.modes.includes(mode));
 
-  const getEstimate = async () => {
-    if (!pickupAddress || !dropoffAddress) return;
+  function goToLogin() {
+    window.location.href = '/auth/login?redirect=/transport&reason=session';
+  }
+
+  function clearEstimate() {
+    setEstimate(null);
+    setCreatedRequest(null);
+  }
+
+  function changeMode(nextMode: TransportMode) {
+    setMode(nextMode);
+    const allowed = VEHICLES.filter((vehicle) => vehicle.modes.includes(nextMode));
+    if (!allowed.some((vehicle) => vehicle.id === vehicleType)) {
+      setVehicleType(allowed[0].id);
+    }
+    clearEstimate();
+  }
+
+  async function getEstimate() {
+    setError('');
+    setCreatedRequest(null);
+
+    if (!pickup || !dropoff) {
+      setError('Choose both pickup and drop-off from the location search results before requesting a price.');
+      return;
+    }
+
     setEstimating(true);
-    
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
-    const basePrice = vehicleTypes.find(v => v.id === vehicleType)?.basePrice || 50;
-    const randomMultiplier = 1 + Math.random() * 0.5;
-    const price = Math.round(basePrice * randomMultiplier);
-    
-    setEstimate({
-      price,
-      duration: `${15 + Math.floor(Math.random() * 30)} mins`,
-      distance: `${5 + Math.floor(Math.random() * 20)} km`
-    });
-    setEstimating(false);
-  };
 
-  const handleBooking = async () => {
-    setBooking(true);
-    
     try {
-      const res = await fetch('/api/transport/request', {
+      const res = await fetch('/api/transport/estimate', {
         method: 'POST',
+        credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          pickupAddressText: pickupAddress,
-          dropoffAddressText: dropoffAddress,
+          pickupLat: pickup.latitude,
+          pickupLng: pickup.longitude,
+          dropoffLat: dropoff.latitude,
+          dropoffLng: dropoff.longitude,
           vehicleType,
-          priceEstimateZmw: estimate?.price,
-          scheduledAt: scheduledDate && scheduledTime ? new Date(`${scheduledDate}T${scheduledTime}`).toISOString() : null,
         }),
       });
+      const { text, data } = await readResponse(res);
 
-      if (res.ok) {
-        setBookingSuccess(true);
-      } else {
-        const data = await res.json();
-        alert(data.error || 'Booking failed');
+      if (res.status === 401) {
+        goToLogin();
+        return;
       }
-    } catch (error) {
-      alert('Failed to create booking');
-    }
-    
-    setBooking(false);
-  };
 
-  if (bookingSuccess) {
+      if (!res.ok) {
+        const validation = Array.isArray(data?.error)
+          ? data.error.map((item: any) => item.message).filter(Boolean).join(' ')
+          : data?.error;
+        throw new Error(validation || text || 'Unable to calculate transport estimate.');
+      }
+
+      setEstimate(data);
+    } catch (err) {
+      setEstimate(null);
+      setError(err instanceof Error ? err.message : 'Unable to calculate transport estimate.');
+    } finally {
+      setEstimating(false);
+    }
+  }
+
+  async function requestTransport() {
+    if (!pickup || !dropoff || !estimate) return;
+
+    setBooking(true);
+    setError('');
+
+    try {
+      const res = await csrfFetch('/api/transport/request', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          pickupLat: pickup.latitude,
+          pickupLng: pickup.longitude,
+          pickupAddressText: pickup.label,
+          dropoffLat: dropoff.latitude,
+          dropoffLng: dropoff.longitude,
+          dropoffAddressText: dropoff.label,
+          vehicleType,
+        }),
+      });
+      const { text, data } = await readResponse(res);
+
+      if (res.status === 401) {
+        goToLogin();
+        return;
+      }
+
+      if (!res.ok) {
+        const validation = Array.isArray(data?.error)
+          ? data.error.map((item: any) => item.message).filter(Boolean).join(' ')
+          : data?.error;
+        throw new Error(validation || text || 'Unable to create transport request.');
+      }
+
+      setCreatedRequest({
+        id: data.id,
+        status: data.status,
+        expiresAt: data.expiresAt,
+        notifiedDrivers: Number(data.notifiedDrivers || 0),
+      });
+
+      if (data.estimate) {
+        setEstimate({
+          distanceKm: Number(data.estimate.distanceKm || estimate.distanceKm),
+          durationMin: Number(data.estimate.durationMin || estimate.durationMin),
+          estimate: {
+            components: data.estimate.components || estimate.estimate.components,
+            multipliers: data.estimate.multipliers || estimate.estimate.multipliers,
+            finalPrice: Number(data.estimate.finalPrice || estimate.estimate.finalPrice),
+          },
+        });
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to create transport request.');
+    } finally {
+      setBooking(false);
+    }
+  }
+
+  function resetForm() {
+    setPickupText('');
+    setDropoffText('');
+    setPickup(null);
+    setDropoff(null);
+    setEstimate(null);
+    setCreatedRequest(null);
+    setError('');
+  }
+
+  if (createdRequest) {
     return (
-      <main className="min-h-screen bg-gray-50">
+      <div className="min-h-screen bg-slate-50 text-slate-950">
         <Header />
-        <div className="container mx-auto px-4 py-16">
-          <div className="max-w-lg mx-auto text-center">
-            <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
-              <svg className="w-10 h-10 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-              </svg>
+        <main className="mx-auto max-w-3xl px-4 py-12 sm:px-6 sm:py-16">
+          <section className="border border-slate-200 bg-white p-7 sm:p-10">
+            <div className="inline-flex border border-blue-200 bg-blue-50 px-3 py-1 text-sm font-semibold text-blue-800">
+              Transport request created
             </div>
-            <h1 className="text-3xl font-bold text-gray-900 mb-4">Booking Confirmed!</h1>
-            <p className="text-gray-600 mb-8">Your transport request has been submitted. A driver will accept your request shortly.</p>
-            <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 mb-6">
-              <div className="text-left space-y-3">
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Pickup:</span>
-                  <span className="font-medium">{pickupAddress}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Dropoff:</span>
-                  <span className="font-medium">{dropoffAddress}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Estimated Price:</span>
-                  <span className="font-bold text-blue-600">K{estimate?.price}</span>
-                </div>
+
+            <h1 className="mt-5 text-3xl font-bold tracking-[-0.035em]">
+              Your request is ready for an available driver
+            </h1>
+
+            <p className="mt-3 text-sm leading-6 text-slate-600">
+              DENUEL created a real transport request using the selected locations, vehicle type and current pricing configuration. A driver has not been promised or assigned unless the request status changes accordingly.
+            </p>
+
+            <div className="mt-7 divide-y divide-slate-100 border border-slate-200">
+              <div className="grid gap-2 p-4 sm:grid-cols-[140px_1fr]">
+                <span className="text-sm text-slate-500">Request ID</span>
+                <span className="break-all text-sm font-semibold">{createdRequest.id}</span>
+              </div>
+              <div className="grid gap-2 p-4 sm:grid-cols-[140px_1fr]">
+                <span className="text-sm text-slate-500">Status</span>
+                <span className="text-sm font-semibold">{humanize(createdRequest.status)}</span>
+              </div>
+              <div className="grid gap-2 p-4 sm:grid-cols-[140px_1fr]">
+                <span className="text-sm text-slate-500">Pickup</span>
+                <span className="text-sm font-semibold">{pickup?.label}</span>
+              </div>
+              <div className="grid gap-2 p-4 sm:grid-cols-[140px_1fr]">
+                <span className="text-sm text-slate-500">Drop-off</span>
+                <span className="text-sm font-semibold">{dropoff?.label}</span>
+              </div>
+              <div className="grid gap-2 p-4 sm:grid-cols-[140px_1fr]">
+                <span className="text-sm text-slate-500">Vehicle</span>
+                <span className="text-sm font-semibold">{humanize(vehicleType)}</span>
+              </div>
+              <div className="grid gap-2 p-4 sm:grid-cols-[140px_1fr]">
+                <span className="text-sm text-slate-500">Locked estimate</span>
+                <span className="text-sm font-semibold">{money(estimate?.estimate.finalPrice)}</span>
               </div>
             </div>
-            <div className="flex gap-4 justify-center">
-              <Link
-                href="/dashboard"
-                className="bg-blue-600 text-white px-6 py-3 rounded-full font-semibold hover:bg-blue-700 transition-colors"
-              >
-                Track Your Ride
+
+            <div className="mt-6 border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-slate-600">
+              {createdRequest.notifiedDrivers > 0
+                ? createdRequest.notifiedDrivers + ' currently eligible nearby driver' + (createdRequest.notifiedDrivers === 1 ? ' was' : 's were') + ' notified.'
+                : 'No eligible nearby driver with a recorded location was notified immediately. The request still exists until it expires or is canceled.'}
+              {createdRequest.expiresAt
+                ? ' This request is currently set to expire at ' + new Date(createdRequest.expiresAt).toLocaleTimeString('en-ZM', { hour: '2-digit', minute: '2-digit' }) + '.'
+                : ''}
+            </div>
+
+            <div className="mt-7 flex flex-col gap-3 sm:flex-row">
+              <Link href="/dashboard" className="inline-flex justify-center bg-slate-950 px-5 py-3 text-sm font-semibold text-white">
+                Open my dashboard
               </Link>
-              <button
-                onClick={() => {
-                  setBookingSuccess(false);
-                  setEstimate(null);
-                  setPickupAddress('');
-                  setDropoffAddress('');
-                }}
-                className="border border-gray-300 text-gray-700 px-6 py-3 rounded-full font-semibold hover:bg-gray-50 transition-colors"
-              >
-                Book Another
+              <button type="button" onClick={resetForm} className="border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700">
+                Create another request
               </button>
             </div>
-          </div>
-        </div>
-      </main>
+          </section>
+        </main>
+      </div>
     );
   }
 
   return (
-    <main className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-slate-50 text-slate-950">
       <Header />
-      
-      {/* Hero Section */}
-      <section className="bg-gradient-to-r from-purple-600 to-indigo-700 text-white py-16">
-        <div className="container mx-auto px-4">
-          <h1 className="text-4xl md:text-5xl font-bold mb-4">Transport & Moving Services</h1>
-          <p className="text-xl text-purple-100 mb-6">Book rides, moving trucks, and delivery services across Zambia</p>
-          
-          {/* Service Tabs */}
-          <div className="flex gap-4 mb-8">
-            <button
-              onClick={() => setActiveTab('book')}
-              className={`px-6 py-3 rounded-full font-semibold transition-colors ${
-                activeTab === 'book' ? 'bg-white text-purple-700' : 'bg-purple-500 text-white hover:bg-purple-400'
-              }`}
-            >
-              🚗 Book a Ride
-            </button>
-            <button
-              onClick={() => setActiveTab('moving')}
-              className={`px-6 py-3 rounded-full font-semibold transition-colors ${
-                activeTab === 'moving' ? 'bg-white text-purple-700' : 'bg-purple-500 text-white hover:bg-purple-400'
-              }`}
-            >
-              🚚 Moving Services
-            </button>
-            <button
-              onClick={() => setActiveTab('deliveries')}
-              className={`px-6 py-3 rounded-full font-semibold transition-colors ${
-                activeTab === 'deliveries' ? 'bg-white text-purple-700' : 'bg-purple-500 text-white hover:bg-purple-400'
-              }`}
-            >
-              📦 Deliveries
-            </button>
-          </div>
-        </div>
-      </section>
 
-      <div className="container mx-auto px-4 py-8">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Booking Form */}
-          <div className="lg:col-span-2">
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-              <h2 className="text-2xl font-bold text-gray-900 mb-6">
-                {activeTab === 'book' && 'Book a Ride'}
-                {activeTab === 'moving' && 'Book Moving Services'}
-                {activeTab === 'deliveries' && 'Schedule a Delivery'}
-              </h2>
+      <main>
+        <section className="border-b border-slate-200 bg-white">
+          <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 sm:py-14">
+            <p className="text-sm font-semibold text-blue-700">DENUEL Transport</p>
+            <h1 className="mt-3 max-w-3xl text-4xl font-bold tracking-[-0.045em] sm:text-5xl">
+              Request transport using real locations and configured prices
+            </h1>
+            <p className="mt-4 max-w-3xl text-base leading-7 text-slate-600">
+              Search Zambia locations, choose a suitable vehicle and get an estimate from DENUEL’s transport pricing rules before creating the request.
+            </p>
 
-              <div className="space-y-6">
-                {/* Pickup Location */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Pickup Location</label>
-                  <div className="relative">
-                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-green-500">📍</span>
-                    <input
-                      type="text"
-                      value={pickupAddress}
-                      onChange={(e) => setPickupAddress(e.target.value)}
-                      placeholder="Enter pickup address..."
-                      className="w-full pl-12 pr-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                    />
-                  </div>
-                </div>
-
-                {/* Dropoff Location */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Dropoff Location</label>
-                  <div className="relative">
-                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-red-500">📍</span>
-                    <input
-                      type="text"
-                      value={dropoffAddress}
-                      onChange={(e) => setDropoffAddress(e.target.value)}
-                      placeholder="Enter dropoff address..."
-                      className="w-full pl-12 pr-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                    />
-                  </div>
-                </div>
-
-                {/* Vehicle Type Selection */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Vehicle Type</label>
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                    {vehicleTypes
-                      .filter(v => {
-                        if (activeTab === 'book') return ['car', 'suv', 'van'].includes(v.id);
-                        if (activeTab === 'moving') return ['truck', 'moving', 'van'].includes(v.id);
-                        return true;
-                      })
-                      .map((vehicle) => (
-                        <button
-                          key={vehicle.id}
-                          onClick={() => setVehicleType(vehicle.id)}
-                          className={`p-4 rounded-xl border-2 text-left transition-colors ${
-                            vehicleType === vehicle.id
-                              ? 'border-purple-500 bg-purple-50'
-                              : 'border-gray-200 hover:border-purple-200'
-                          }`}
-                        >
-                          <div className="text-2xl mb-2">{vehicle.icon}</div>
-                          <div className="font-semibold text-gray-900">{vehicle.name}</div>
-                          <div className="text-sm text-gray-500">{vehicle.description}</div>
-                          <div className="text-sm font-medium text-purple-600 mt-2">From K{vehicle.basePrice}</div>
-                        </button>
-                      ))}
-                  </div>
-                </div>
-
-                {/* Schedule (Optional) */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Schedule for Later (Optional)</label>
-                  <div className="grid grid-cols-2 gap-4">
-                    <input
-                      type="date"
-                      value={scheduledDate}
-                      onChange={(e) => setScheduledDate(e.target.value)}
-                      min={new Date().toISOString().split('T')[0]}
-                      className="px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500"
-                    />
-                    <input
-                      type="time"
-                      value={scheduledTime}
-                      onChange={(e) => setScheduledTime(e.target.value)}
-                      className="px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500"
-                    />
-                  </div>
-                </div>
-
-                {/* Get Estimate Button */}
+            <div className="mt-7 flex flex-wrap gap-2">
+              {([
+                ['ride', 'Passenger ride'],
+                ['moving', 'Moving'],
+                ['delivery', 'Delivery'],
+              ] as const).map(([value, label]) => (
                 <button
-                  onClick={getEstimate}
-                  disabled={!pickupAddress || !dropoffAddress || estimating}
-                  className="w-full bg-purple-600 text-white py-4 rounded-xl font-semibold hover:bg-purple-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  key={value}
+                  type="button"
+                  onClick={() => changeMode(value)}
+                  className={
+                    'border px-4 py-2.5 text-sm font-semibold ' +
+                    (mode === value
+                      ? 'border-slate-950 bg-slate-950 text-white'
+                      : 'border-slate-300 bg-white text-slate-600 hover:border-slate-950')
+                  }
                 >
-                  {estimating ? (
-                    <span className="flex items-center justify-center gap-2">
-                      <svg className="animate-spin h-5 w-5" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                      </svg>
-                      Calculating...
-                    </span>
-                  ) : (
-                    'Get Price Estimate'
-                  )}
+                  {label}
                 </button>
-
-                {/* Price Estimate */}
-                {estimate && (
-                  <div className="bg-purple-50 rounded-xl p-6 border border-purple-100">
-                    <h3 className="font-semibold text-gray-900 mb-4">Trip Estimate</h3>
-                    <div className="grid grid-cols-3 gap-4 mb-6">
-                      <div className="text-center">
-                        <div className="text-3xl font-bold text-purple-600">K{estimate.price}</div>
-                        <div className="text-sm text-gray-600">Estimated Price</div>
-                      </div>
-                      <div className="text-center">
-                        <div className="text-3xl font-bold text-gray-900">{estimate.duration}</div>
-                        <div className="text-sm text-gray-600">Duration</div>
-                      </div>
-                      <div className="text-center">
-                        <div className="text-3xl font-bold text-gray-900">{estimate.distance}</div>
-                        <div className="text-sm text-gray-600">Distance</div>
-                      </div>
-                    </div>
-                    <button
-                      onClick={handleBooking}
-                      disabled={booking}
-                      className="w-full bg-green-600 text-white py-4 rounded-xl font-semibold hover:bg-green-700 transition-colors disabled:opacity-50"
-                    >
-                      {booking ? 'Booking...' : 'Confirm Booking'}
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* How It Works */}
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mt-6">
-              <h3 className="text-xl font-bold text-gray-900 mb-6">How It Works</h3>
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                <div className="text-center">
-                  <div className="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-3">
-                    <span className="text-xl">1</span>
-                  </div>
-                  <h4 className="font-semibold mb-1">Enter Location</h4>
-                  <p className="text-sm text-gray-600">Tell us where you're going</p>
-                </div>
-                <div className="text-center">
-                  <div className="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-3">
-                    <span className="text-xl">2</span>
-                  </div>
-                  <h4 className="font-semibold mb-1">Choose Vehicle</h4>
-                  <p className="text-sm text-gray-600">Select the right vehicle</p>
-                </div>
-                <div className="text-center">
-                  <div className="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-3">
-                    <span className="text-xl">3</span>
-                  </div>
-                  <h4 className="font-semibold mb-1">Get Matched</h4>
-                  <p className="text-sm text-gray-600">Driver accepts your request</p>
-                </div>
-                <div className="text-center">
-                  <div className="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-3">
-                    <span className="text-xl">4</span>
-                  </div>
-                  <h4 className="font-semibold mb-1">Enjoy Your Ride</h4>
-                  <p className="text-sm text-gray-600">Track and pay securely</p>
-                </div>
-              </div>
+              ))}
             </div>
           </div>
+        </section>
 
-          {/* Sidebar */}
+        <div className="mx-auto grid max-w-7xl gap-7 px-4 py-8 sm:px-6 lg:grid-cols-[minmax(0,1fr)_340px]">
           <div className="space-y-6">
-            {/* Become a Driver CTA */}
-            <div className="bg-gradient-to-r from-yellow-400 to-orange-500 rounded-2xl p-6 text-white">
-              <h3 className="text-xl font-bold mb-2">Become a Driver</h3>
-              <p className="text-yellow-100 mb-4">Earn money driving with Denuel. Flexible hours, weekly payouts.</p>
-              <Link
-                href="/driver/apply"
-                className="block w-full bg-white text-orange-600 text-center py-3 rounded-xl font-semibold hover:bg-orange-50 transition-colors"
-              >
-                Apply Now
-              </Link>
-            </div>
+            <section className="border border-slate-200 bg-white p-5 sm:p-7">
+              <h2 className="text-xl font-semibold">1. Choose pickup and drop-off</h2>
+              <p className="mt-1 text-sm leading-6 text-slate-500">
+                Search for each place and select a result so DENUEL has real coordinates for distance and pricing.
+              </p>
 
-            {/* Safety Features */}
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-              <h3 className="font-bold text-gray-900 mb-4">Safety First</h3>
-              <ul className="space-y-3">
-                <li className="flex items-center gap-3">
-                  <span className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center text-green-600">✓</span>
-                  <span className="text-gray-700">Verified drivers</span>
-                </li>
-                <li className="flex items-center gap-3">
-                  <span className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center text-green-600">✓</span>
-                  <span className="text-gray-700">Real-time tracking</span>
-                </li>
-                <li className="flex items-center gap-3">
-                  <span className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center text-green-600">✓</span>
-                  <span className="text-gray-700">24/7 support</span>
-                </li>
-                <li className="flex items-center gap-3">
-                  <span className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center text-green-600">✓</span>
-                  <span className="text-gray-700">Secure payments</span>
-                </li>
-                <li className="flex items-center gap-3">
-                  <span className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center text-green-600">✓</span>
-                  <span className="text-gray-700">Trip insurance</span>
-                </li>
-              </ul>
-            </div>
+              <div className="mt-6 grid gap-5">
+                <LocationField
+                  label="Pickup location"
+                  placeholder="e.g. Arcades Shopping Mall, Lusaka"
+                  value={pickupText}
+                  onChange={(value) => {
+                    setPickupText(value);
+                    setPickup(null);
+                    clearEstimate();
+                  }}
+                  onSelect={(location) => {
+                    setPickup(location);
+                    setPickupText(location.label);
+                    clearEstimate();
+                  }}
+                  onUnauthorized={goToLogin}
+                />
 
-            {/* Recent Trips */}
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-              <h3 className="font-bold text-gray-900 mb-4">Popular Routes</h3>
-              <div className="space-y-3">
-                <button className="w-full text-left p-3 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors">
-                  <div className="font-medium">Lusaka → Kitwe</div>
-                  <div className="text-sm text-gray-600">From K450</div>
-                </button>
-                <button className="w-full text-left p-3 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors">
-                  <div className="font-medium">Lusaka → Livingstone</div>
-                  <div className="text-sm text-gray-600">From K500</div>
-                </button>
-                <button className="w-full text-left p-3 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors">
-                  <div className="font-medium">Lusaka City Rides</div>
-                  <div className="text-sm text-gray-600">From K50</div>
+                <LocationField
+                  label="Drop-off location"
+                  placeholder="e.g. Kafue Road, Lusaka"
+                  value={dropoffText}
+                  onChange={(value) => {
+                    setDropoffText(value);
+                    setDropoff(null);
+                    clearEstimate();
+                  }}
+                  onSelect={(location) => {
+                    setDropoff(location);
+                    setDropoffText(location.label);
+                    clearEstimate();
+                  }}
+                  onUnauthorized={goToLogin}
+                />
+              </div>
+
+              <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                <div className="border border-slate-200 bg-slate-50 p-4">
+                  <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">Pickup selected</div>
+                  <div className="mt-2 text-sm font-semibold">{pickup?.label || 'Not selected'}</div>
+                </div>
+                <div className="border border-slate-200 bg-slate-50 p-4">
+                  <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">Drop-off selected</div>
+                  <div className="mt-2 text-sm font-semibold">{dropoff?.label || 'Not selected'}</div>
+                </div>
+              </div>
+            </section>
+
+            <section className="border border-slate-200 bg-white p-5 sm:p-7">
+              <h2 className="text-xl font-semibold">2. Choose a vehicle</h2>
+              <p className="mt-1 text-sm leading-6 text-slate-500">
+                Only vehicle types supported by the transport system are shown. The page does not display made-up “from” prices.
+              </p>
+
+              <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {visibleVehicles.map((vehicle) => (
+                  <button
+                    key={vehicle.id}
+                    type="button"
+                    onClick={() => {
+                      setVehicleType(vehicle.id);
+                      clearEstimate();
+                    }}
+                    className={
+                      'border p-4 text-left transition ' +
+                      (vehicleType === vehicle.id
+                        ? 'border-slate-950 bg-slate-50'
+                        : 'border-slate-200 hover:border-slate-400')
+                    }
+                  >
+                    <div className="font-semibold">{vehicle.name}</div>
+                    <p className="mt-2 text-sm leading-6 text-slate-500">{vehicle.description}</p>
+                  </button>
+                ))}
+              </div>
+            </section>
+
+            <section className="border border-slate-200 bg-white p-5 sm:p-7">
+              <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
+                <div>
+                  <h2 className="text-xl font-semibold">3. Get a real estimate</h2>
+                  <p className="mt-1 text-sm leading-6 text-slate-500">
+                    Distance and duration come from the selected coordinates. Price comes from active transport pricing rules and configured multipliers.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={getEstimate}
+                  disabled={!pickup || !dropoff || estimating}
+                  className="bg-blue-600 px-5 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {estimating ? 'Calculating…' : estimate ? 'Recalculate estimate' : 'Get price estimate'}
                 </button>
               </div>
-            </div>
 
-            {/* Contact Support */}
-            <div className="bg-gray-900 rounded-2xl p-6 text-white">
-              <h3 className="font-bold mb-2">Need Help?</h3>
-              <p className="text-gray-400 text-sm mb-4">Our support team is available 24/7</p>
-              <a
-                href="tel:+260123456789"
-                className="block w-full bg-white text-gray-900 text-center py-3 rounded-xl font-semibold hover:bg-gray-100 transition-colors"
-              >
-                Call Support
-              </a>
-            </div>
+              {error && (
+                <div className="mt-5 border border-red-200 bg-red-50 p-4 text-sm leading-6 text-red-700">
+                  {error}
+                </div>
+              )}
+
+              {estimate && (
+                <div className="mt-6">
+                  <div className="grid grid-cols-2 border-l border-t border-slate-200 sm:grid-cols-3">
+                    <div className="border-b border-r border-slate-200 p-4">
+                      <div className="text-xs text-slate-500">Estimated price</div>
+                      <div className="mt-2 text-2xl font-bold">{money(estimate.estimate.finalPrice)}</div>
+                    </div>
+                    <div className="border-b border-r border-slate-200 p-4">
+                      <div className="text-xs text-slate-500">Straight-line distance</div>
+                      <div className="mt-2 text-2xl font-bold">{Number(estimate.distanceKm).toFixed(1)} km</div>
+                    </div>
+                    <div className="border-b border-r border-slate-200 p-4">
+                      <div className="text-xs text-slate-500">Estimated duration</div>
+                      <div className="mt-2 text-2xl font-bold">{Math.round(estimate.durationMin)} min</div>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 border border-slate-200 bg-slate-50 p-4">
+                    <div className="text-sm font-semibold">Price breakdown</div>
+                    <div className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
+                      <div className="flex justify-between gap-4"><span className="text-slate-500">Base fare</span><strong>{money(estimate.estimate.components.base)}</strong></div>
+                      <div className="flex justify-between gap-4"><span className="text-slate-500">Distance component</span><strong>{money(estimate.estimate.components.distanceCost)}</strong></div>
+                      <div className="flex justify-between gap-4"><span className="text-slate-500">Time component</span><strong>{money(estimate.estimate.components.timeCost)}</strong></div>
+                      <div className="flex justify-between gap-4"><span className="text-slate-500">Configured multiplier</span><strong>×{Number(estimate.estimate.multipliers.totalMultiplier || 1).toFixed(2)}</strong></div>
+                    </div>
+
+                    {(estimate.estimate.multipliers.surge.applied ||
+                      estimate.estimate.multipliers.night.applied ||
+                      estimate.estimate.multipliers.weather.applied) && (
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {estimate.estimate.multipliers.surge.applied && (
+                          <span className="border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-800">
+                            {estimate.estimate.multipliers.surge.reason || 'Demand multiplier'}
+                          </span>
+                        )}
+                        {estimate.estimate.multipliers.night.applied && (
+                          <span className="border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-800">
+                            {estimate.estimate.multipliers.night.reason || 'Night multiplier'}
+                          </span>
+                        )}
+                        {estimate.estimate.multipliers.weather.applied && (
+                          <span className="border border-slate-300 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700">
+                            {estimate.estimate.multipliers.weather.reason || 'Weather multiplier'}
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={requestTransport}
+                    disabled={booking}
+                    className="mt-5 w-full bg-slate-950 px-5 py-3.5 text-sm font-semibold text-white disabled:opacity-40"
+                  >
+                    {booking ? 'Creating request…' : 'Confirm and request transport'}
+                  </button>
+                </div>
+              )}
+            </section>
+
+            <section className="border border-slate-200 bg-white p-5 sm:p-7">
+              <h2 className="text-lg font-semibold">How the request works</h2>
+              <div className="mt-5 grid gap-4 sm:grid-cols-3">
+                {[
+                  ['1', 'Price first', 'DENUEL calculates the estimate from the selected locations and configured vehicle pricing.'],
+                  ['2', 'Verified drivers only', 'Matching drivers must be approved, verified and online before they can receive and accept requests.'],
+                  ['3', 'Driver accepts', 'A request becomes assigned only when an eligible driver successfully accepts it.'],
+                ].map(([number, title, description]) => (
+                  <div key={number} className="border border-slate-200 p-4">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-950 text-xs font-semibold text-white">{number}</div>
+                    <div className="mt-4 font-semibold">{title}</div>
+                    <p className="mt-2 text-sm leading-6 text-slate-500">{description}</p>
+                  </div>
+                ))}
+              </div>
+            </section>
           </div>
+
+          <aside className="space-y-5 lg:sticky lg:top-24 lg:h-fit">
+            <section className="border border-slate-200 bg-white p-5">
+              <h2 className="font-semibold">Driver trust controls</h2>
+              <div className="mt-4 space-y-3 text-sm leading-6 text-slate-600">
+                <p>Drivers must pass DENUEL approval before going online.</p>
+                <p>Required driver verification documents are stored privately and reviewed by an administrator.</p>
+                <p>Suspended drivers cannot receive or accept transport requests.</p>
+              </div>
+            </section>
+
+            <section className="border border-slate-200 bg-white p-5">
+              <h2 className="font-semibold">Want to drive with DENUEL?</h2>
+              <p className="mt-2 text-sm leading-6 text-slate-600">
+                Create a driver profile, add your vehicle and submit the required verification documents for review.
+              </p>
+              <Link href="/driver/apply" className="mt-4 inline-flex bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white">
+                Driver application
+              </Link>
+            </section>
+
+            <section className="border border-blue-200 bg-blue-50 p-5">
+              <h2 className="font-semibold">No fake route prices</h2>
+              <p className="mt-2 text-sm leading-6 text-slate-600">
+                DENUEL shows a price only after real pickup/drop-off coordinates and an active pricing rule are available.
+              </p>
+            </section>
+          </aside>
         </div>
-      </div>
-    </main>
+      </main>
+    </div>
   );
 }
