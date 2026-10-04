@@ -51,11 +51,17 @@ const categories: { value: ServiceCategory; label: string; image?: string }[] = 
   { value: 'PLUMBER', label: 'Plumbing', image: '/services/plumbing.webp' },
   { value: 'CLEANER', label: 'Cleaning', image: '/services/cleaning.webp' },
   { value: 'MOVER', label: 'Moving', image: '/services/moving.webp' },
-  { value: 'HOME_INSPECTOR', label: 'Inspection' },
+  { value: 'CONTRACTOR', label: 'Construction / contractor' },
+  { value: 'HOME_INSPECTOR', label: 'Home inspection' },
   { value: 'INTERIOR_DESIGNER', label: 'Interior design' },
+  { value: 'HVAC', label: 'HVAC' },
+  { value: 'ROOFING', label: 'Roofing' },
+  { value: 'FLOORING', label: 'Flooring' },
+  { value: 'PHOTOGRAPHER', label: 'Property photography' },
+  { value: 'OTHER', label: 'Other services' },
 ];
 
-export default function ServicesMarketplace({ defaultCategory, defaultCity = 'Lusaka', className = '' }: Props) {
+export default function ServicesMarketplace({ defaultCategory, defaultCity = '', className = '' }: Props) {
   const [providers, setProviders] = useState<ServiceProvider[]>([]);
   const [selectedProvider, setSelectedProvider] = useState<ServiceProvider | null>(null);
   const [reviews, setReviews] = useState<ServiceReview[]>([]);
@@ -72,7 +78,17 @@ export default function ServicesMarketplace({ defaultCategory, defaultCity = 'Lu
 
     setLoading(true);
     fetch('/api/services?' + p.toString())
-      .then((r) => r.json())
+      .then(async (r) => {
+        const text = await r.text();
+        let data: any = {};
+        try {
+          data = text ? JSON.parse(text) : {};
+        } catch {
+          data = {};
+        }
+        if (!r.ok) throw new Error(data?.error || text || 'Unable to load service providers.');
+        return data;
+      })
       .then((data) => setProviders(Array.isArray(data.providers) ? data.providers : []))
       .catch(() => setProviders([]))
       .finally(() => setLoading(false));
@@ -137,6 +153,7 @@ export default function ServicesMarketplace({ defaultCategory, defaultCity = 'Lu
         </div>
 
         <select value={city} onChange={(e) => setCity(e.target.value)} className="h-10 border border-slate-300 bg-white px-3 text-sm">
+          <option value="">All Zambia</option>
           <option>Lusaka</option>
           <option>Kitwe</option>
           <option>Ndola</option>
