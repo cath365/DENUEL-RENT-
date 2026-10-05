@@ -3,8 +3,8 @@ generator client {
 }
 
 datasource db {
-  provider = "mysql"
-  url      = env("DATABASE_URL")
+  provider = "postgresql"
+  url      = env("PRISMA_DATABASE_URL")
 }
 
 enum UserRole {
@@ -1199,7 +1199,7 @@ model LeaseTemplate {
   landlord    User     @relation(fields: [landlordId], references: [id])
   landlordId  String
   name        String
-  content     String   @db.LongText
+  content     String   @db.Text
   variables   Json?    // Placeholders in the template
   isDefault   Boolean  @default(false)
   createdAt   DateTime @default(now())
@@ -1215,7 +1215,7 @@ model LeaseAgreement {
   tenant          User     @relation("TenantLeases", fields: [tenantId], references: [id])
   tenantId        String
   templateId      String?
-  content         String   @db.LongText
+  content         String   @db.Text
   monthlyRent     Float
   deposit         Float?
   startDate       DateTime
@@ -1400,7 +1400,7 @@ model Guide {
   slug        String   @unique
   title       String
   excerpt     String?  @db.Text
-  content     String   @db.LongText
+  content     String   @db.Text
   category    String   // BUYING, SELLING, RENTING, INVESTING, FIRST_TIME, MOVING
   coverImage  String?
   author      String?
