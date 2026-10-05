@@ -5,6 +5,8 @@ import { z } from 'zod';
 
 const ToggleSchema = z.object({ propertyId: z.string() });
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(req: Request) {
   try {
     const user = await requireAuth(req);

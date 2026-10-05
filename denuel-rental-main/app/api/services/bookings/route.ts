@@ -71,6 +71,7 @@ export async function GET(req: NextRequest) {
       },
     });
   } catch (error) {
+    if (error instanceof Response) return error;
     console.error('Fetch service bookings error:', error);
     return NextResponse.json({ error: 'Failed to fetch bookings' }, { status: 500 });
   }
@@ -145,6 +146,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json(booking, { status: 201 });
   } catch (error) {
+    if (error instanceof Response) return error;
     console.error('Create service booking error:', error);
     return NextResponse.json({ error: 'Failed to create booking' }, { status: 500 });
   }
@@ -196,6 +198,7 @@ export async function PUT(req: NextRequest) {
 
     return NextResponse.json(updated);
   } catch (error) {
+    if (error instanceof Response) return error;
     console.error('Update service booking error:', error);
     return NextResponse.json({ error: 'Failed to update booking' }, { status: 500 });
   }

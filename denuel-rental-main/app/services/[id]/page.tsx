@@ -103,6 +103,7 @@ export default function ServiceProviderProfilePage() {
   const portfolio = Array.isArray(provider.portfolio) ? provider.portfolio : [];
   const reviews = Array.isArray(provider.reviews) ? provider.reviews : [];
   const details = provider.categoryDetails && typeof provider.categoryDetails === 'object' ? provider.categoryDetails : {};
+  const verificationSignals = provider.verificationSignals || {};
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -279,14 +280,14 @@ export default function ServiceProviderProfilePage() {
               <div className="mt-4 space-y-3 text-sm">
                 {(isCompany ? [
                   ['DENUEL verified', provider.isVerified],
-                  ['Company registration supplied', Boolean(provider.companyRegistrationNumber)],
-                  ['TPIN supplied', Boolean(provider.tpinNumber)],
-                  ['Licence supplied', Boolean(provider.licenseNumber)],
+                  ['Company registration supplied', Boolean(verificationSignals.companyRegistrationSupplied)],
+                  ['TPIN supplied', Boolean(verificationSignals.tpinSupplied)],
+                  ['Licence supplied', Boolean(verificationSignals.licenseSupplied)],
                   ['Insured', Boolean(provider.insured)],
                   ['Staff background checks declared', Boolean(provider.backgroundCheckedStaff)],
                 ] : [
                   ['DENUEL verified', provider.isVerified],
-                  ['Identity supplied', Boolean(provider.nrcNumber)],
+                  ['Identity supplied', Boolean(verificationSignals.identitySupplied)],
                   ['Professional / trade licence supplied', Boolean(provider.licenseNumber)],
                   ['Background check declared', Boolean(provider.backgroundCheckedStaff)],
                   ['Insured', Boolean(provider.insured)],

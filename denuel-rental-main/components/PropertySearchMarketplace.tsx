@@ -19,12 +19,24 @@ type Props = {
 };
 
 const cities = ['Lusaka', 'Kitwe', 'Ndola', 'Livingstone', 'Kabwe', 'Chipata', 'Chingola', 'Mufulira', 'Solwezi'];
-const propertyTypes = ['HOUSE', 'APARTMENT', 'TOWNHOUSE', 'STUDIO', 'ROOM', 'LAND', 'COMMERCIAL'];
+const propertyTypes = [
+  ['HOUSE', 'House'],
+  ['APARTMENT', 'Apartment'],
+  ['DUPLEX', 'Duplex'],
+  ['STUDIO', 'Studio'],
+  ['ROOM', 'Room'],
+  ['OFFICE', 'Office space'],
+  ['SHOP', 'Shop'],
+  ['WAREHOUSE', 'Warehouse'],
+  ['LAND', 'Land'],
+  ['OTHER', 'Other'],
+] as const;
 
 export default function PropertySearchMarketplace({ mode, title, description }: Props) {
   const [properties, setProperties] = useState<any[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [searchError, setSearchError] = useState('');
   const [view, setView] = useState<'grid' | 'map'>('grid');
   const [showFilters, setShowFilters] = useState(false);
   const [page, setPage] = useState(1);
@@ -82,8 +94,23 @@ export default function PropertySearchMarketplace({ mode, title, description }: 
     let cancelled = false;
     setLoading(true);
 
+    setSearchError('');
     fetch('/api/search?' + params.toString())
-      .then((res) => res.json())
+      .then(async (res) => {
+        const text = await res.text();
+        let data: any = {};
+        try {
+          data = text ? JSON.parse(text) : {};
+        } catch {
+          data = {};
+        }
+
+        if (!res.ok) {
+          throw new Error(data?.error || text || 'Property search is temporarily unavailable.');
+        }
+
+        return data;
+      })
       .then((data) => {
         if (cancelled) return;
         setProperties(Array.isArray(data.items) ? data.items : []);
@@ -94,6 +121,7 @@ export default function PropertySearchMarketplace({ mode, title, description }: 
         if (!cancelled) {
           setProperties([]);
           setTotal(0);
+          setSearchError(error instanceof Error ? error.message : 'Property search is temporarily unavailable.');
         }
       })
       .finally(() => !cancelled && setLoading(false));
@@ -173,21 +201,21 @@ export default function PropertySearchMarketplace({ mode, title, description }: 
 
           {showFilters && (
             <div className="grid gap-3 border-x border-b border-slate-300 bg-white p-4 sm:grid-cols-2 lg:grid-cols-4">
-              <input value={filters.minPrice} onChange={(e) => setFilters({ ...filters, minPrice: e.target.value })} type="number" placeholder="Minimum price (K)" className="h-11 border border-slate-300 px-3 text-sm" />
-              <input value={filters.maxPrice} onChange={(e) => setFilters({ ...filters, maxPrice: e.target.value })} type="number" placeholder="Maximum price (K)" className="h-11 border border-slate-300 px-3 text-sm" />
-              <select value={filters.bedrooms} onChange={(e) => setFilters({ ...filters, bedrooms: e.target.value })} className="h-11 border border-slate-300 px-3 text-sm">
+              <input value={filters.minPrice} onChange={(e) => { setFilters({ ...filters, minPrice: e.target.value }); setPage(1); }} type="number" placeholder="Minimum price (K)" className="h-11 border border-slate-300 px-3 text-sm" />
+              <input value={filters.maxPrice} onChange={(e) => { setFilters({ ...filters, maxPrice: e.target.value }); setPage(1); }} type="number" placeholder="Maximum price (K)" className="h-11 border border-slate-300 px-3 text-sm" />
+              <select value={filters.bedrooms} onChange={(e) => { setFilters({ ...filters, bedrooms: e.target.value }); setPage(1); }} className="h-11 border border-slate-300 px-3 text-sm">
                 <option value="">Any bedrooms</option><option value="1">1+</option><option value="2">2+</option><option value="3">3+</option><option value="4">4+</option>
               </select>
-              <select value={filters.bathrooms} onChange={(e) => setFilters({ ...filters, bathrooms: e.target.value })} className="h-11 border border-slate-300 px-3 text-sm">
+              <select value={filters.bathrooms} onChange={(e) => { setFilters({ ...filters, bathrooms: e.target.value }); setPage(1); }} className="h-11 border border-slate-300 px-3 text-sm">
                 <option value="">Any bathrooms</option><option value="1">1+</option><option value="2">2+</option><option value="3">3+</option>
               </select>
-              <select value={filters.propertyType} onChange={(e) => setFilters({ ...filters, propertyType: e.target.value })} className="h-11 border border-slate-300 px-3 text-sm">
+              <select value={filters.propertyType} onChange={(e) => { setFilters({ ...filters, propertyType: e.target.value }); setPage(1); }} className="h-11 border border-slate-300 px-3 text-sm">
                 <option value="">Any property type</option>
-                {propertyTypes.map((type) => <option key={type} value={type}>{type.replaceAll('_', ' ').toLowerCase()}</option>)}
+                {propertyTypes.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
               </select>
-              <label className="flex h-11 items-center gap-2 border border-slate-300 px-3 text-sm text-slate-700"><input type="checkbox" checked={filters.furnished} onChange={(e) => setFilters({ ...filters, furnished: e.target.checked })} /> Furnished</label>
-              <label className="flex h-11 items-center gap-2 border border-slate-300 px-3 text-sm text-slate-700"><input type="checkbox" checked={filters.petsAllowed} onChange={(e) => setFilters({ ...filters, petsAllowed: e.target.checked })} /> Pets allowed</label>
-              <label className="flex h-11 items-center gap-2 border border-slate-300 px-3 text-sm text-slate-700"><input type="checkbox" checked={filters.hasParking} onChange={(e) => setFilters({ ...filters, hasParking: e.target.checked })} /> Parking</label>
+              <label className="flex h-11 items-center gap-2 border border-slate-300 px-3 text-sm text-slate-700"><input type="checkbox" checked={filters.furnished} onChange={(e) => { setFilters({ ...filters, furnished: e.target.checked }); setPage(1); }} /> Furnished</label>
+              <label className="flex h-11 items-center gap-2 border border-slate-300 px-3 text-sm text-slate-700"><input type="checkbox" checked={filters.petsAllowed} onChange={(e) => { setFilters({ ...filters, petsAllowed: e.target.checked }); setPage(1); }} /> Pets allowed</label>
+              <label className="flex h-11 items-center gap-2 border border-slate-300 px-3 text-sm text-slate-700"><input type="checkbox" checked={filters.hasParking} onChange={(e) => { setFilters({ ...filters, hasParking: e.target.checked }); setPage(1); }} /> Parking</label>
             </div>
           )}
         </div>
@@ -209,7 +237,7 @@ export default function PropertySearchMarketplace({ mode, title, description }: 
             <Link href="/saved-search" className="border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:border-slate-950">
               Saved searches
             </Link>
-            <select value={filters.sort} onChange={(e) => setFilters({ ...filters, sort: e.target.value })} className="h-10 border border-slate-300 bg-white px-3 text-sm">
+            <select value={filters.sort} onChange={(e) => { setFilters({ ...filters, sort: e.target.value }); setPage(1); }} className="h-10 border border-slate-300 bg-white px-3 text-sm">
               <option value="newest">Newest</option>
               <option value="price-asc">Price: low to high</option>
               <option value="price-desc">Price: high to low</option>
@@ -226,6 +254,14 @@ export default function PropertySearchMarketplace({ mode, title, description }: 
           <div className="grid gap-5 py-7 sm:grid-cols-2 lg:grid-cols-4">
             {Array.from({ length: 8 }).map((_, i) => <div key={i} className="aspect-[4/5] animate-pulse border border-slate-200 bg-slate-100" />)}
           </div>
+        ) : searchError ? (
+          <div className="my-10 border border-red-200 bg-red-50 p-6 sm:p-8">
+            <h2 className="text-lg font-semibold text-red-900">We could not load the property results</h2>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-red-800">{searchError}</p>
+            <button onClick={() => window.location.reload()} className="mt-5 border border-red-300 bg-white px-4 py-2.5 text-sm font-semibold text-red-800">
+              Try again
+            </button>
+          </div>
         ) : properties.length === 0 ? (
           <div className="my-10 border border-slate-200 bg-slate-50 p-10">
             <h2 className="text-xl font-semibold text-slate-950">No matching properties</h2>
@@ -233,7 +269,7 @@ export default function PropertySearchMarketplace({ mode, title, description }: 
             <button onClick={clearFilters} className="mt-5 bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white">Clear filters</button>
           </div>
         ) : view === 'map' ? (
-          <div className="mt-7"><MapSplitView properties={properties} /></div>
+          <div className="mt-7"><MapSplitView properties={properties} listingType={mode} /></div>
         ) : (
           <div className="mt-7 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
             {properties.map((property) => (

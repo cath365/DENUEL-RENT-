@@ -3,6 +3,7 @@ import { cookies } from 'next/headers';
 import Header from '../../components/Header';
 import prisma from '../../lib/prisma';
 import { requireAuth } from '../../lib/auth';
+import { redirect } from 'next/navigation';
 
 export const dynamic = 'force-dynamic';
 
@@ -58,6 +59,9 @@ export default async function DashboardPage() {
     );
   }
 
+  if (user.role === 'DRIVER') redirect('/driver');
+  if (user.role === 'SERVICE_PROVIDER') redirect('/services/dashboard');
+
   if (user.role === 'ADMIN') {
     const [properties, users, applications, bookings, pendingProperties, openReports, revenue, recentUsers] = await Promise.all([
       prisma.property.count(),
@@ -94,7 +98,7 @@ export default async function DashboardPage() {
             <Stat label="Bookings" value={bookings} />
             <Stat label="Pending properties" value={pendingProperties} />
             <Stat label="Open listing reports" value={openReports} />
-            <Stat label="Environment" value="Production" />
+            <Stat label="Environment" value={process.env.VERCEL_ENV || process.env.NODE_ENV || 'unknown'} />
           </section>
 
           <section className="mt-8 grid gap-6 lg:grid-cols-[1fr_340px]">
@@ -165,6 +169,7 @@ export default async function DashboardPage() {
               ['Rent payments', '/landlord/payments'],
               ['Maintenance', '/landlord/maintenance'],
               ['Expenses', '/landlord/expenses'],
+              ['My transport requests', '/transport/requests'],
             ]} />
             <div className="border border-slate-200 bg-white p-6">
               <h2 className="text-xl font-semibold text-slate-950">Property management</h2>
@@ -209,6 +214,7 @@ export default async function DashboardPage() {
               ['Marketing', '/dashboard/marketing'],
               ['Commission', '/dashboard/commission'],
               ['Public agent directory', '/agents'],
+              ['My transport requests', '/transport/requests'],
             ]} />
           </div>
         </main>
@@ -259,7 +265,7 @@ export default async function DashboardPage() {
                       <div className="text-sm font-semibold text-slate-900">{application.property.title}</div>
                       <div className="mt-1 text-sm text-slate-500">{[application.property.area, application.property.city].filter(Boolean).join(', ')}</div>
                     </div>
-                    <div className="text-xs font-semibold text-slate-600">{application.status}</div>
+                    <div className="text-xs font-semibold text-slate-600">{String(application.status).replaceAll('_', ' ').toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase())}</div>
                   </Link>
                 ))}
               </div>
@@ -276,6 +282,7 @@ export default async function DashboardPage() {
             ['Saved properties', '/favorites'],
             ['Saved searches', '/saved-search'],
             ['Notifications', '/notifications'],
+            ['My transport requests', '/transport/requests'],
             ['Renter hub', '/renter-hub'],
             ['Rent payments', '/rent-payment'],
           ]} />

@@ -1,29 +1,93 @@
-import { requireAuth } from '../../../../../../lib/auth';
+import { NextRequest, NextResponse } from 'next/server';
+import { requireAuth, requireCsrf } from '../../../../../../lib/auth';
 import prisma from '../../../../../../lib/prisma';
 import hub from '../../../../../../lib/transport/realtime';
 
 export const dynamic = 'force-dynamic';
 
-export async function POST(req: Request, { params }: { params: { id: string } }) {
-  const user = await requireAuth(req, ['DRIVER']);
-  const profile = await prisma.driverProfile.findUnique({ where: { userId: user.id } });
-  if (!profile) return new Response('Driver profile not found', { status: 404 });
-  const id = params.id;
+export async function POST(
+  req: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const user = await requireAuth(req, ['DRIVER']);
+    requireCsrf(req);
 
-  // Transaction to prevent race conditions
-  const result = await prisma.$transaction(async (tx) => {
-    const tr = await tx.transportRequest.findUnique({ where: { id } });
-    if (!tr) return null;
-    if (tr.assignedDriverId) return { status: 'already_assigned' };
-    const updated = await tx.transportRequest.update({ where: { id }, data: { assignedDriverId: profile.id, status: 'DRIVER_ASSIGNED' } });
-    return updated;
-  });
+    const profile = await prisma.driverProfile.findUnique({
+      where: { userId: user.id },
+      include: {
+        user: {
+          select: { isSuspended: true },
+        },
+      },
+    });
 
-  if (!result) return new Response('Not found', { status: 404 });
-  if ((result as any).status === 'already_assigned') return new Response('Already assigned', { status: 409 });
+    if (!profile) {
+      return NextResponse.json({ error: 'Driver profile not found' }, { status: 404 });
+    }
 
-  // notify tenant
-  hub.sendToUser((result as any).tenantId, 'driver_assigned', { requestId: id, driverId: profile.userId });
+    if (
+      profile.user.isSuspended ||
+      !profile.isApproved ||
+      profile.verificationStatus !== 'VERIFIED' ||
+      !profile.isOnline
+    ) {
+      return NextResponse.json(
+        { error: 'You must be approved, verified and online before accepting requests.' },
+        { status: 403 }
+      );
+    }
 
-  return new Response(JSON.stringify({ ok: true }), { headers: { 'Content-Type': 'application/json' } });
+    const requestId = params.id;
+
+    const transportRequest = await prisma.transportRequest.findUnique({
+      where: { id: requestId },
+    });
+
+    if (!transportRequest) {
+      return NextResponse.json({ error: 'Transport request not found' }, { status: 404 });
+    }
+
+    if (transportRequest.vehicleType !== profile.vehicleType) {
+      return NextResponse.json({ error: 'This request requires a different vehicle type.' }, { status: 409 });
+    }
+
+    if (transportRequest.status !== 'REQUESTED' || transportRequest.assignedDriverId) {
+      return NextResponse.json({ error: 'This request is no longer available.' }, { status: 409 });
+    }
+
+    if (transportRequest.expiresAt && transportRequest.expiresAt <= new Date()) {
+      return NextResponse.json({ error: 'This transport request has expired.' }, { status: 409 });
+    }
+
+    const assigned = await prisma.transportRequest.updateMany({
+      where: {
+        id: requestId,
+        status: 'REQUESTED',
+        assignedDriverId: null,
+        vehicleType: profile.vehicleType,
+      },
+      data: {
+        assignedDriverId: profile.id,
+        status: 'DRIVER_ASSIGNED',
+        lockedPriceZmw: transportRequest.lockedPriceZmw ?? transportRequest.priceEstimateZmw,
+        priceLockedAt: transportRequest.priceLockedAt ?? new Date(),
+      },
+    });
+
+    if (assigned.count !== 1) {
+      return NextResponse.json({ error: 'Another driver already accepted this request.' }, { status: 409 });
+    }
+
+    hub.sendToUser(transportRequest.tenantId, 'driver_assigned', {
+      requestId,
+      driverId: profile.userId,
+    });
+
+    return NextResponse.json({ ok: true, requestId });
+  } catch (error) {
+    if (error instanceof Response) return error;
+    console.error('Driver request acceptance error:', error);
+    return NextResponse.json({ error: 'Unable to accept transport request' }, { status: 500 });
+  }
 }

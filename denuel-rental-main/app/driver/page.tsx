@@ -1,835 +1,691 @@
-"use client";
-import React, { useEffect, useState, useCallback } from 'react';
-import axios from 'axios';
-import { useRouter } from 'next/navigation';
-import Link from 'next/link';
-import DriverRequestModal from '../../components/driver/DriverRequestModal';
-import DriverNotifications from '../../components/driver/DriverNotifications';
-import LocationTracker from '../../components/driver/LocationTracker';
+'use client';
+
+import { useEffect, useMemo, useState } from 'react';
 import Header from '../../components/Header';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { csrfFetch } from '../../lib/csrf';
 
-// Icons
-const TruckIcon = () => (
-  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h8m-8 5h8m-4 9V3m-6 6h12a2 2 0 012 2v6a2 2 0 01-2 2H6a2 2 0 01-2-2v-6a2 2 0 012-2z" />
-  </svg>
-);
+type DriverDocument = {
+  id: string;
+  type: string;
+  name: string;
+  isVerified: boolean;
+  uploadedAt: string;
+  fileAccessUrl: string;
+  storagePrivate?: boolean;
+};
 
-const DollarIcon = () => (
-  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-  </svg>
-);
+type DriverProfile = {
+  id: string;
+  licenseNumber: string;
+  nrcNumber?: string | null;
+  vehicleType: string;
+  vehiclePlate: string;
+  vehicleMake?: string | null;
+  vehicleModel?: string | null;
+  vehicleYear?: number | null;
+  vehicleColor?: string | null;
+  vehicleCapacityKg?: number | null;
+  experience?: string | null;
+  bio?: string | null;
+  serviceAreas?: any;
+  verificationStatus: string;
+  rejectionReason?: string | null;
+  isApproved: boolean;
+  isOnline: boolean;
+  ratingAvg: number;
+  ratingCount: number;
+  user: {
+    id: string;
+    name?: string | null;
+    email: string;
+    phone?: string | null;
+    profileImage?: string | null;
+    isSuspended: boolean;
+  };
+  documents: DriverDocument[];
+};
 
-const StarIcon = ({ filled }: { filled: boolean }) => (
-  <svg className={`w-5 h-5 ${filled ? 'text-yellow-400 fill-current' : 'text-gray-300'}`} viewBox="0 0 24 24">
-    <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
-  </svg>
-);
+type DriverStats = {
+  totalTrips: number;
+  todayTrips: number;
+  weekTrips: number;
+  completedTrips: number;
+  canceledTrips: number;
+  totalEarnings: number;
+  todayEarnings: number;
+  weekEarnings: number;
+  averageRating: number;
+  totalRatings: number;
+  acceptanceRate: number;
+  completionRate: number;
+};
 
-const LocationIcon = () => (
-  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-  </svg>
-);
+type TransportRequest = {
+  id: string;
+  pickupAddressText: string;
+  dropoffAddressText: string;
+  distanceKmEstimated: number;
+  durationMinEstimated: number;
+  priceEstimateZmw: number;
+  lockedPriceZmw?: number | null;
+  vehicleType: string;
+  createdAt: string;
+  property?: {
+    title?: string | null;
+  } | null;
+};
 
-const ClockIcon = () => (
-  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-  </svg>
-);
+type ActiveTrip = TransportRequest & {
+  status: string;
+  tenant?: {
+    name?: string | null;
+    phone?: string | null;
+  } | null;
+};
 
-const CheckCircleIcon = () => (
-  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-  </svg>
-);
+const REQUIRED_DOCUMENTS = [
+  ['NRC', 'NRC / national identity'],
+  ['DRIVER_LICENSE', 'Driver’s licence'],
+  ['VEHICLE_REGISTRATION', 'Vehicle registration'],
+  ['INSURANCE', 'Vehicle insurance'],
+  ['POLICE_CLEARANCE', 'Police clearance'],
+] as const;
+
+function money(value?: number | null) {
+  return 'K' + Number(value || 0).toLocaleString();
+}
+
+function humanize(value?: string | null) {
+  if (!value) return 'Not specified';
+  return value.replaceAll('_', ' ').toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+async function readResponse(res: Response) {
+  const text = await res.text();
+  let data: any = {};
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    data = {};
+  }
+  return { text, data };
+}
 
 export default function DriverDashboardPage() {
-  const [profile, setProfile] = useState<any>(null);
-  const [requests, setRequests] = useState<any[]>([]);
-  const [history, setHistory] = useState<any[]>([]);
-  const [earnings, setEarnings] = useState<any>(null);
-  const [ratings, setRatings] = useState<any[]>([]);
-  const [activeTrip, setActiveTrip] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
-  const [showModal, setShowModal] = useState<any>(null);
-  const [isOnline, setIsOnline] = useState(false);
-  const [locationWatchId, setLocationWatchId] = useState<number | null>(null);
-  const [currentTab, setCurrentTab] = useState<'overview' | 'requests' | 'history' | 'earnings' | 'ratings'>('overview');
   const router = useRouter();
+  const [profile, setProfile] = useState<DriverProfile | null>(null);
+  const [stats, setStats] = useState<DriverStats | null>(null);
+  const [requests, setRequests] = useState<TransportRequest[]>([]);
+  const [requestAvailability, setRequestAvailability] = useState<{ available: boolean; reason?: string }>({ available: false });
+  const [activeTrip, setActiveTrip] = useState<ActiveTrip | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [processing, setProcessing] = useState('');
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
 
-  // Load all data
-  const loadData = useCallback(async () => {
+  const redirectToLogin = () => {
+    router.push('/auth/login?redirect=/driver&reason=session');
+  };
+
+  async function loadProfile() {
+    const res = await fetch('/api/driver/profile', { credentials: 'same-origin' });
+    const { text, data } = await readResponse(res);
+
+    if (res.status === 401) {
+      redirectToLogin();
+      return null;
+    }
+
+    if (res.status === 403) {
+      router.push('/dashboard');
+      return null;
+    }
+
+    if (!res.ok) {
+      throw new Error(data?.error || text || 'Unable to load driver profile.');
+    }
+
+    if (!data?.profile) {
+      router.push('/driver/apply');
+      return null;
+    }
+
+    setProfile(data.profile);
+    return data.profile as DriverProfile;
+  }
+
+  async function loadStats() {
+    const res = await fetch('/api/driver/stats', { credentials: 'same-origin' });
+    const { text, data } = await readResponse(res);
+    if (res.status === 401) {
+      redirectToLogin();
+      return;
+    }
+    if (!res.ok) throw new Error(data?.error || text || 'Unable to load driver statistics.');
+    setStats(data.stats || null);
+  }
+
+  async function loadRequests() {
+    const res = await fetch('/api/driver/requests', { credentials: 'same-origin' });
+    const { text, data } = await readResponse(res);
+    if (res.status === 401) {
+      redirectToLogin();
+      return;
+    }
+    if (!res.ok) throw new Error(data?.error || text || 'Unable to load transport requests.');
+
+    setRequests(Array.isArray(data.requests) ? data.requests : []);
+    setRequestAvailability({
+      available: Boolean(data.available),
+      reason: data.reason,
+    });
+  }
+
+  async function loadActiveTrip() {
+    const res = await fetch('/api/driver/trips/active', { credentials: 'same-origin' });
+    const { text, data } = await readResponse(res);
+    if (res.status === 401) {
+      redirectToLogin();
+      return;
+    }
+    if (!res.ok) throw new Error(data?.error || text || 'Unable to load active trip.');
+    setActiveTrip(data || null);
+  }
+
+  async function loadDashboard() {
+    setLoading(true);
+    setError('');
+
     try {
-      const me = await axios.get('/api/auth/me');
-      if (!me.data?.user) return router.push('/auth/login');
-      
-      // Fetch driver profile
-      const p = await axios.get('/api/driver/profile');
-      setProfile(p.data.profile);
-      
-      if (!p.data.profile) return setLoading(false);
-      
-      setIsOnline(p.data.profile.isOnline);
-      
-      // Fetch all data in parallel
-      const [requestsRes, historyRes, earningsRes, ratingsRes, activeTripRes] = await Promise.all([
-        axios.get('/api/driver/requests').catch(() => ({ data: [] })),
-        axios.get('/api/driver/trips/history').catch(() => ({ data: [] })),
-        axios.get('/api/driver/earnings').catch(() => ({ data: null })),
-        axios.get('/api/driver/ratings').catch(() => ({ data: [] })),
-        axios.get('/api/driver/trips/active').catch(() => ({ data: null })),
+      const currentProfile = await loadProfile();
+      if (!currentProfile) return;
+
+      const results = await Promise.allSettled([
+        loadStats(),
+        loadRequests(),
+        loadActiveTrip(),
       ]);
-      
-      setRequests(requestsRes.data || []);
-      setHistory(historyRes.data || []);
-      setEarnings(earningsRes.data);
-      setRatings(ratingsRes.data || []);
-      setActiveTrip(activeTripRes.data);
-    } catch (e) {
-      console.error(e);
+
+      const failed = results.find((result) => result.status === 'rejected') as PromiseRejectedResult | undefined;
+      if (failed) {
+        setError(failed.reason instanceof Error ? failed.reason.message : 'Some driver data could not be loaded.');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to load driver dashboard.');
     } finally {
       setLoading(false);
     }
-  }, [router]);
+  }
 
   useEffect(() => {
-    loadData();
-  }, [loadData]);
+    loadDashboard();
+  }, []);
 
-  // Toggle online status
-  const toggleOnline = async () => {
+  const documentStatus = useMemo(() => {
+    if (!profile) return [];
+    return REQUIRED_DOCUMENTS.map(([type, label]) => {
+      const document = profile.documents?.find((item) => item.type === type);
+      return { type, label, document };
+    });
+  }, [profile]);
+
+  const secureVerifiedDocuments = documentStatus.filter(
+    ({ document }) => document?.isVerified && document.storagePrivate,
+  ).length;
+
+  const verificationReady =
+    documentStatus.length > 0 &&
+    documentStatus.every(({ document }) => document?.isVerified && document.storagePrivate);
+
+  async function toggleOnline() {
+    if (!profile) return;
+
+    setProcessing('online');
+    setError('');
+    setNotice('');
+
     try {
-      const newStatus = !isOnline;
-      await axios.post('/api/driver/online', { isOnline: newStatus });
-      setIsOnline(newStatus);
-      setProfile({ ...profile, isOnline: newStatus });
-      
-      if (newStatus) {
-        startLocationTracking();
-      } else {
-        stopLocationTracking();
+      const res = await csrfFetch('/api/driver/online', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ online: !profile.isOnline }),
+      });
+      const { text, data } = await readResponse(res);
+
+      if (res.status === 401) {
+        redirectToLogin();
+        return;
       }
-    } catch (e) {
-      console.error('Failed to toggle online status', e);
+      if (!res.ok) throw new Error(data?.error || text || 'Unable to update online status.');
+
+      setProfile((current) => current ? { ...current, isOnline: Boolean(data.isOnline) } : current);
+      await loadRequests();
+      setNotice(data.isOnline ? 'You are now online for matching transport requests.' : 'You are now offline.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to update online status.');
+    } finally {
+      setProcessing('');
     }
-  };
+  }
 
-  // Location tracking
-  const startLocationTracking = () => {
-    if (!navigator.geolocation) return;
-    
-    const watchId = navigator.geolocation.watchPosition(
-      async (position) => {
-        try {
-          await axios.post('/api/driver/location', {
-            lat: position.coords.latitude,
-            lng: position.coords.longitude,
-          });
-        } catch (e) {
-          console.error('Failed to update location', e);
-        }
-      },
-      (error) => console.error('Geolocation error', error),
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 5000 }
-    );
-    setLocationWatchId(watchId);
-  };
+  async function acceptRequest(requestId: string) {
+    setProcessing('request-' + requestId);
+    setError('');
+    setNotice('');
 
-  const stopLocationTracking = () => {
-    if (locationWatchId !== null) {
-      navigator.geolocation.clearWatch(locationWatchId);
-      setLocationWatchId(null);
-    }
-  };
-
-  // Update trip status
-  const updateTripStatus = async (tripId: string, status: string) => {
     try {
-      await axios.post(`/api/driver/trips/${tripId}/status`, { status });
-      loadData();
-    } catch (e) {
-      console.error('Failed to update trip status', e);
-    }
-  };
+      const res = await csrfFetch('/api/driver/requests/' + requestId + '/accept', {
+        method: 'POST',
+      });
+      const { text, data } = await readResponse(res);
 
-  // Calculate stats
-  const todayEarnings = earnings?.today || 0;
-  const weekEarnings = earnings?.week || 0;
-  const monthEarnings = earnings?.month || 0;
-  const totalTrips = history.length;
-  const completedTrips = history.filter(t => t.status === 'COMPLETED').length;
-  const avgRating = profile?.ratingAvg || 0;
+      if (res.status === 401) {
+        redirectToLogin();
+        return;
+      }
+      if (!res.ok) throw new Error(data?.error || text || 'Unable to accept request.');
+
+      await Promise.all([loadRequests(), loadActiveTrip(), loadStats()]);
+      setNotice('Transport request accepted.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to accept request.');
+    } finally {
+      setProcessing('');
+    }
+  }
+
+  async function updateTripStatus(nextStatus: string) {
+    if (!activeTrip) return;
+
+    setProcessing('trip');
+    setError('');
+    setNotice('');
+
+    try {
+      const res = await csrfFetch('/api/driver/trips/' + activeTrip.id + '/status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: nextStatus }),
+      });
+      const { text, data } = await readResponse(res);
+
+      if (res.status === 401) {
+        redirectToLogin();
+        return;
+      }
+      if (!res.ok) throw new Error(data?.error || text || 'Unable to update trip.');
+
+      await Promise.all([loadActiveTrip(), loadStats(), loadRequests()]);
+      setNotice(nextStatus === 'COMPLETED' ? 'Trip completed and recorded.' : 'Trip status updated.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to update trip.');
+    } finally {
+      setProcessing('');
+    }
+  }
+
+  async function uploadVerificationDocument(type: string, file: File) {
+    if (file.size > 4 * 1024 * 1024) {
+      setError('Driver verification documents must be 4MB or smaller.');
+      return;
+    }
+
+    setProcessing('doc-' + type);
+    setError('');
+    setNotice('');
+
+    try {
+      const form = new FormData();
+      form.append('file', file);
+      form.append('type', type);
+
+      const res = await csrfFetch('/api/driver/documents/upload', {
+        method: 'POST',
+        body: form,
+      });
+      const { text, data } = await readResponse(res);
+
+      if (res.status === 401) {
+        redirectToLogin();
+        return;
+      }
+      if (!res.ok) throw new Error(data?.error || text || 'Unable to upload driver document.');
+
+      await loadProfile();
+      setNotice('Verification document uploaded and waiting for admin review.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to upload driver document.');
+    } finally {
+      setProcessing('');
+    }
+  }
 
   if (loading) {
     return (
-      <>
+      <div className="min-h-screen bg-slate-50">
         <Header />
-        <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-        </div>
-      </>
-    );
-  }
-
-  if (!profile) {
-    return (
-      <>
-        <Header />
-        <main className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 py-12">
-          <div className="max-w-2xl mx-auto px-4">
-            <div className="bg-white rounded-2xl shadow-xl p-8 text-center">
-              <div className="w-20 h-20 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-6">
-                <TruckIcon />
-              </div>
-              <h1 className="text-3xl font-bold text-gray-900 mb-4">Become a Driver</h1>
-              <p className="text-gray-600 mb-8 max-w-md mx-auto">
-                Join our network of professional drivers and start earning money by helping people move. 
-                Complete a short application and get approved to start receiving transport requests.
-              </p>
-              <div className="space-y-4">
-                <Link 
-                  href="/driver/apply" 
-                  className="inline-flex items-center justify-center w-full sm:w-auto px-8 py-4 bg-blue-600 text-white font-semibold rounded-xl hover:bg-blue-700 transition-colors"
-                >
-                  Apply to be a Driver
-                </Link>
-                <p className="text-sm text-gray-500">
-                  Already applied? Your application is being reviewed.
-                </p>
-              </div>
-            </div>
+        <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
+          <div className="h-36 animate-pulse border border-slate-200 bg-white" />
+          <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {Array.from({ length: 4 }).map((_, index) => (
+              <div key={index} className="h-28 animate-pulse border border-slate-200 bg-white" />
+            ))}
           </div>
         </main>
-      </>
+      </div>
     );
   }
 
-  // Handle location updates
-  const handleLocationUpdate = async (location: any) => {
-    try {
-      await axios.post('/api/driver/location', {
-        lat: location.latitude,
-        lng: location.longitude,
-        speed: location.speed,
-        heading: location.heading,
-      });
-    } catch (e) {
-      console.error('Failed to send location update', e);
-    }
-  };
+  if (!profile) return null;
+
+  const canGoOnline =
+    profile.isApproved &&
+    profile.verificationStatus === 'VERIFIED' &&
+    !profile.user.isSuspended;
+
+  const serviceAreas = Array.isArray(profile.serviceAreas) ? profile.serviceAreas : [];
 
   return (
-    <>
+    <div className="min-h-screen bg-slate-50 text-slate-950">
       <Header />
-      {/* Push Notifications Handler */}
-      <DriverNotifications enabled={isOnline} onNewRequest={() => loadData()} />
-      
-      <main className="min-h-screen bg-gray-50">
-        {/* Top Bar with Online Toggle */}
-        <div className="bg-white shadow-sm border-b sticky top-0 z-40">
-          <div className="max-w-7xl mx-auto px-4 py-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
-                  <span className="text-xl font-bold text-blue-600">
-                    {profile.user?.name?.charAt(0) || 'D'}
-                  </span>
-                </div>
-                <div>
-                  <h1 className="font-semibold text-gray-900">{profile.user?.name || 'Driver'}</h1>
-                  <div className="flex items-center gap-2 text-sm text-gray-600">
-                    <span className="flex items-center gap-1">
-                      {[1,2,3,4,5].map(i => (
-                        <StarIcon key={i} filled={i <= Math.round(avgRating)} />
-                      ))}
-                      <span className="ml-1">{avgRating.toFixed(1)}</span>
-                    </span>
-                    <span>•</span>
-                    <span>{profile.vehicleType}</span>
-                  </div>
-                </div>
-              </div>
-              
-              <div className="flex items-center gap-4">
-                {!profile.isApproved && (
-                  <span className="px-3 py-1 bg-yellow-100 text-yellow-800 text-sm rounded-full">
-                    Pending Approval
-                  </span>
-                )}
-                <button
-                  onClick={toggleOnline}
-                  disabled={!profile.isApproved}
-                  className={`relative inline-flex h-10 w-24 items-center rounded-full transition-colors ${
-                    isOnline ? 'bg-green-500' : 'bg-gray-300'
-                  } ${!profile.isApproved ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
-                >
-                  <span className={`inline-block h-8 w-8 transform rounded-full bg-white shadow-lg transition-transform ${
-                    isOnline ? 'translate-x-14' : 'translate-x-1'
-                  }`} />
-                  <span className={`absolute text-xs font-semibold ${isOnline ? 'left-2 text-white' : 'right-2 text-gray-600'}`}>
-                    {isOnline ? 'Online' : 'Offline'}
-                  </span>
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
 
-        {/* Active Trip Banner */}
-        {activeTrip && (
-          <div className="bg-blue-600 text-white">
-            <div className="max-w-7xl mx-auto px-4 py-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                  <div className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center">
-                    <TruckIcon />
-                  </div>
-                  <div>
-                    <p className="font-semibold">Active Trip</p>
-                    <p className="text-sm text-blue-100">
-                      {activeTrip.pickupAddressText} → {activeTrip.dropoffAddressText}
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-3">
-                  <span className="px-3 py-1 bg-white/20 rounded-full text-sm">
-                    {activeTrip.status}
-                  </span>
-                  {activeTrip.status === 'DRIVER_ASSIGNED' && (
-                    <button
-                      onClick={() => updateTripStatus(activeTrip.id, 'DRIVER_ARRIVING')}
-                      className="px-4 py-2 bg-white text-blue-600 rounded-lg font-semibold hover:bg-blue-50"
-                    >
-                      On My Way
-                    </button>
-                  )}
-                  {activeTrip.status === 'DRIVER_ARRIVING' && (
-                    <button
-                      onClick={() => updateTripStatus(activeTrip.id, 'IN_PROGRESS')}
-                      className="px-4 py-2 bg-white text-blue-600 rounded-lg font-semibold hover:bg-blue-50"
-                    >
-                      Start Trip
-                    </button>
-                  )}
-                  {activeTrip.status === 'IN_PROGRESS' && (
-                    <button
-                      onClick={() => updateTripStatus(activeTrip.id, 'COMPLETED')}
-                      className="px-4 py-2 bg-green-500 text-white rounded-lg font-semibold hover:bg-green-600"
-                    >
-                      Complete Trip
-                    </button>
-                  )}
-                </div>
-              </div>
-            </div>
+      <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
+        <section className="flex flex-col justify-between gap-5 border-b border-slate-200 pb-6 lg:flex-row lg:items-end">
+          <div>
+            <p className="text-sm font-semibold text-blue-700">Transport workspace</p>
+            <h1 className="mt-2 text-3xl font-bold tracking-[-0.035em]">
+              {profile.user.name ? profile.user.name + ' · Driver' : 'Driver dashboard'}
+            </h1>
+            <p className="mt-2 text-sm text-slate-500">
+              {humanize(profile.vehicleType)} · {profile.vehiclePlate}
+              {[profile.vehicleMake, profile.vehicleModel].filter(Boolean).length
+                ? ' · ' + [profile.vehicleMake, profile.vehicleModel].filter(Boolean).join(' ')
+                : ''}
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={toggleOnline}
+            disabled={!canGoOnline || processing === 'online'}
+            className={
+              'inline-flex w-fit items-center justify-center border px-5 py-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-40 ' +
+              (profile.isOnline
+                ? 'border-emerald-300 bg-emerald-50 text-emerald-800'
+                : 'border-slate-300 bg-white text-slate-700')
+            }
+          >
+            {processing === 'online'
+              ? 'Updating…'
+              : profile.isOnline
+                ? 'Online · accepting requests'
+                : 'Go online'}
+          </button>
+        </section>
+
+        {profile.user.isSuspended && (
+          <section className="mt-6 border border-red-200 bg-red-50 p-5">
+            <h2 className="font-semibold text-red-900">Driver account suspended</h2>
+            <p className="mt-2 text-sm leading-6 text-red-800">
+              Transport access is disabled while this account is suspended.
+            </p>
+          </section>
+        )}
+
+        {!profile.user.isSuspended && profile.verificationStatus === 'REJECTED' && (
+          <section className="mt-6 border border-red-200 bg-red-50 p-5">
+            <h2 className="font-semibold text-red-900">Application needs corrections</h2>
+            <p className="mt-2 text-sm leading-6 text-red-800">
+              {profile.rejectionReason || 'Review your driver details and verification documents, then submit corrected information.'}
+            </p>
+          </section>
+        )}
+
+        {!profile.user.isSuspended && !profile.isApproved && profile.verificationStatus !== 'REJECTED' && (
+          <section className="mt-6 border border-amber-200 bg-amber-50 p-5">
+            <h2 className="font-semibold">Driver verification pending</h2>
+            <p className="mt-2 text-sm leading-6 text-slate-600">
+              You cannot go online until all required documents are privately stored, admin-verified and the driver application is approved.
+            </p>
+          </section>
+        )}
+
+        {notice && (
+          <div className="mt-6 border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
+            {notice}
           </div>
         )}
 
-        {/* Navigation Tabs */}
-        <div className="bg-white border-b">
-          <div className="max-w-7xl mx-auto px-4">
-            <nav className="flex gap-8">
-              {[
-                { id: 'overview', label: 'Overview' },
-                { id: 'requests', label: 'Requests', count: requests.length },
-                { id: 'history', label: 'History' },
-                { id: 'earnings', label: 'Earnings' },
-                { id: 'ratings', label: 'Ratings' },
-              ].map((tab) => (
-                <button
-                  key={tab.id}
-                  onClick={() => setCurrentTab(tab.id as any)}
-                  className={`py-4 border-b-2 font-medium text-sm transition-colors ${
-                    currentTab === tab.id
-                      ? 'border-blue-600 text-blue-600'
-                      : 'border-transparent text-gray-500 hover:text-gray-700'
-                  }`}
-                >
-                  {tab.label}
-                  {tab.count !== undefined && tab.count > 0 && (
-                    <span className="ml-2 px-2 py-0.5 bg-red-500 text-white text-xs rounded-full">
-                      {tab.count}
-                    </span>
-                  )}
-                </button>
-              ))}
-            </nav>
+        {error && (
+          <div className="mt-6 border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+            {error}
           </div>
-        </div>
+        )}
 
-        <div className="max-w-7xl mx-auto px-4 py-8">
-          {/* Overview Tab */}
-          {currentTab === 'overview' && (
-            <div className="space-y-8">
-              {/* Stats Cards */}
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm text-gray-500">Today&apos;s Earnings</p>
-                      <p className="text-2xl font-bold text-gray-900">K{todayEarnings.toLocaleString()}</p>
-                    </div>
-                    <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center">
-                      <DollarIcon />
-                    </div>
-                  </div>
-                </div>
-                
-                <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm text-gray-500">This Week</p>
-                      <p className="text-2xl font-bold text-gray-900">K{weekEarnings.toLocaleString()}</p>
-                    </div>
-                    <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
-                      <DollarIcon />
-                    </div>
-                  </div>
-                </div>
-                
-                <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm text-gray-500">Completed Trips</p>
-                      <p className="text-2xl font-bold text-gray-900">{completedTrips}</p>
-                    </div>
-                    <div className="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center">
-                      <CheckCircleIcon />
-                    </div>
-                  </div>
-                </div>
-                
-                <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm text-gray-500">Rating</p>
-                      <div className="flex items-center gap-2">
-                        <p className="text-2xl font-bold text-gray-900">{avgRating.toFixed(1)}</p>
-                        <StarIcon filled={true} />
-                      </div>
-                    </div>
-                    <div className="w-12 h-12 bg-yellow-100 rounded-full flex items-center justify-center">
-                      <span className="text-yellow-600 text-xl">★</span>
-                    </div>
-                  </div>
+        <section className="mt-7 grid grid-cols-2 border-l border-t border-slate-200 bg-white sm:grid-cols-3 lg:grid-cols-6">
+          {[
+            ['Today earnings', money(stats?.todayEarnings)],
+            ['Week earnings', money(stats?.weekEarnings)],
+            ['Total earnings', money(stats?.totalEarnings)],
+            ['Completed trips', Number(stats?.completedTrips || 0).toLocaleString()],
+            ['Rating', stats?.totalRatings ? Number(stats.averageRating || 0).toFixed(1) : 'No ratings'],
+            ['Verified docs', secureVerifiedDocuments + '/' + REQUIRED_DOCUMENTS.length],
+          ].map(([label, value]) => (
+            <div key={String(label)} className="border-b border-r border-slate-200 p-4">
+              <div className="text-xs text-slate-500">{label}</div>
+              <div className="mt-2 text-xl font-bold">{value}</div>
+            </div>
+          ))}
+        </section>
+
+        {activeTrip && (
+          <section className="mt-7 border border-blue-200 bg-blue-50 p-5">
+            <div className="flex flex-col justify-between gap-5 lg:flex-row lg:items-center">
+              <div className="min-w-0">
+                <div className="text-xs font-semibold uppercase tracking-wide text-blue-700">Active trip · {humanize(activeTrip.status)}</div>
+                <h2 className="mt-2 font-semibold">{activeTrip.pickupAddressText}</h2>
+                <p className="mt-1 text-sm text-slate-600">to {activeTrip.dropoffAddressText}</p>
+                <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">
+                  <span>{Number(activeTrip.distanceKmEstimated || 0).toFixed(1)} km</span>
+                  <span>{Number(activeTrip.durationMinEstimated || 0)} min estimated</span>
+                  <span>{money(activeTrip.lockedPriceZmw || activeTrip.priceEstimateZmw)}</span>
+                  {activeTrip.tenant?.name && <span>Customer: {activeTrip.tenant.name}</span>}
                 </div>
               </div>
 
-              {/* Quick Actions & Recent Activity */}
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                {/* Available Requests */}
-                <div className="lg:col-span-2 bg-white rounded-xl shadow-sm border border-gray-100">
-                  <div className="p-6 border-b">
-                    <h2 className="font-semibold text-gray-900">Available Requests</h2>
-                  </div>
-                  <div className="p-6">
-                    {requests.length === 0 ? (
-                      <div className="text-center py-8">
-                        <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                          <TruckIcon />
-                        </div>
-                        <p className="text-gray-500">No requests available</p>
-                        <p className="text-sm text-gray-400 mt-1">Stay online to receive new requests</p>
-                      </div>
-                    ) : (
-                      <div className="space-y-4">
-                        {requests.slice(0, 3).map((req) => (
-                          <div key={req.id} className="p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
-                            <div className="flex items-start justify-between">
-                              <div className="flex-1">
-                                <div className="flex items-center gap-2 text-sm text-gray-600 mb-1">
-                                  <LocationIcon />
-                                  <span>{req.distanceKmEstimated?.toFixed(1) || '?'} km</span>
-                                  <span>•</span>
-                                  <ClockIcon />
-                                  <span>{req.durationMinEstimated || '?'} min</span>
-                                </div>
-                                <p className="font-medium text-gray-900">{req.pickupAddressText}</p>
-                                <p className="text-gray-600">→ {req.dropoffAddressText}</p>
-                              </div>
-                              <div className="text-right">
-                                <p className="text-lg font-bold text-green-600">K{req.priceEstimateZmw}</p>
-                                <button
-                                  onClick={() => setShowModal(req)}
-                                  className="mt-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700"
-                                >
-                                  Accept
-                                </button>
-                              </div>
-                            </div>
+              <div className="flex flex-wrap gap-2">
+                {activeTrip.tenant?.phone && (
+                  <a href={'tel:' + activeTrip.tenant.phone} className="border border-blue-300 bg-white px-4 py-2.5 text-sm font-semibold text-blue-800">
+                    Call customer
+                  </a>
+                )}
+                {activeTrip.status === 'DRIVER_ASSIGNED' && (
+                  <button type="button" disabled={processing === 'trip'} onClick={() => updateTripStatus('DRIVER_ARRIVING')} className="bg-blue-700 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">
+                    On my way
+                  </button>
+                )}
+                {activeTrip.status === 'DRIVER_ARRIVING' && (
+                  <button type="button" disabled={processing === 'trip'} onClick={() => updateTripStatus('IN_PROGRESS')} className="bg-blue-700 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">
+                    Start trip
+                  </button>
+                )}
+                {activeTrip.status === 'IN_PROGRESS' && (
+                  <button type="button" disabled={processing === 'trip'} onClick={() => updateTripStatus('COMPLETED')} className="bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">
+                    Complete trip
+                  </button>
+                )}
+              </div>
+            </div>
+          </section>
+        )}
+
+        <div className="mt-7 grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
+          <div className="space-y-6">
+            <section className="border border-slate-200 bg-white">
+              <div className="flex items-center justify-between border-b border-slate-200 p-5">
+                <div>
+                  <h2 className="font-semibold">Available transport requests</h2>
+                  <p className="mt-1 text-sm text-slate-500">
+                    Requests are shown only when your approved driver account is online and the requested vehicle type matches yours.
+                  </p>
+                </div>
+                {profile.isOnline && canGoOnline && (
+                  <button type="button" onClick={loadRequests} className="text-sm font-semibold text-blue-700">
+                    Refresh
+                  </button>
+                )}
+              </div>
+
+              {!canGoOnline ? (
+                <div className="p-8 text-sm text-slate-500">
+                  Complete driver verification and approval before transport requests become available.
+                </div>
+              ) : !profile.isOnline ? (
+                <div className="p-8 text-sm text-slate-500">
+                  Go online when you are ready to receive matching requests.
+                </div>
+              ) : requests.length ? (
+                <div className="divide-y divide-slate-100">
+                  {requests.map((request) => (
+                    <article key={request.id} className="p-5">
+                      <div className="flex flex-col justify-between gap-4 sm:flex-row">
+                        <div className="min-w-0">
+                          <div className="text-sm font-semibold">{request.pickupAddressText}</div>
+                          <div className="mt-1 text-sm text-slate-600">to {request.dropoffAddressText}</div>
+                          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">
+                            <span>{Number(request.distanceKmEstimated || 0).toFixed(1)} km</span>
+                            <span>{Number(request.durationMinEstimated || 0)} min estimated</span>
+                            {request.property?.title && <span>{request.property.title}</span>}
                           </div>
-                        ))}
-                        {requests.length > 3 && (
+                        </div>
+
+                        <div className="shrink-0 sm:text-right">
+                          <div className="text-lg font-bold">{money(request.priceEstimateZmw)}</div>
                           <button
-                            onClick={() => setCurrentTab('requests')}
-                            className="w-full text-center text-blue-600 font-medium hover:underline"
+                            type="button"
+                            disabled={Boolean(activeTrip) || processing === 'request-' + request.id}
+                            onClick={() => acceptRequest(request.id)}
+                            className="mt-2 bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-40"
                           >
-                            View all {requests.length} requests
+                            {processing === 'request-' + request.id ? 'Accepting…' : activeTrip ? 'Active trip in progress' : 'Accept request'}
                           </button>
+                        </div>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              ) : (
+                <div className="p-8">
+                  <h3 className="font-semibold">No matching requests right now</h3>
+                  <p className="mt-2 text-sm text-slate-500">
+                    Stay online to receive transport requests that match your approved vehicle type.
+                  </p>
+                </div>
+              )}
+            </section>
+
+            <section className="border border-slate-200 bg-white">
+              <div className="border-b border-slate-200 p-5">
+                <h2 className="font-semibold">Driver verification</h2>
+                <p className="mt-1 text-sm text-slate-500">
+                  Private documents remain available only to you and authorised DENUEL administrators.
+                </p>
+              </div>
+
+              <div className="divide-y divide-slate-100">
+                {documentStatus.map(({ type, label, document }) => (
+                  <div key={type} className="grid gap-3 p-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-sm font-semibold">{label}</span>
+                        {!document ? (
+                          <span className="bg-red-50 px-2 py-0.5 text-xs font-semibold text-red-700">Missing</span>
+                        ) : !document.storagePrivate ? (
+                          <span className="bg-red-50 px-2 py-0.5 text-xs font-semibold text-red-700">Secure re-upload required</span>
+                        ) : document.isVerified ? (
+                          <span className="bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700">Verified</span>
+                        ) : (
+                          <span className="bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-700">Awaiting review</span>
                         )}
                       </div>
+                      {document && (
+                        <div className="mt-1 text-xs text-slate-500">
+                          {document.name} · <a href={document.fileAccessUrl} target="_blank" rel="noreferrer" className="font-semibold text-blue-700">Open securely</a>
+                        </div>
+                      )}
+                    </div>
+
+                    {(!document || !document.isVerified || !document.storagePrivate) && (
+                      <label className="inline-flex cursor-pointer justify-center border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700">
+                        {processing === 'doc-' + type ? 'Uploading…' : document ? 'Replace' : 'Upload'}
+                        <input
+                          type="file"
+                          accept="application/pdf,image/jpeg,image/png,image/webp"
+                          disabled={processing === 'doc-' + type}
+                          className="hidden"
+                          onChange={(event) => {
+                            const file = event.target.files?.[0];
+                            if (file) uploadVerificationDocument(type, file);
+                            event.currentTarget.value = '';
+                          }}
+                        />
+                      </label>
                     )}
                   </div>
-                </div>
-
-                {/* Profile Card */}
-                <div className="bg-white rounded-xl shadow-sm border border-gray-100">
-                  <div className="p-6 border-b">
-                    <h2 className="font-semibold text-gray-900">Your Profile</h2>
-                  </div>
-                  <div className="p-6 space-y-4">
-                    <div className="text-center pb-4 border-b">
-                      <div className="w-20 h-20 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-3">
-                        <span className="text-3xl font-bold text-blue-600">
-                          {profile.user?.name?.charAt(0) || 'D'}
-                        </span>
-                      </div>
-                      <h3 className="font-semibold text-gray-900">{profile.user?.name}</h3>
-                      <p className="text-sm text-gray-500">{profile.user?.email}</p>
-                    </div>
-                    
-                    <div className="space-y-3">
-                      <div className="flex justify-between text-sm">
-                        <span className="text-gray-500">License</span>
-                        <span className="font-medium">{profile.licenseNumber}</span>
-                      </div>
-                      <div className="flex justify-between text-sm">
-                        <span className="text-gray-500">Vehicle</span>
-                        <span className="font-medium">{profile.vehicleType}</span>
-                      </div>
-                      <div className="flex justify-between text-sm">
-                        <span className="text-gray-500">Plate</span>
-                        <span className="font-medium">{profile.vehiclePlate}</span>
-                      </div>
-                      <div className="flex justify-between text-sm">
-                        <span className="text-gray-500">Total Trips</span>
-                        <span className="font-medium">{totalTrips}</span>
-                      </div>
-                    </div>
-                    
-                    <Link
-                      href="/driver/apply"
-                      className="block w-full text-center py-2 border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 mt-4"
-                    >
-                      Edit Profile
-                    </Link>
-                  </div>
-                </div>
-
-                {/* Location Tracker Card */}
-                {isOnline && (
-                  <div className="bg-gray-900 rounded-xl shadow-sm overflow-hidden">
-                    <div className="p-4 border-b border-gray-700">
-                      <h2 className="font-semibold text-white">📍 Live Location</h2>
-                    </div>
-                    <LocationTracker 
-                      enabled={isOnline} 
-                      onLocationUpdate={handleLocationUpdate}
-                      updateInterval={5000}
-                    />
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Requests Tab */}
-          {currentTab === 'requests' && (
-            <div className="bg-white rounded-xl shadow-sm border border-gray-100">
-              <div className="p-6 border-b">
-                <h2 className="font-semibold text-gray-900">Available Requests</h2>
-                <p className="text-sm text-gray-500 mt-1">Accept requests to start earning</p>
-              </div>
-              <div className="p-6">
-                {requests.length === 0 ? (
-                  <div className="text-center py-12">
-                    <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                      <TruckIcon />
-                    </div>
-                    <p className="text-gray-500 font-medium">No requests available</p>
-                    <p className="text-sm text-gray-400 mt-1">New requests will appear here when available</p>
-                  </div>
-                ) : (
-                  <div className="space-y-4">
-                    {requests.map((req) => (
-                      <div key={req.id} className="p-6 border rounded-xl hover:shadow-md transition-shadow">
-                        <div className="flex items-start justify-between gap-6">
-                          <div className="flex-1">
-                            <div className="flex items-center gap-4 mb-3">
-                              <span className="px-3 py-1 bg-blue-100 text-blue-700 text-sm rounded-full font-medium">
-                                {req.vehicleType}
-                              </span>
-                              <span className="flex items-center gap-1 text-sm text-gray-600">
-                                <LocationIcon />
-                                {req.distanceKmEstimated?.toFixed(1)} km
-                              </span>
-                              <span className="flex items-center gap-1 text-sm text-gray-600">
-                                <ClockIcon />
-                                ~{req.durationMinEstimated} min
-                              </span>
-                            </div>
-                            
-                            <div className="space-y-2">
-                              <div className="flex items-start gap-3">
-                                <div className="w-3 h-3 bg-green-500 rounded-full mt-1.5"></div>
-                                <div>
-                                  <p className="text-sm text-gray-500">Pickup</p>
-                                  <p className="font-medium">{req.pickupAddressText}</p>
-                                </div>
-                              </div>
-                              <div className="flex items-start gap-3">
-                                <div className="w-3 h-3 bg-red-500 rounded-full mt-1.5"></div>
-                                <div>
-                                  <p className="text-sm text-gray-500">Dropoff</p>
-                                  <p className="font-medium">{req.dropoffAddressText}</p>
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                          
-                          <div className="text-right">
-                            <p className="text-2xl font-bold text-green-600">K{req.priceEstimateZmw}</p>
-                            <p className="text-sm text-gray-500 mb-3">Estimated fare</p>
-                            <button
-                              onClick={() => setShowModal(req)}
-                              className="px-6 py-3 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-colors"
-                            >
-                              Accept Request
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* History Tab */}
-          {currentTab === 'history' && (
-            <div className="bg-white rounded-xl shadow-sm border border-gray-100">
-              <div className="p-6 border-b">
-                <h2 className="font-semibold text-gray-900">Trip History</h2>
-                <p className="text-sm text-gray-500 mt-1">{history.length} total trips</p>
-              </div>
-              <div className="divide-y">
-                {history.length === 0 ? (
-                  <div className="text-center py-12">
-                    <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                      <ClockIcon />
-                    </div>
-                    <p className="text-gray-500 font-medium">No trip history</p>
-                    <p className="text-sm text-gray-400 mt-1">Complete trips to see them here</p>
-                  </div>
-                ) : (
-                  history.map((trip) => (
-                    <div key={trip.id} className="p-6 hover:bg-gray-50 transition-colors">
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-3 mb-2">
-                            <span className={`px-2 py-1 text-xs rounded-full font-medium ${
-                              trip.status === 'COMPLETED' 
-                                ? 'bg-green-100 text-green-700' 
-                                : trip.status === 'CANCELLED'
-                                ? 'bg-red-100 text-red-700'
-                                : 'bg-yellow-100 text-yellow-700'
-                            }`}>
-                              {trip.status}
-                            </span>
-                            <span className="text-sm text-gray-500">
-                              {new Date(trip.createdAt).toLocaleDateString('en-US', {
-                                month: 'short',
-                                day: 'numeric',
-                                year: 'numeric',
-                                hour: '2-digit',
-                                minute: '2-digit'
-                              })}
-                            </span>
-                          </div>
-                          <p className="font-medium text-gray-900">{trip.pickupAddressText}</p>
-                          <p className="text-gray-600">→ {trip.dropoffAddressText}</p>
-                          <p className="text-sm text-gray-500 mt-1">
-                            {trip.distanceKmEstimated?.toFixed(1)} km • {trip.durationMinEstimated} min
-                          </p>
-                        </div>
-                        <div className="text-right">
-                          <p className="text-lg font-bold text-gray-900">
-                            K{trip.lockedPriceZmw || trip.priceEstimateZmw}
-                          </p>
-                          {trip.Rating && (
-                            <div className="flex items-center justify-end gap-1 mt-1">
-                              {[1,2,3,4,5].map(i => (
-                                <StarIcon key={i} filled={i <= trip.Rating.stars} />
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Earnings Tab */}
-          {currentTab === 'earnings' && (
-            <div className="space-y-6">
-              {/* Earnings Summary */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-xl p-6 text-white">
-                  <p className="text-green-100">Today</p>
-                  <p className="text-3xl font-bold mt-1">K{todayEarnings.toLocaleString()}</p>
-                </div>
-                <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl p-6 text-white">
-                  <p className="text-blue-100">This Week</p>
-                  <p className="text-3xl font-bold mt-1">K{weekEarnings.toLocaleString()}</p>
-                </div>
-                <div className="bg-gradient-to-br from-purple-500 to-purple-600 rounded-xl p-6 text-white">
-                  <p className="text-purple-100">This Month</p>
-                  <p className="text-3xl font-bold mt-1">K{monthEarnings.toLocaleString()}</p>
-                </div>
+                ))}
               </div>
 
-              {/* Earnings List */}
-              <div className="bg-white rounded-xl shadow-sm border border-gray-100">
-                <div className="p-6 border-b">
-                  <h2 className="font-semibold text-gray-900">Earnings History</h2>
-                </div>
-                <div className="divide-y">
-                  {earnings?.list?.length === 0 || !earnings?.list ? (
-                    <div className="text-center py-12">
-                      <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                        <DollarIcon />
-                      </div>
-                      <p className="text-gray-500 font-medium">No earnings yet</p>
-                      <p className="text-sm text-gray-400 mt-1">Complete trips to start earning</p>
-                    </div>
-                  ) : (
-                    earnings.list.map((earning: any) => (
-                      <div key={earning.id} className="p-6 hover:bg-gray-50">
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <p className="font-medium text-gray-900">Trip Completed</p>
-                            <p className="text-sm text-gray-500">
-                              {new Date(earning.createdAt).toLocaleDateString()}
-                            </p>
-                          </div>
-                          <div className="text-right">
-                            <p className="font-bold text-green-600">+K{earning.netZmw}</p>
-                            <p className="text-xs text-gray-500">
-                              Gross: K{earning.grossZmw} | Fee: K{earning.platformFeeZmw}
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
+              <div className="border-t border-slate-200 p-4 text-sm text-slate-500">
+                {verificationReady
+                  ? profile.isApproved
+                    ? 'Verification complete and driver approved.'
+                    : 'All documents are verified. The application is waiting for the final driver approval decision.'
+                  : 'All five required documents must be privately stored and verified before approval.'}
               </div>
-            </div>
-          )}
+            </section>
+          </div>
 
-          {/* Ratings Tab */}
-          {currentTab === 'ratings' && (
-            <div className="space-y-6">
-              {/* Rating Summary */}
-              <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-                <div className="flex items-center gap-8">
-                  <div className="text-center">
-                    <p className="text-5xl font-bold text-gray-900">{avgRating.toFixed(1)}</p>
-                    <div className="flex items-center justify-center gap-1 mt-2">
-                      {[1,2,3,4,5].map(i => (
-                        <StarIcon key={i} filled={i <= Math.round(avgRating)} />
-                      ))}
-                    </div>
-                    <p className="text-sm text-gray-500 mt-1">{profile.ratingCount} reviews</p>
-                  </div>
-                  <div className="flex-1 space-y-2">
-                    {[5,4,3,2,1].map(stars => {
-                      const count = ratings.filter(r => r.stars === stars).length;
-                      const percentage = ratings.length > 0 ? (count / ratings.length) * 100 : 0;
-                      return (
-                        <div key={stars} className="flex items-center gap-3">
-                          <span className="text-sm text-gray-600 w-3">{stars}</span>
-                          <StarIcon filled={true} />
-                          <div className="flex-1 h-2 bg-gray-200 rounded-full overflow-hidden">
-                            <div 
-                              className="h-full bg-yellow-400 rounded-full" 
-                              style={{ width: `${percentage}%` }}
-                            />
-                          </div>
-                          <span className="text-sm text-gray-500 w-8">{count}</span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
+          <aside className="space-y-5 lg:sticky lg:top-24 lg:h-fit">
+            <section className="border border-slate-200 bg-white p-5">
+              <h2 className="font-semibold">Driver profile</h2>
+              <div className="mt-4 space-y-3 text-sm">
+                <div><div className="text-xs text-slate-400">Licence</div><div className="mt-1 font-semibold">{profile.licenseNumber}</div></div>
+                <div><div className="text-xs text-slate-400">Vehicle</div><div className="mt-1 font-semibold">{[profile.vehicleMake, profile.vehicleModel, profile.vehicleYear].filter(Boolean).join(' ') || humanize(profile.vehicleType)}</div></div>
+                <div><div className="text-xs text-slate-400">Plate</div><div className="mt-1 font-semibold">{profile.vehiclePlate}</div></div>
+                <div><div className="text-xs text-slate-400">Service areas</div><div className="mt-1 font-semibold">{serviceAreas.length ? serviceAreas.join(', ') : 'Not recorded'}</div></div>
               </div>
+            </section>
 
-              {/* Reviews List */}
-              <div className="bg-white rounded-xl shadow-sm border border-gray-100">
-                <div className="p-6 border-b">
-                  <h2 className="font-semibold text-gray-900">Customer Reviews</h2>
-                </div>
-                <div className="divide-y">
-                  {ratings.length === 0 ? (
-                    <div className="text-center py-12">
-                      <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                        <span className="text-3xl">⭐</span>
-                      </div>
-                      <p className="text-gray-500 font-medium">No reviews yet</p>
-                      <p className="text-sm text-gray-400 mt-1">Complete trips to receive reviews</p>
-                    </div>
-                  ) : (
-                    ratings.map((rating) => (
-                      <div key={rating.id} className="p-6">
-                        <div className="flex items-start justify-between">
-                          <div>
-                            <div className="flex items-center gap-2 mb-1">
-                              <span className="font-medium text-gray-900">
-                                {rating.tenant?.name || 'Customer'}
-                              </span>
-                              <div className="flex items-center gap-0.5">
-                                {[1,2,3,4,5].map(i => (
-                                  <StarIcon key={i} filled={i <= rating.stars} />
-                                ))}
-                              </div>
-                            </div>
-                            {rating.comment && (
-                              <p className="text-gray-600">{rating.comment}</p>
-                            )}
-                          </div>
-                          <span className="text-sm text-gray-500">
-                            {new Date(rating.createdAt).toLocaleDateString()}
-                          </span>
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
+            <section className="border border-slate-200 bg-white p-5">
+              <h2 className="font-semibold">Performance</h2>
+              <div className="mt-4 space-y-3 text-sm">
+                <div className="flex justify-between gap-4"><span className="text-slate-500">Total trips</span><strong>{stats?.totalTrips || 0}</strong></div>
+                <div className="flex justify-between gap-4"><span className="text-slate-500">Completed</span><strong>{stats?.completedTrips || 0}</strong></div>
+                <div className="flex justify-between gap-4"><span className="text-slate-500">Canceled</span><strong>{stats?.canceledTrips || 0}</strong></div>
+                <div className="flex justify-between gap-4"><span className="text-slate-500">Completion rate</span><strong>{stats ? stats.completionRate + '%' : '—'}</strong></div>
               </div>
-            </div>
-          )}
+            </section>
+
+            <section className="border border-slate-200 bg-white p-5">
+              <h2 className="font-semibold">Driver records</h2>
+              <div className="mt-3 divide-y divide-slate-100 border-t border-slate-100">
+                {[
+                  ['Earnings', '/driver/earnings'],
+                  ['Trip history', '/driver/history'],
+                  ['Ratings', '/driver/ratings'],
+                  ['My customer transport requests', '/transport/requests'],
+                ].map(([label, href]) => (
+                  <Link key={href} href={href} className="flex items-center justify-between py-3 text-sm font-medium text-slate-700 hover:text-blue-700">
+                    {label}<span>→</span>
+                  </Link>
+                ))}
+              </div>
+            </section>
+          </aside>
         </div>
-
-        {/* Request Modal */}
-        {showModal && (
-          <DriverRequestModal 
-            request={showModal} 
-            onClose={() => setShowModal(null)} 
-            onAccepted={() => { 
-              setShowModal(null); 
-              setRequests(requests.filter(r => r.id !== showModal.id));
-              loadData();
-            }} 
-          />
-        )}
       </main>
-    </>
+    </div>
   );
 }

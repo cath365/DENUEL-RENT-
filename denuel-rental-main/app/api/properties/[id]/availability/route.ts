@@ -3,6 +3,8 @@ import prisma from '../../../../../lib/prisma';
 import { requireAuth } from '../../../../../lib/auth';
 import { z } from 'zod';
 
+export const dynamic = 'force-dynamic';
+
 const CreateSchema = z.object({ startDate: z.string(), endDate: z.string(), note: z.string().optional() });
 
 export async function GET(req: Request, { params }: { params: { id: string } }) {
@@ -18,6 +20,8 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
 export async function POST(req: Request, { params }: { params: { id: string } }) {
   try {
     const user = await requireAuth(req, ['LANDLORD','AGENT','ADMIN']);
+    const { requireCsrf } = await import('../../../../../lib/auth');
+    requireCsrf(req);
     const { id } = params;
     // ensure ownership
     const prop = await prisma.property.findUnique({ where: { id } });
@@ -42,6 +46,8 @@ export async function POST(req: Request, { params }: { params: { id: string } })
 export async function DELETE(req: Request, { params }: { params: { id: string } }) {
   try {
     const user = await requireAuth(req, ['LANDLORD','AGENT','ADMIN']);
+    const { requireCsrf } = await import('../../../../../lib/auth');
+    requireCsrf(req);
     const { id } = params; // note: this id is availability id
     const existing = await prisma.propertyAvailability.findUnique({ where: { id } });
     if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 });

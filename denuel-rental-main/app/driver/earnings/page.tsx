@@ -1,228 +1,244 @@
-"use client";
-import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
-import Header from '@/components/Header';
-import axios from 'axios';
+'use client';
 
-interface EarningRecord {
+import { useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
+import Header from '@/components/Header';
+
+type Period = 'today' | 'week' | 'month' | 'all';
+
+type Summary = {
+  gross: number;
+  platformFees: number;
+  net: number;
+  trips: number;
+};
+
+type EarningRecord = {
   id: string;
-  amount: number;
-  date: string;
   tripId: string;
+  grossZmw: number;
+  platformFeeZmw: number;
+  netZmw: number;
+  date: string;
   pickup: string;
   dropoff: string;
-  distance: number;
+  distanceKm: number;
   customerName: string;
+};
+
+type EarningsPayload = {
+  summaries: Record<Period, Summary>;
+  earnings: EarningRecord[];
+};
+
+function money(value?: number | null) {
+  return 'K' + Number(value || 0).toLocaleString();
 }
 
-interface EarningsSummary {
-  today: number;
-  week: number;
-  month: number;
-  total: number;
-  list: EarningRecord[];
+async function readResponse(res: Response) {
+  const text = await res.text();
+  let data: any = {};
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    data = {};
+  }
+  return { text, data };
 }
 
 export default function DriverEarningsPage() {
-  const router = useRouter();
-  const [period, setPeriod] = useState<'week' | 'month' | 'all'>('week');
-  const [earnings, setEarnings] = useState<EarningsSummary | null>(null);
+  const [data, setData] = useState<EarningsPayload | null>(null);
+  const [period, setPeriod] = useState<Period>('week');
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
-  useEffect(() => {
-    fetchEarnings();
-  }, [period]);
+  async function loadEarnings() {
+    setLoading(true);
+    setError('');
 
-  const fetchEarnings = async () => {
     try {
-      const { data } = await axios.get(`/api/driver/earnings?period=${period}`);
-      setEarnings(data);
-    } catch (error) {
-      console.error('Failed to fetch earnings:', error);
+      const res = await fetch('/api/driver/earnings', { credentials: 'same-origin' });
+      const { text, data: payload } = await readResponse(res);
+
+      if (res.status === 401) {
+        window.location.href = '/auth/login?redirect=/driver/earnings&reason=session';
+        return;
+      }
+
+      if (!res.ok) {
+        throw new Error(payload?.error || text || 'Unable to load driver earnings.');
+      }
+
+      setData(payload);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to load driver earnings.');
     } finally {
       setLoading(false);
     }
+  }
+
+  useEffect(() => {
+    loadEarnings();
+  }, []);
+
+  const selectedSummary = data?.summaries?.[period] || {
+    gross: 0,
+    platformFees: 0,
+    net: 0,
+    trips: 0,
   };
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-ZM', {
-      style: 'currency',
-      currency: 'ZMW',
-      minimumFractionDigits: 0,
-    }).format(amount);
-  };
+  const visibleEarnings = useMemo(() => {
+    if (!data?.earnings) return [];
 
-  const formatDate = (dateStr: string) => {
-    return new Date(dateStr).toLocaleDateString('en-US', {
-      weekday: 'short',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const weekStart = new Date(todayStart);
+    weekStart.setDate(weekStart.getDate() - weekStart.getDay());
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+
+    return data.earnings.filter((earning) => {
+      const date = new Date(earning.date);
+      if (period === 'today') return date >= todayStart;
+      if (period === 'week') return date >= weekStart;
+      if (period === 'month') return date >= monthStart;
+      return true;
     });
-  };
-
-  // Mock data for visualization
-  const weeklyData = [
-    { day: 'Mon', amount: earnings?.today || 0 },
-    { day: 'Tue', amount: (earnings?.today || 0) * 1.2 },
-    { day: 'Wed', amount: (earnings?.today || 0) * 0.8 },
-    { day: 'Thu', amount: (earnings?.today || 0) * 1.5 },
-    { day: 'Fri', amount: (earnings?.today || 0) * 2 },
-    { day: 'Sat', amount: (earnings?.today || 0) * 1.8 },
-    { day: 'Sun', amount: (earnings?.today || 0) * 0.5 },
-  ];
-  const maxAmount = Math.max(...weeklyData.map(d => d.amount));
+  }, [data, period]);
 
   return (
-    <div className="min-h-screen bg-gray-900 text-white">
+    <div className="min-h-screen bg-slate-50 text-slate-950">
       <Header />
-      
-      <main className="max-w-4xl mx-auto px-4 py-8">
-        {/* Back button */}
-        <button
-          onClick={() => router.push('/driver')}
-          className="flex items-center gap-2 text-gray-400 hover:text-white mb-6 transition-colors"
-        >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-          </svg>
-          Back to Dashboard
-        </button>
 
-        <h1 className="text-3xl font-bold mb-8">💰 Earnings Overview</h1>
-
-        {loading ? (
-          <div className="flex items-center justify-center h-64">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-yellow-500"></div>
+      <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
+        <section className="flex flex-col justify-between gap-5 border-b border-slate-200 pb-6 sm:flex-row sm:items-end">
+          <div>
+            <Link href="/driver" className="text-sm font-semibold text-blue-700">← Driver dashboard</Link>
+            <h1 className="mt-3 text-3xl font-bold tracking-[-0.035em]">Earnings</h1>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">
+              Earnings shown here come only from completed trips recorded in DENUEL. Platform fees are taken from each real DriverEarning record.
+            </p>
           </div>
-        ) : (
-          <>
-            {/* Summary Cards */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-              <div className="bg-gradient-to-br from-green-600 to-green-700 rounded-xl p-5">
-                <p className="text-green-200 text-sm font-medium">Today</p>
-                <p className="text-2xl font-bold mt-1">{formatCurrency(earnings?.today || 0)}</p>
-              </div>
-              <div className="bg-gradient-to-br from-blue-600 to-blue-700 rounded-xl p-5">
-                <p className="text-blue-200 text-sm font-medium">This Week</p>
-                <p className="text-2xl font-bold mt-1">{formatCurrency(earnings?.week || 0)}</p>
-              </div>
-              <div className="bg-gradient-to-br from-purple-600 to-purple-700 rounded-xl p-5">
-                <p className="text-purple-200 text-sm font-medium">This Month</p>
-                <p className="text-2xl font-bold mt-1">{formatCurrency(earnings?.month || 0)}</p>
-              </div>
-              <div className="bg-gradient-to-br from-yellow-600 to-orange-600 rounded-xl p-5">
-                <p className="text-yellow-200 text-sm font-medium">Total Lifetime</p>
-                <p className="text-2xl font-bold mt-1">{formatCurrency(earnings?.total || 0)}</p>
-              </div>
-            </div>
 
-            {/* Weekly Chart */}
-            <div className="bg-gray-800 rounded-xl p-6 mb-8">
-              <h2 className="text-xl font-semibold mb-4">Weekly Performance</h2>
-              <div className="flex items-end justify-between h-48 gap-2">
-                {weeklyData.map((item, index) => (
-                  <div key={index} className="flex-1 flex flex-col items-center gap-2">
-                    <div className="w-full bg-gray-700 rounded-t relative flex-1 flex items-end">
-                      <div
-                        className="w-full bg-gradient-to-t from-yellow-500 to-yellow-400 rounded-t transition-all duration-500"
-                        style={{ 
-                          height: maxAmount > 0 ? `${(item.amount / maxAmount) * 100}%` : '0%',
-                          minHeight: item.amount > 0 ? '4px' : '0'
-                        }}
-                      />
-                    </div>
-                    <span className="text-xs text-gray-400">{item.day}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
+          <button
+            type="button"
+            onClick={loadEarnings}
+            className="border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700"
+          >
+            Refresh
+          </button>
+        </section>
 
-            {/* Period Filter */}
-            <div className="flex gap-2 mb-4">
-              {(['week', 'month', 'all'] as const).map((p) => (
-                <button
-                  key={p}
-                  onClick={() => setPeriod(p)}
-                  className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                    period === p
-                      ? 'bg-yellow-500 text-gray-900'
-                      : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
-                  }`}
-                >
-                  {p === 'week' ? 'This Week' : p === 'month' ? 'This Month' : 'All Time'}
-                </button>
+        {error && (
+          <section className="mt-6 border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+            <div>{error}</div>
+            <button type="button" onClick={loadEarnings} className="mt-3 font-semibold underline underline-offset-4">
+              Try again
+            </button>
+          </section>
+        )}
+
+        <section className="mt-6 flex flex-wrap gap-2">
+          {([
+            ['today', 'Today'],
+            ['week', 'This week'],
+            ['month', 'This month'],
+            ['all', 'All time'],
+          ] as const).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => setPeriod(value)}
+              className={
+                'border px-3 py-2 text-sm font-semibold ' +
+                (period === value
+                  ? 'border-slate-950 bg-slate-950 text-white'
+                  : 'border-slate-300 bg-white text-slate-600 hover:border-slate-950')
+              }
+            >
+              {label}
+            </button>
+          ))}
+        </section>
+
+        <section className="mt-6 grid grid-cols-2 border-l border-t border-slate-200 bg-white lg:grid-cols-4">
+          {[
+            ['Gross fares', money(selectedSummary.gross)],
+            ['Platform fees', money(selectedSummary.platformFees)],
+            ['Net earnings', money(selectedSummary.net)],
+            ['Completed trips', selectedSummary.trips.toLocaleString()],
+          ].map(([label, value]) => (
+            <div key={String(label)} className="border-b border-r border-slate-200 p-5">
+              <div className="text-sm text-slate-500">{label}</div>
+              <div className="mt-2 text-2xl font-bold">{loading ? '—' : value}</div>
+            </div>
+          ))}
+        </section>
+
+        <section className="mt-6 border border-blue-200 bg-blue-50 p-5">
+          <h2 className="font-semibold">What “net earnings” means</h2>
+          <p className="mt-2 text-sm leading-6 text-slate-600">
+            Net earnings are the amount recorded for the driver after the platform fee stored for each completed trip. This page does not estimate withdrawal balances or invent payout amounts.
+          </p>
+        </section>
+
+        <section className="mt-6 overflow-hidden border border-slate-200 bg-white">
+          <div className="border-b border-slate-200 px-5 py-4">
+            <h2 className="font-semibold">Completed-trip earnings</h2>
+            <p className="mt-1 text-xs text-slate-500">
+              Up to the latest 100 recorded DriverEarning entries are shown.
+            </p>
+          </div>
+
+          {loading ? (
+            <div className="space-y-4 p-5">
+              {Array.from({ length: 5 }).map((_, index) => (
+                <div key={index} className="h-20 animate-pulse bg-slate-100" />
               ))}
             </div>
-
-            {/* Earnings List */}
-            <div className="bg-gray-800 rounded-xl overflow-hidden">
-              <div className="p-4 border-b border-gray-700">
-                <h2 className="text-xl font-semibold">Trip History</h2>
-              </div>
-              
-              {earnings?.list && earnings.list.length > 0 ? (
-                <div className="divide-y divide-gray-700">
-                  {earnings.list.map((record) => (
-                    <div key={record.id} className="p-4 hover:bg-gray-750 transition-colors">
-                      <div className="flex justify-between items-start">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-2">
-                            <span className="text-green-400 font-bold text-lg">
-                              {formatCurrency(record.amount)}
-                            </span>
-                            <span className="text-xs text-gray-500 bg-gray-700 px-2 py-0.5 rounded">
-                              {record.distance} km
-                            </span>
-                          </div>
-                          <div className="text-sm space-y-1">
-                            <div className="flex items-center gap-2 text-gray-400">
-                              <span className="w-2 h-2 rounded-full bg-green-500"></span>
-                              <span className="truncate">{record.pickup}</span>
-                            </div>
-                            <div className="flex items-center gap-2 text-gray-400">
-                              <span className="w-2 h-2 rounded-full bg-red-500"></span>
-                              <span className="truncate">{record.dropoff}</span>
-                            </div>
-                          </div>
-                        </div>
-                        <div className="text-right">
-                          <p className="text-xs text-gray-500">{formatDate(record.date)}</p>
-                          <p className="text-sm text-gray-400 mt-1">{record.customerName}</p>
-                        </div>
-                      </div>
+          ) : visibleEarnings.length ? (
+            <div className="divide-y divide-slate-100">
+              {visibleEarnings.map((earning) => (
+                <article
+                  key={earning.id}
+                  className="grid gap-4 px-5 py-4 md:grid-cols-[minmax(0,1fr)_130px_130px_130px] md:items-center"
+                >
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-semibold">{earning.pickup}</div>
+                    <div className="mt-1 truncate text-sm text-slate-500">to {earning.dropoff}</div>
+                    <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-400">
+                      <span>{Number(earning.distanceKm || 0).toFixed(1)} km</span>
+                      <span>{earning.customerName}</span>
+                      <span>{new Date(earning.date).toLocaleString('en-ZM')}</span>
                     </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="p-12 text-center text-gray-500">
-                  <svg className="w-16 h-16 mx-auto mb-4 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  <p>No trips completed in this period</p>
-                  <p className="text-sm mt-2">Complete trips to see your earnings here</p>
-                </div>
-              )}
-            </div>
+                  </div>
 
-            {/* Withdrawal Section */}
-            <div className="mt-8 bg-gradient-to-r from-gray-800 to-gray-750 rounded-xl p-6 border border-gray-700">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-lg font-semibold">Available for Withdrawal</h3>
-                  <p className="text-3xl font-bold text-green-400 mt-1">
-                    {formatCurrency((earnings?.total || 0) * 0.8)}
-                  </p>
-                  <p className="text-xs text-gray-500 mt-1">20% platform fee already deducted</p>
-                </div>
-                <button className="bg-green-600 hover:bg-green-500 text-white px-6 py-3 rounded-lg font-semibold transition-colors">
-                  Withdraw Funds
-                </button>
-              </div>
+                  <div>
+                    <div className="text-xs text-slate-400">Gross</div>
+                    <div className="mt-1 text-sm font-semibold">{money(earning.grossZmw)}</div>
+                  </div>
+
+                  <div>
+                    <div className="text-xs text-slate-400">Platform fee</div>
+                    <div className="mt-1 text-sm font-semibold">{money(earning.platformFeeZmw)}</div>
+                  </div>
+
+                  <div className="md:text-right">
+                    <div className="text-xs text-slate-400">Net</div>
+                    <div className="mt-1 text-lg font-bold text-emerald-700">{money(earning.netZmw)}</div>
+                  </div>
+                </article>
+              ))}
             </div>
-          </>
-        )}
+          ) : (
+            <div className="p-10 text-center">
+              <h3 className="font-semibold">No completed-trip earnings in this period</h3>
+              <p className="mt-2 text-sm text-slate-500">
+                Real earnings will appear after a transport request reaches Completed and a DriverEarning record is created.
+              </p>
+            </div>
+          )}
+        </section>
       </main>
     </div>
   );

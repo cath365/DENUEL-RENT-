@@ -56,6 +56,7 @@ export default function NewPropertyPage() {
   const [parkingSpaces, setParkingSpaces] = useState(0);
   const [petsAllowed, setPetsAllowed] = useState(false);
   const [internetAvailable, setInternetAvailable] = useState(false);
+  const [isStudentFriendly, setIsStudentFriendly] = useState(false);
   
   // Features
   const [waterSource, setWaterSource] = useState<'MUNICIPAL' | 'BOREHOLE' | 'WELL' | 'TANK' | 'OTHER'>('MUNICIPAL');
@@ -194,6 +195,7 @@ export default function NewPropertyPage() {
         parkingSpaces,
         petsAllowed,
         internetAvailable,
+        isStudentFriendly,
         waterSource,
         powerBackup,
         securityFeatures: splitCsv(securityFeatures),
@@ -209,12 +211,27 @@ export default function NewPropertyPage() {
         body: JSON.stringify(payload),
       });
       
-      const data = await res.json();
-      
+      const responseText = await res.text();
+      let data: any = {};
+      try {
+        data = responseText ? JSON.parse(responseText) : {};
+      } catch {
+        data = {};
+      }
+
+      if (res.status === 401) {
+        router.push('/auth/login?redirect=/dashboard/properties/new&reason=session');
+        return;
+      }
+
       if (res.ok && data?.id) {
         router.push('/dashboard/properties');
       } else {
-        setError(data?.error || 'Failed to create property');
+        setError(
+          typeof data?.error === 'string'
+            ? data.error
+            : responseText || 'Failed to submit property for review.'
+        );
       }
     } catch (e: any) {
       setError(e?.message || 'An error occurred');
@@ -238,8 +255,11 @@ export default function NewPropertyPage() {
             </svg>
             Back to Properties
           </button>
-          <h1 className="text-3xl font-bold text-gray-900">Add New Property</h1>
-          <p className="text-gray-600 mt-2">Fill in the details to list your property</p>
+          <p className="text-sm font-semibold text-blue-700">New listing</p>
+          <h1 className="mt-2 text-3xl font-bold tracking-[-0.035em] text-gray-900">Add a property</h1>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-gray-600">
+            Add accurate property details and clear photos. New listings are reviewed before they appear publicly.
+          </p>
         </div>
 
         {/* Progress Steps */}
@@ -276,6 +296,7 @@ export default function NewPropertyPage() {
                     onChange={(e) => setTitle(e.target.value)}
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     placeholder="e.g., Modern 3 Bedroom Apartment in Kabulonga"
+                    minLength={3}
                     required
                   />
                 </div>
@@ -285,9 +306,10 @@ export default function NewPropertyPage() {
                   <textarea
                     value={description}
                     onChange={(e) => setDescription(e.target.value)}
-                    rows={4}
+                    rows={5}
+                    minLength={10}
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="Describe your property..."
+                    placeholder="Describe the property, its condition, important features and what a renter or buyer should know."
                     required
                   />
                 </div>
@@ -327,7 +349,8 @@ export default function NewPropertyPage() {
                       value={price}
                       onChange={(e) => setPrice(e.target.value)}
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      placeholder="e.g., 1500000"
+                      placeholder="e.g., 6500"
+                      min="1"
                       required
                     />
                   </div>
@@ -339,6 +362,7 @@ export default function NewPropertyPage() {
                       onChange={(e) => setDeposit(e.target.value)}
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       placeholder="Security deposit amount"
+                      min="0"
                     />
                   </div>
                 </div>
@@ -493,6 +517,15 @@ export default function NewPropertyPage() {
                     />
                     <span className="text-gray-700">Internet Available</span>
                   </label>
+                  <label className="flex items-center gap-3 p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50">
+                    <input
+                      type="checkbox"
+                      checked={isStudentFriendly}
+                      onChange={(e) => setIsStudentFriendly(e.target.checked)}
+                      className="w-5 h-5 text-blue-600 rounded"
+                    />
+                    <span className="text-gray-700">Student Friendly</span>
+                  </label>
                 </div>
 
                 <div>
@@ -533,7 +566,10 @@ export default function NewPropertyPage() {
             {/* Step 4: Photos */}
             {step === 4 && (
               <div className="space-y-6">
-                <h2 className="text-xl font-semibold text-gray-900 mb-4">Property Photos</h2>
+                <div>
+                  <h2 className="text-xl font-semibold text-gray-900">Property Photos</h2>
+                  <p className="mt-1 text-sm text-gray-500">Upload clear, recent photos. The first image becomes the main listing photo.</p>
+                </div>
                 
                 <div className="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center">
                   <input
@@ -619,7 +655,7 @@ export default function NewPropertyPage() {
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                     </svg>
                   )}
-                  Create Property
+                  {loading ? 'Submitting…' : 'Submit for review'}
                 </button>
               )}
             </div>

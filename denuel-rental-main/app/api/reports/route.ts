@@ -9,6 +9,8 @@ const CreateSchema = z.object({
   details: z.string().max(2000).optional(),
 });
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(req: Request) {
   try {
     await requireAuth(req, ['ADMIN']);

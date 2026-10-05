@@ -19,6 +19,13 @@ export default function Header() {
   const [user, setUser] = useState<any>(null);
   const { settings } = useSettings();
 
+  const dashboardHref =
+    user?.role === 'ADMIN' ? '/admin'
+      : user?.role === 'DRIVER' ? '/driver'
+        : user?.role === 'SERVICE_PROVIDER' ? '/services/dashboard'
+          : user?.role === 'LANDLORD' || user?.role === 'AGENT' ? '/dashboard/properties'
+            : '/dashboard';
+
   useEffect(() => {
     fetch('/api/auth/me')
       .then((r) => (r.ok ? r.json() : null))
@@ -81,7 +88,7 @@ export default function Header() {
           {user ? (
             <>
               <Link
-                href={user.role === 'ADMIN' ? '/admin' : '/dashboard'}
+                href={dashboardHref}
                 className="text-sm font-medium text-slate-700 hover:text-slate-950"
               >
                 Dashboard
@@ -139,7 +146,7 @@ export default function Header() {
               List a property
             </Link>
             <Link
-              href={user ? '/dashboard' : '/auth/login'}
+              href={user ? dashboardHref : '/auth/login'}
               className="border border-slate-300 px-4 py-3 text-center text-sm font-semibold text-slate-800"
             >
               {user ? 'Dashboard' : 'Sign in'}

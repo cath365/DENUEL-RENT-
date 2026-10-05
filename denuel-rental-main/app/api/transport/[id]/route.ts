@@ -1,40 +1,97 @@
+import { NextRequest, NextResponse } from 'next/server';
 import { requireAuth } from '../../../../lib/auth';
 import prisma from '../../../../lib/prisma';
-import hub from '../../../../lib/transport/realtime';
 
-export async function GET(req: Request, { params }: { params: { id: string } }) {
-  const user = await requireAuth(req, ['USER','DRIVER','ADMIN']);
-  const id = params.id;
-  const tr = await prisma.transportRequest.findUnique({ where: { id } });
-  if (!tr) return new Response('Not found', { status: 404 });
-  // only tenant, assigned driver or admin can fetch
-  if (user.role !== 'ADMIN' && user.id !== tr.tenantId && user.id !== tr.assignedDriverId) return new Response('Forbidden', { status: 403 });
-  return new Response(JSON.stringify(tr), { headers: { 'Content-Type': 'application/json' } });
+export const dynamic = 'force-dynamic';
+
+const ALLOWED_ROLES = ['USER', 'LANDLORD', 'AGENT', 'ADMIN', 'DRIVER', 'SERVICE_PROVIDER'];
+
+export async function GET(
+  req: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const user = await requireAuth(req, ALLOWED_ROLES);
+    const id = params.id;
+
+    let transportRequest = await prisma.transportRequest.findUnique({
+      where: { id },
+      include: {
+        assignedDriver: {
+          select: {
+            userId: true,
+          },
+        },
+        Rating: {
+          select: {
+            id: true,
+            stars: true,
+            comment: true,
+            createdAt: true,
+          },
+        },
+      },
+    });
+
+    if (!transportRequest) {
+      return NextResponse.json({ error: 'Transport request not found' }, { status: 404 });
+    }
+
+    const isTenant = user.id === transportRequest.tenantId;
+    const isAssignedDriver = user.id === transportRequest.assignedDriver?.userId;
+    const isAdmin = user.role === 'ADMIN';
+
+    if (!isTenant && !isAssignedDriver && !isAdmin) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
+    if (
+      transportRequest.status === 'REQUESTED' &&
+      transportRequest.expiresAt &&
+      transportRequest.expiresAt <= new Date()
+    ) {
+      transportRequest = await prisma.transportRequest.update({
+        where: { id: transportRequest.id },
+        data: { status: 'EXPIRED' },
+        include: {
+          assignedDriver: {
+            select: {
+              userId: true,
+            },
+          },
+          Rating: {
+            select: {
+              id: true,
+              stars: true,
+              comment: true,
+              createdAt: true,
+            },
+          },
+        },
+      });
+    }
+
+    return NextResponse.json({
+      request: {
+        ...transportRequest,
+        assignedDriver: transportRequest.assignedDriver
+          ? { assigned: true }
+          : null,
+      },
+    });
+  } catch (error) {
+    if (error instanceof Response) return error;
+    console.error('Transport request detail error:', error);
+    return NextResponse.json({ error: 'Unable to load transport request' }, { status: 500 });
+  }
 }
 
-export async function POST(req: Request, { params }: { params: { id: string } }) {
-  // used for actions like cancel
-  const user = await requireAuth(req, ['USER','DRIVER','ADMIN']);
-  const id = params.id;
-  const body = await req.json();
-  const action = body.action;
-  if (!action) return new Response('Missing action', { status: 400 });
-  const tr = await prisma.transportRequest.findUnique({ where: { id } });
-  if (!tr) return new Response('Not found', { status: 404 });
-
-  if (action === 'cancel') {
-    if (user.id !== tr.tenantId && user.role !== 'ADMIN') return new Response('Forbidden', { status: 403 });
-    await prisma.transportRequest.update({ where: { id }, data: { status: 'CANCELED' } });
-    hub.sendToUser(tr.assignedDriverId || '', 'transport_canceled', { requestId: id });
-    return new Response('Canceled');
-  }
-
-  if (action === 'rate') {
-    const { stars, comment } = body;
-    if (user.id !== tr.tenantId) return new Response('Forbidden', { status: 403 });
-    await prisma.rating.create({ data: { transportRequestId: id, tenantId: user.id, driverId: tr.assignedDriverId || '', stars, comment } });
-    return new Response('Rated');
-  }
-
-  return new Response('Unknown action', { status: 400 });
+export async function POST() {
+  return NextResponse.json(
+    {
+      error:
+        'Use the dedicated transport cancel and rating endpoints for request mutations.',
+    },
+    { status: 405 },
+  );
 }

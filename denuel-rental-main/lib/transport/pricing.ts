@@ -48,16 +48,51 @@ async function getSettings() {
   } as any;
 }
 
-export async function estimateDistanceAndDuration(pickupLat: number, pickupLng: number, dropLat: number, dropLng: number) {
-  const R = 6371; // km
-  const dLat = toRad(dropLat - pickupLat);
-  const dLon = toRad(dropLng - pickupLng);
-  const a = Math.sin(dLat/2) * Math.sin(dLat/2) + Math.cos(toRad(pickupLat)) * Math.cos(toRad(dropLat)) * Math.sin(dLon/2) * Math.sin(dLon/2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-  const distanceKm = R * c;
-  const speedKmh = 40;
-  const durationMin = Math.max(1, Math.round((distanceKm / speedKmh) * 60));
-  return { distanceKm, durationMin };
+export async function estimateDistanceAndDuration(
+  pickupLat: number,
+  pickupLng: number,
+  dropLat: number,
+  dropLng: number,
+) {
+  const token = process.env.MAPBOX_TOKEN || process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
+  if (!token) {
+    throw new Error('MAPBOX_DIRECTIONS_NOT_CONFIGURED');
+  }
+
+  const coordinates =
+    pickupLng + ',' + pickupLat + ';' + dropLng + ',' + dropLat;
+  const url = new URL(
+    'https://api.mapbox.com/directions/v5/mapbox/driving/' + coordinates,
+  );
+  url.searchParams.set('alternatives', 'false');
+  url.searchParams.set('overview', 'false');
+  url.searchParams.set('steps', 'false');
+  url.searchParams.set('access_token', token);
+
+  const response = await fetch(url, { cache: 'no-store' });
+  if (!response.ok) {
+    throw new Error('MAPBOX_DIRECTIONS_UNAVAILABLE');
+  }
+
+  const payload = await response.json();
+  const route = Array.isArray(payload?.routes) ? payload.routes[0] : null;
+
+  const distanceMeters = Number(route?.distance);
+  const durationSeconds = Number(route?.duration);
+
+  if (
+    !Number.isFinite(distanceMeters) ||
+    !Number.isFinite(durationSeconds) ||
+    distanceMeters < 0 ||
+    durationSeconds < 0
+  ) {
+    throw new Error('MAPBOX_ROUTE_NOT_FOUND');
+  }
+
+  return {
+    distanceKm: distanceMeters / 1000,
+    durationMin: Math.max(1, Math.round(durationSeconds / 60)),
+  };
 }
 
 export async function calculatePrice(params: {
@@ -86,7 +121,15 @@ export async function calculatePrice(params: {
   let surgeReason: string | undefined;
   if (settings.surgeEnabled && pickupLat != null && pickupLng != null) {
     // determine nearby drivers and recent requests
-    const drivers = await prisma.driverProfile.findMany({ where: { isApproved: true, isOnline: true } });
+    const drivers = await prisma.driverProfile.findMany({
+      where: {
+        isApproved: true,
+        isOnline: true,
+        verificationStatus: 'VERIFIED',
+        vehicleType: vehicleType as any,
+        user: { isSuspended: false },
+      },
+    });
     const nearbyDrivers = drivers.filter(d => d.currentLat != null && d.currentLng != null).filter(d => {
       const dLat = toRad((d.currentLat as number) - pickupLat);
       const dLon = toRad((d.currentLng as number) - pickupLng);
@@ -97,7 +140,17 @@ export async function calculatePrice(params: {
     });
 
     const windowAgo = new Date(Date.now() - (settings.surgeWindowMinutes || 5) * 60 * 1000);
-    const recentRequests = await prisma.transportRequest.findMany({ where: { createdAt: { gte: windowAgo } } });
+    const recentRequests = await prisma.transportRequest.findMany({
+      where: {
+        createdAt: { gte: windowAgo },
+        vehicleType: vehicleType as any,
+        status: { in: ['REQUESTED', 'SEARCHING', 'DRIVER_ASSIGNED'] },
+        OR: [
+          { expiresAt: null },
+          { expiresAt: { gt: new Date() } },
+        ],
+      },
+    });
     const nearbyRequests = recentRequests.filter(r => {
       const dLat = toRad(r.pickupLat - (pickupLat as number));
       const dLon = toRad(r.pickupLng - (pickupLng as number));

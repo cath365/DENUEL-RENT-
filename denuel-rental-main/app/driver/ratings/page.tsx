@@ -1,241 +1,218 @@
-"use client";
-import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
-import Header from '@/components/Header';
-import axios from 'axios';
+'use client';
 
-interface Rating {
+import { useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
+import Header from '@/components/Header';
+
+type Rating = {
   id: string;
-  rating: number;
-  comment: string;
+  stars: number;
+  comment?: string | null;
   createdAt: string;
-  tenant: {
-    name: string;
-    image?: string;
-  };
-  trip: {
-    pickup: string;
-    dropoff: string;
-    date: string;
-  };
+  tenant?: {
+    name?: string | null;
+  } | null;
+  transportRequest?: {
+    pickupAddressText?: string | null;
+    dropoffAddressText?: string | null;
+    createdAt?: string | null;
+  } | null;
+};
+
+async function readResponse(res: Response) {
+  const text = await res.text();
+  let data: any = {};
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    data = {};
+  }
+  return { text, data };
+}
+
+function Stars({ value }: { value: number }) {
+  return (
+    <div className="flex items-center gap-0.5" aria-label={value + ' out of 5 stars'}>
+      {[1, 2, 3, 4, 5].map((star) => (
+        <span key={star} className={star <= value ? 'text-amber-500' : 'text-slate-200'}>★</span>
+      ))}
+    </div>
+  );
 }
 
 export default function DriverRatingsPage() {
-  const router = useRouter();
   const [ratings, setRatings] = useState<Rating[]>([]);
-  const [stats, setStats] = useState({
-    average: 0,
-    total: 0,
-    distribution: [0, 0, 0, 0, 0] // 1-5 stars
-  });
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
-  useEffect(() => {
-    fetchRatings();
-  }, []);
+  async function loadRatings() {
+    setLoading(true);
+    setError('');
 
-  const fetchRatings = async () => {
     try {
-      const { data } = await axios.get('/api/driver/ratings');
-      const rawRatings = Array.isArray(data) ? data : (data?.ratings || []);
-      const normalizedRatings: Rating[] = rawRatings.map((item: any) => ({
-        id: item.id,
-        rating: Number(item.rating ?? item.stars ?? 0),
-        comment: item.comment || '',
-        createdAt: item.createdAt,
-        tenant: {
-          name: item.tenant?.name || 'Customer',
-          image: item.tenant?.image,
-        },
-        trip: {
-          pickup: item.trip?.pickup || item.transportRequest?.pickupAddressText || 'Pickup not available',
-          dropoff: item.trip?.dropoff || item.transportRequest?.dropoffAddressText || 'Drop-off not available',
-          date: item.trip?.date || item.transportRequest?.createdAt || item.createdAt,
-        },
-      }));
-      setRatings(normalizedRatings);
-      
-      // Calculate stats from the normalized API response.
-      if (normalizedRatings.length > 0) {
-        const total = normalizedRatings.length;
-        const sum = normalizedRatings.reduce((acc, rating) => acc + rating.rating, 0);
-        const distribution = [0, 0, 0, 0, 0];
-        normalizedRatings.forEach((rating) => {
-          if (rating.rating >= 1 && rating.rating <= 5) {
-            distribution[rating.rating - 1]++;
-          }
-        });
-        setStats({
-          average: sum / total,
-          total,
-          distribution
-        });
-      } else {
-        setStats({ average: 0, total: 0, distribution: [0, 0, 0, 0, 0] });
+      const res = await fetch('/api/driver/ratings', { credentials: 'same-origin' });
+      const { text, data } = await readResponse(res);
+
+      if (res.status === 401) {
+        window.location.href = '/auth/login?redirect=/driver/ratings&reason=session';
+        return;
       }
-    } catch (error) {
-      console.error('Failed to fetch ratings:', error);
+
+      if (!res.ok) {
+        throw new Error(data?.error || text || 'Unable to load driver ratings.');
+      }
+
+      setRatings(Array.isArray(data) ? data : []);
+    } catch (err) {
+      setRatings([]);
+      setError(err instanceof Error ? err.message : 'Unable to load driver ratings.');
     } finally {
       setLoading(false);
     }
-  };
+  }
 
-  const formatDate = (dateStr: string) => {
-    return new Date(dateStr).toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-    });
-  };
+  useEffect(() => {
+    loadRatings();
+  }, []);
 
-  const renderStars = (rating: number, size: 'sm' | 'lg' = 'sm') => {
-    const sizeClass = size === 'lg' ? 'w-8 h-8' : 'w-5 h-5';
-    return (
-      <div className="flex gap-0.5">
-        {[1, 2, 3, 4, 5].map((star) => (
-          <svg
-            key={star}
-            className={`${sizeClass} ${star <= rating ? 'text-yellow-400' : 'text-gray-600'}`}
-            fill="currentColor"
-            viewBox="0 0 20 20"
-          >
-            <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
-          </svg>
-        ))}
-      </div>
+  const stats = useMemo(() => {
+    const valid = ratings.filter((rating) => rating.stars >= 1 && rating.stars <= 5);
+    const average = valid.length
+      ? valid.reduce((sum, rating) => sum + rating.stars, 0) / valid.length
+      : 0;
+
+    const distribution = [1, 2, 3, 4, 5].map(
+      (star) => valid.filter((rating) => rating.stars === star).length,
     );
-  };
+
+    return {
+      average,
+      total: valid.length,
+      distribution,
+    };
+  }, [ratings]);
 
   return (
-    <div className="min-h-screen bg-gray-900 text-white">
+    <div className="min-h-screen bg-slate-50 text-slate-950">
       <Header />
-      
-      <main className="max-w-4xl mx-auto px-4 py-8">
-        {/* Back button */}
-        <button
-          onClick={() => router.push('/driver')}
-          className="flex items-center gap-2 text-gray-400 hover:text-white mb-6 transition-colors"
-        >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-          </svg>
-          Back to Dashboard
-        </button>
 
-        <h1 className="text-3xl font-bold mb-8">⭐ Ratings & Reviews</h1>
-
-        {loading ? (
-          <div className="flex items-center justify-center h-64">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-yellow-500"></div>
+      <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
+        <section className="flex flex-col justify-between gap-5 border-b border-slate-200 pb-6 sm:flex-row sm:items-end">
+          <div>
+            <Link href="/driver" className="text-sm font-semibold text-blue-700">← Driver dashboard</Link>
+            <h1 className="mt-3 text-3xl font-bold tracking-[-0.035em]">Ratings & reviews</h1>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">
+              These ratings come only from recorded transport trips. DENUEL does not generate placeholder reviews or estimated scores.
+            </p>
           </div>
-        ) : (
-          <>
-            {/* Rating Overview */}
-            <div className="bg-gray-800 rounded-xl p-6 mb-8">
-              <div className="flex flex-col md:flex-row gap-8">
-                {/* Average Rating */}
-                <div className="text-center md:text-left">
-                  <div className="text-6xl font-bold text-yellow-400">
-                    {stats.average.toFixed(1)}
-                  </div>
-                  <div className="mt-2">{renderStars(Math.round(stats.average), 'lg')}</div>
-                  <p className="text-gray-400 mt-2">{stats.total} ratings</p>
-                </div>
 
-                {/* Rating Distribution */}
-                <div className="flex-1 space-y-2">
-                  {[5, 4, 3, 2, 1].map((star) => {
-                    const count = stats.distribution[star - 1];
-                    const percentage = stats.total > 0 ? (count / stats.total) * 100 : 0;
-                    return (
-                      <div key={star} className="flex items-center gap-2">
-                        <span className="text-sm text-gray-400 w-4">{star}</span>
-                        <svg className="w-4 h-4 text-yellow-400" fill="currentColor" viewBox="0 0 20 20">
-                          <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
-                        </svg>
-                        <div className="flex-1 h-2 bg-gray-700 rounded-full overflow-hidden">
-                          <div
-                            className="h-full bg-yellow-400 rounded-full transition-all duration-500"
-                            style={{ width: `${percentage}%` }}
-                          />
-                        </div>
-                        <span className="text-sm text-gray-500 w-8 text-right">{count}</span>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
+          <button
+            type="button"
+            onClick={loadRatings}
+            className="border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700"
+          >
+            Refresh
+          </button>
+        </section>
 
-            {/* Rating Tips */}
-            {stats.average < 4.5 && (
-              <div className="bg-blue-900/30 border border-blue-700 rounded-xl p-4 mb-8">
-                <h3 className="font-semibold text-blue-400 mb-2">💡 Tips to Improve Your Rating</h3>
-                <ul className="text-sm text-blue-300 space-y-1">
-                  <li>• Keep your vehicle clean and well-maintained</li>
-                  <li>• Be punctual and communicate with passengers</li>
-                  <li>• Drive safely and follow traffic rules</li>
-                  <li>• Be friendly and professional</li>
-                </ul>
-              </div>
-            )}
-
-            {/* Reviews List */}
-            <div className="bg-gray-800 rounded-xl overflow-hidden">
-              <div className="p-4 border-b border-gray-700">
-                <h2 className="text-xl font-semibold">Customer Reviews</h2>
-              </div>
-
-              {ratings.length > 0 ? (
-                <div className="divide-y divide-gray-700">
-                  {ratings.map((review) => (
-                    <div key={review.id} className="p-4">
-                      <div className="flex items-start gap-4">
-                        {/* Avatar */}
-                        <div className="w-12 h-12 bg-gray-700 rounded-full flex items-center justify-center text-lg font-bold text-gray-400 flex-shrink-0">
-                          {review.tenant.name?.[0]?.toUpperCase() || '?'}
-                        </div>
-
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center justify-between">
-                            <h4 className="font-medium">{review.tenant.name}</h4>
-                            <span className="text-xs text-gray-500">{formatDate(review.createdAt)}</span>
-                          </div>
-                          
-                          <div className="mt-1">{renderStars(review.rating)}</div>
-
-                          {review.comment && (
-                            <p className="mt-2 text-gray-300">{review.comment}</p>
-                          )}
-
-                          {/* Trip Info */}
-                          <div className="mt-3 text-xs text-gray-500 bg-gray-900/50 rounded-lg p-2">
-                            <div className="flex items-center gap-2">
-                              <span className="w-1.5 h-1.5 rounded-full bg-green-500"></span>
-                              <span className="truncate">{review.trip.pickup}</span>
-                            </div>
-                            <div className="flex items-center gap-2 mt-1">
-                              <span className="w-1.5 h-1.5 rounded-full bg-red-500"></span>
-                              <span className="truncate">{review.trip.dropoff}</span>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="p-12 text-center text-gray-500">
-                  <svg className="w-16 h-16 mx-auto mb-4 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
-                  </svg>
-                  <p>No reviews yet</p>
-                  <p className="text-sm mt-2">Complete trips to receive customer reviews</p>
-                </div>
-              )}
-            </div>
-          </>
+        {error && (
+          <section className="mt-6 border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+            <div>{error}</div>
+            <button type="button" onClick={loadRatings} className="mt-3 font-semibold underline underline-offset-4">
+              Try again
+            </button>
+          </section>
         )}
+
+        <section className="mt-7 grid gap-6 border border-slate-200 bg-white p-5 sm:p-6 md:grid-cols-[220px_minmax(0,1fr)]">
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">Average rating</div>
+            <div className="mt-2 text-5xl font-bold tracking-[-0.04em]">
+              {loading ? '—' : stats.total ? stats.average.toFixed(1) : '—'}
+            </div>
+            <div className="mt-3">
+              <Stars value={Math.round(stats.average)} />
+            </div>
+            <div className="mt-2 text-sm text-slate-500">
+              {stats.total ? stats.total + ' recorded rating' + (stats.total === 1 ? '' : 's') : 'No ratings yet'}
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            {[5, 4, 3, 2, 1].map((star) => {
+              const count = stats.distribution[star - 1] || 0;
+              const percentage = stats.total ? (count / stats.total) * 100 : 0;
+
+              return (
+                <div key={star} className="grid grid-cols-[24px_1fr_44px] items-center gap-3 text-sm">
+                  <span className="font-medium">{star}</span>
+                  <div className="h-2 overflow-hidden bg-slate-100">
+                    <div className="h-full bg-amber-400" style={{ width: percentage + '%' }} />
+                  </div>
+                  <span className="text-right text-slate-500">{count}</span>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+
+        <section className="mt-6 overflow-hidden border border-slate-200 bg-white">
+          <div className="border-b border-slate-200 px-5 py-4">
+            <h2 className="font-semibold">Customer reviews</h2>
+            <p className="mt-1 text-xs text-slate-500">Most recent ratings first.</p>
+          </div>
+
+          {loading ? (
+            <div className="space-y-4 p-5">
+              {Array.from({ length: 4 }).map((_, index) => (
+                <div key={index} className="h-28 animate-pulse bg-slate-100" />
+              ))}
+            </div>
+          ) : ratings.length ? (
+            <div className="divide-y divide-slate-100">
+              {ratings.map((rating) => (
+                <article key={rating.id} className="p-5 sm:p-6">
+                  <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-3">
+                        <div className="font-semibold">{rating.tenant?.name || 'Customer'}</div>
+                        <Stars value={rating.stars} />
+                      </div>
+
+                      {rating.comment && (
+                        <p className="mt-3 max-w-3xl whitespace-pre-line text-sm leading-6 text-slate-700">
+                          {rating.comment}
+                        </p>
+                      )}
+
+                      {rating.transportRequest && (
+                        <div className="mt-4 border-l-2 border-slate-200 pl-3 text-xs leading-5 text-slate-500">
+                          <div>{rating.transportRequest.pickupAddressText || 'Pickup not recorded'}</div>
+                          <div>to {rating.transportRequest.dropoffAddressText || 'Drop-off not recorded'}</div>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="shrink-0 text-xs text-slate-400">
+                      {new Date(rating.createdAt).toLocaleDateString('en-ZM', {
+                        day: 'numeric',
+                        month: 'short',
+                        year: 'numeric',
+                      })}
+                    </div>
+                  </div>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <div className="p-10 text-center">
+              <h3 className="font-semibold">No ratings yet</h3>
+              <p className="mt-2 text-sm text-slate-500">
+                Customer ratings will appear here after completed trips are reviewed.
+              </p>
+            </div>
+          )}
+        </section>
       </main>
     </div>
   );

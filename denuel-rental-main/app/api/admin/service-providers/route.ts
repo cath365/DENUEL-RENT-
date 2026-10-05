@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma';
 import { requireAuth } from '@/lib/auth';
 
 // GET - List all service providers (admin only)
+export const dynamic = 'force-dynamic';
 export async function GET(req: NextRequest) {
   try {
     const user = await requireAuth(req);
@@ -73,11 +74,21 @@ export async function GET(req: NextRequest) {
       prisma.serviceProvider.count({ where }),
     ]);
 
+    const safeProviders = providers.map((provider) => ({
+      ...provider,
+      documents: provider.documents.map(({ fileUrl, ...document }) => ({
+        ...document,
+        fileAccessUrl: '/api/services/documents/' + document.id + '/file',
+        storagePrivate: Boolean(fileUrl?.includes('.private.blob.vercel-storage.com')),
+      })),
+    }));
+
     return NextResponse.json({
-      providers,
+      providers: safeProviders,
       pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
     });
   } catch (error) {
+    if (error instanceof Response) return error;
     console.error('Error fetching providers:', error);
     return NextResponse.json({ message: 'Failed to fetch providers' }, { status: 500 });
   }

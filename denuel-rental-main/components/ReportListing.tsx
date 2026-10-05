@@ -18,8 +18,20 @@ export default function ReportListing({ propertyId }: { propertyId: string }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ propertyId, reason, details: details.trim() ? details.trim() : undefined }),
       });
-      const json = await res.json();
-      if (json?.report) {
+      const text = await res.text();
+      let json: any = {};
+      try {
+        json = text ? JSON.parse(text) : {};
+      } catch {
+        json = {};
+      }
+
+      if (res.status === 401) {
+        window.location.href = '/auth/login?redirect=/property/' + propertyId;
+        return;
+      }
+
+      if (res.ok && json?.report) {
         setStatus('sent');
         setOpen(false);
         setDetails('');

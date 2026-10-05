@@ -1,31 +1,66 @@
-"use client";
-import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+'use client';
+
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Header from '../../../components/Header';
 import Link from 'next/link';
+import { csrfFetch } from '../../../lib/csrf';
 
 const VEHICLE_TYPES = [
-  { id: 'MOTORBIKE', label: 'Motorbike', icon: '🏍️', description: 'Small deliveries & quick trips' },
-  { id: 'CAR', label: 'Car / Sedan', icon: '🚗', description: 'Up to 4 passengers' },
-  { id: 'SUV', label: 'SUV', icon: '🚙', description: 'Up to 6 passengers, more luggage space' },
-  { id: 'VAN', label: 'Van / Minibus', icon: '🚐', description: 'Up to 12 passengers or medium cargo' },
-  { id: 'TRUCK_SMALL', label: 'Small Truck', icon: '🛻', description: 'Small moving jobs, up to 1 ton' },
-  { id: 'TRUCK_MEDIUM', label: 'Medium Truck', icon: '🚚', description: 'Medium moving jobs, 1-3 tons' },
-  { id: 'TRUCK_LARGE', label: 'Large Truck', icon: '🚛', description: 'Large moving jobs, 3+ tons' },
-];
+  ['MOTORBIKE', 'Motorbike', 'Small deliveries and short transport requests.'],
+  ['CAR', 'Car / sedan', 'Passenger trips and light transport.'],
+  ['SUV', 'SUV', 'Passenger trips with additional luggage space.'],
+  ['VAN', 'Van / minibus', 'Passenger groups or medium cargo.'],
+  ['TRUCK_SMALL', 'Small truck', 'Small moving and cargo jobs.'],
+  ['TRUCK_MEDIUM', 'Medium truck', 'Medium moving and cargo jobs.'],
+  ['TRUCK_LARGE', 'Large truck', 'Large moving and cargo jobs.'],
+] as const;
 
 const ZAMBIAN_CITIES = [
-  'Lusaka', 'Kitwe', 'Ndola', 'Kabwe', 'Chingola', 'Mufulira', 'Livingstone',
-  'Luanshya', 'Kasama', 'Chipata', 'Solwezi', 'Mansa', 'Mongu', 'Kafue', 'Choma'
+  'Lusaka',
+  'Kitwe',
+  'Ndola',
+  'Kabwe',
+  'Chingola',
+  'Mufulira',
+  'Livingstone',
+  'Luanshya',
+  'Kasama',
+  'Chipata',
+  'Solwezi',
+  'Mansa',
+  'Mongu',
+  'Kafue',
+  'Choma',
 ];
 
+const REQUIRED_DOCUMENTS = [
+  ['NRC', 'NRC / national identity', 'Clear copy of your NRC.'],
+  ['DRIVER_LICENSE', 'Driver’s licence', 'Current licence showing the licence number used in your application.'],
+  ['VEHICLE_REGISTRATION', 'Vehicle registration', 'Registration document for the vehicle you want to use.'],
+  ['INSURANCE', 'Vehicle insurance', 'Current vehicle insurance evidence.'],
+  ['POLICE_CLEARANCE', 'Police clearance', 'Current police-clearance or equivalent background-check document.'],
+] as const;
+
+type DocumentType = typeof REQUIRED_DOCUMENTS[number][0];
+
+async function readResponse(res: Response) {
+  const text = await res.text();
+  let data: any = {};
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    data = {};
+  }
+  return { text, data };
+}
+
 export default function DriverApplyPage() {
+  const router = useRouter();
   const [step, setStep] = useState(1);
-  const [formData, setFormData] = useState({
-    fullName: '',
-    email: '',
-    phone: '',
+  const [account, setAccount] = useState<any>(null);
+  const [checkingAccount, setCheckingAccount] = useState(true);
+  const [form, setForm] = useState({
     nrcNumber: '',
     licenseNumber: '',
     vehicleType: '',
@@ -39,520 +74,450 @@ export default function DriverApplyPage() {
     bio: '',
     serviceAreas: [] as string[],
   });
-  const [documents, setDocuments] = useState<{ type: string; file: File | null }[]>([
-    { type: 'nrc', file: null },
-    { type: 'license', file: null },
-    { type: 'vehicle_reg', file: null },
-    { type: 'insurance', file: null },
-    { type: 'clearance', file: null },
-  ]);
-  const [error, setError] = useState('');
+  const [documents, setDocuments] = useState<Record<DocumentType, File | null>>({
+    NRC: null,
+    DRIVER_LICENSE: null,
+    VEHICLE_REGISTRATION: null,
+    INSURANCE: null,
+    POLICE_CLEARANCE: null,
+  });
   const [loading, setLoading] = useState(false);
-  const router = useRouter();
+  const [uploadProgress, setUploadProgress] = useState('');
+  const [error, setError] = useState('');
 
   useEffect(() => {
-    async function check() {
+    let cancelled = false;
+
+    async function loadAccountState() {
       try {
-        const p = await axios.get('/api/driver/profile');
-        if (p.data.profile) router.push('/driver');
-      } catch (e) {
-        // ignore
+        const profileRes = await fetch('/api/driver/profile', { credentials: 'same-origin' });
+
+        if (profileRes.status === 401) {
+          router.push('/auth/login?redirect=/driver/apply&reason=session');
+          return;
+        }
+
+        if (profileRes.status === 403) {
+          if (!cancelled) {
+            setError('This account is not registered as a driver account.');
+            setCheckingAccount(false);
+          }
+          return;
+        }
+
+        if (profileRes.ok) {
+          const { data } = await readResponse(profileRes);
+          if (data?.profile) {
+            router.push('/driver');
+            return;
+          }
+        }
+
+        const meRes = await fetch('/api/auth/me', { credentials: 'same-origin' });
+        const { data: meData } = await readResponse(meRes);
+
+        if (!meData?.user) {
+          router.push('/auth/login?redirect=/driver/apply&reason=session');
+          return;
+        }
+
+        if (meData.user.role !== 'DRIVER') {
+          if (!cancelled) {
+            setError('Choose Driver / transport during registration before completing a driver application.');
+            setCheckingAccount(false);
+          }
+          return;
+        }
+
+        if (!cancelled) {
+          setAccount(meData.user);
+        }
+      } catch {
+        if (!cancelled) setError('Unable to load your driver account.');
+      } finally {
+        if (!cancelled) setCheckingAccount(false);
       }
     }
-    check();
+
+    loadAccountState();
+    return () => {
+      cancelled = true;
+    };
   }, [router]);
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
-    const { name, value } = e.target;
-    setFormData({ ...formData, [name]: value });
+  const allDocumentsSelected = useMemo(
+    () => REQUIRED_DOCUMENTS.every(([type]) => Boolean(documents[type])),
+    [documents],
+  );
+
+  const stepOneReady =
+    Boolean(form.vehicleType) &&
+    form.vehicleMake.trim().length >= 2 &&
+    form.vehicleModel.trim().length >= 1 &&
+    Number(form.vehicleYear) >= 1980 &&
+    form.vehiclePlate.trim().length >= 2 &&
+    form.vehicleColor.trim().length >= 2;
+
+  const stepTwoReady =
+    form.nrcNumber.trim().length >= 5 &&
+    form.licenseNumber.trim().length >= 3 &&
+    form.experience.trim().length >= 2;
+
+  const toggleArea = (area: string) => {
+    setForm((current) => ({
+      ...current,
+      serviceAreas: current.serviceAreas.includes(area)
+        ? current.serviceAreas.filter((item) => item !== area)
+        : [...current.serviceAreas, area],
+    }));
   };
 
-  const handleVehicleSelect = (vehicleId: string) => {
-    setFormData({ ...formData, vehicleType: vehicleId });
-  };
-
-  const handleAreaToggle = (city: string) => {
-    const current = formData.serviceAreas;
-    if (current.includes(city)) {
-      setFormData({ ...formData, serviceAreas: current.filter(c => c !== city) });
-    } else {
-      setFormData({ ...formData, serviceAreas: [...current, city] });
-    }
-  };
-
-  const handleFileChange = (index: number, file: File | null) => {
-    const newDocs = [...documents];
-    newDocs[index].file = file;
-    setDocuments(newDocs);
-  };
-
-  async function handleSubmit() {
+  async function submitApplication() {
     setError('');
-    setLoading(true);
-    try {
-      // Upload documents first
-      const uploadedDocs: { type: string; url: string; name: string }[] = [];
-      
-      for (const doc of documents) {
-        if (doc.file) {
-          const formDataUpload = new FormData();
-          formDataUpload.append('file', doc.file);
-          formDataUpload.append('type', 'document');
 
-          try {
-            const uploadRes = await axios.post('/api/uploads', formDataUpload);
-            if (uploadRes.data.url) {
-              uploadedDocs.push({ type: doc.type, url: uploadRes.data.url, name: doc.file.name });
-            }
-          } catch (e) {
-            console.log('Document upload failed:', doc.type);
-          }
+    if (!stepOneReady || !stepTwoReady || form.serviceAreas.length === 0 || !allDocumentsSelected) {
+      setError('Complete all required driver, vehicle, service-area and document fields.');
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      const profileRes = await csrfFetch('/api/driver/profile', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          nrcNumber: form.nrcNumber.trim(),
+          licenseNumber: form.licenseNumber.trim(),
+          vehicleType: form.vehicleType,
+          vehiclePlate: form.vehiclePlate.trim(),
+          vehicleMake: form.vehicleMake.trim(),
+          vehicleModel: form.vehicleModel.trim(),
+          vehicleYear: Number(form.vehicleYear),
+          vehicleColor: form.vehicleColor.trim(),
+          vehicleCapacityKg: form.capacity ? Number(form.capacity) : undefined,
+          experience: form.experience.trim(),
+          bio: form.bio.trim() || undefined,
+          serviceAreas: form.serviceAreas,
+        }),
+      });
+
+      const profilePayload = await readResponse(profileRes);
+
+      if (profileRes.status === 401) {
+        router.push('/auth/login?redirect=/driver/apply&reason=session');
+        return;
+      }
+
+      if (!profileRes.ok && profileRes.status !== 409) {
+        const validation = Array.isArray(profilePayload.data?.error)
+          ? profilePayload.data.error.map((item: any) => item.message).filter(Boolean).join(' ')
+          : profilePayload.data?.error;
+        throw new Error(validation || profilePayload.text || 'Unable to create driver application.');
+      }
+
+      const uploadFailures: string[] = [];
+
+      for (const [type, label] of REQUIRED_DOCUMENTS) {
+        const file = documents[type];
+        if (!file) continue;
+
+        setUploadProgress('Uploading ' + label + '…');
+
+        const uploadForm = new FormData();
+        uploadForm.append('file', file);
+        uploadForm.append('type', type);
+
+        const uploadRes = await csrfFetch('/api/driver/documents/upload', {
+          method: 'POST',
+          credentials: 'same-origin',
+          body: uploadForm,
+        });
+        const uploadPayload = await readResponse(uploadRes);
+
+        if (uploadRes.status === 401) {
+          router.push('/auth/login?redirect=/driver&reason=session');
+          return;
+        }
+
+        if (!uploadRes.ok) {
+          uploadFailures.push(label + ': ' + (uploadPayload.data?.error || uploadPayload.text || 'upload failed'));
         }
       }
 
-      // Submit driver application
-      const body = {
-        licenseNumber: formData.licenseNumber,
-        vehicleType: formData.vehicleType,
-        vehiclePlate: formData.vehiclePlate,
-        vehicleMake: formData.vehicleMake,
-        vehicleModel: formData.vehicleModel,
-        vehicleYear: parseInt(formData.vehicleYear) || new Date().getFullYear(),
-        vehicleColor: formData.vehicleColor,
-        vehicleCapacityKg: parseInt(formData.capacity) || 0,
-        experience: formData.experience,
-        bio: formData.bio,
-        serviceAreas: formData.serviceAreas,
-        documents: uploadedDocs,
-      };
-
-      const res = await axios.post('/api/driver/profile', body);
-      if (res.data.error) {
-        setError(res.data.error);
-      } else {
-        router.push('/driver/apply/success');
+      if (uploadFailures.length) {
+        setError(
+          'Your driver profile was saved, but some verification documents did not upload. ' +
+          uploadFailures.join(' ')
+        );
+        setUploadProgress('');
+        return;
       }
-    } catch (err: any) {
-      setError(err?.response?.data?.error || err?.message || 'Submit failed');
-    } finally { 
-      setLoading(false); 
+
+      router.push('/driver/apply/success');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to submit driver application.');
+    } finally {
+      setLoading(false);
+      setUploadProgress('');
     }
   }
 
+  if (checkingAccount) {
+    return (
+      <div className="min-h-screen bg-slate-50">
+        <Header />
+        <main className="mx-auto max-w-4xl px-4 py-10 sm:px-6">
+          <div className="h-72 animate-pulse border border-slate-200 bg-white" />
+        </main>
+      </div>
+    );
+  }
+
   return (
-    <main className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-slate-50 text-slate-950">
       <Header />
 
-      <div className="container mx-auto px-4 py-8">
-        {/* Progress Steps */}
-        <div className="max-w-3xl mx-auto mb-8">
-          <div className="flex items-center justify-between">
-            {[1, 2, 3, 4].map((s) => (
-              <React.Fragment key={s}>
-                <div className="flex flex-col items-center">
-                  <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold ${
-                    step >= s ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-500'
-                  }`}>
-                    {step > s ? '✓' : s}
-                  </div>
-                  <span className={`text-xs mt-2 ${step >= s ? 'text-blue-600 font-medium' : 'text-gray-500'}`}>
-                    {s === 1 ? 'Vehicle' : s === 2 ? 'Personal' : s === 3 ? 'Areas' : 'Documents'}
-                  </span>
-                </div>
-                {s < 4 && <div className={`flex-1 h-1 mx-2 ${step > s ? 'bg-blue-600' : 'bg-gray-200'}`} />}
-              </React.Fragment>
-            ))}
-          </div>
+      <main className="mx-auto max-w-5xl px-4 py-8 sm:px-6">
+        <section className="border-b border-slate-200 pb-6">
+          <p className="text-sm font-semibold text-blue-700">Transport onboarding</p>
+          <h1 className="mt-2 text-3xl font-bold tracking-[-0.035em]">Driver application</h1>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
+            Add your vehicle and driver information, choose the areas you serve, and upload the documents DENUEL needs to verify your account.
+          </p>
+        </section>
+
+        {account && (
+          <section className="mt-6 border border-slate-200 bg-white p-4">
+            <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">Signed-in account</div>
+            <div className="mt-2 font-semibold">{account.name || 'Driver account'}</div>
+            <div className="mt-1 text-sm text-slate-500">
+              {account.email}{account.phone ? ' · ' + account.phone : ''}
+            </div>
+          </section>
+        )}
+
+        {error && (
+          <section className="mt-6 border border-red-200 bg-red-50 p-4 text-sm leading-6 text-red-700">
+            {error}
+            {error.includes('profile was saved') && (
+              <div className="mt-3">
+                <Link href="/driver" className="font-semibold underline underline-offset-4">
+                  Open driver dashboard to finish verification
+                </Link>
+              </div>
+            )}
+          </section>
+        )}
+
+        <div className="mt-7 flex items-center">
+          {[
+            [1, 'Vehicle'],
+            [2, 'Driver'],
+            [3, 'Service areas'],
+            [4, 'Documents'],
+          ].map(([number, label], index) => (
+            <div key={number} className={'flex items-center ' + (index < 3 ? 'flex-1' : '')}>
+              <button
+                type="button"
+                onClick={() => Number(number) < step && setStep(Number(number))}
+                className={
+                  'flex h-9 w-9 shrink-0 items-center justify-center rounded-full border text-xs font-semibold ' +
+                  (step >= Number(number)
+                    ? 'border-slate-950 bg-slate-950 text-white'
+                    : 'border-slate-300 bg-white text-slate-400')
+                }
+              >
+                {number}
+              </button>
+              <span className="ml-2 hidden text-xs font-medium text-slate-500 sm:inline">{label}</span>
+              {index < 3 && (
+                <span className={'mx-3 h-px flex-1 ' + (step > Number(number) ? 'bg-slate-950' : 'bg-slate-300')} />
+              )}
+            </div>
+          ))}
         </div>
 
-        <div className="max-w-3xl mx-auto">
-          {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-6">
-              {error}
-            </div>
-          )}
-
-          {/* Step 1: Vehicle Selection */}
+        <section className="mt-7 border border-slate-200 bg-white p-5 sm:p-7">
           {step === 1 && (
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8">
-              <h2 className="text-2xl font-bold text-gray-900 mb-2">🚗 Select Your Vehicle Type</h2>
-              <p className="text-gray-600 mb-6">Choose the type of vehicle you'll be using for transport services</p>
+            <div>
+              <h2 className="text-xl font-semibold">Vehicle information</h2>
+              <p className="mt-1 text-sm text-slate-500">Use the vehicle you intend to operate through DENUEL.</p>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
-                {VEHICLE_TYPES.map((vehicle) => (
+              <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                {VEHICLE_TYPES.map(([id, label, description]) => (
                   <button
-                    key={vehicle.id}
-                    onClick={() => handleVehicleSelect(vehicle.id)}
-                    className={`p-4 rounded-xl border-2 text-left transition-all ${
-                      formData.vehicleType === vehicle.id
-                        ? 'border-blue-500 bg-blue-50'
-                        : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
-                    }`}
+                    key={id}
+                    type="button"
+                    onClick={() => setForm({ ...form, vehicleType: id })}
+                    className={
+                      'border p-4 text-left transition ' +
+                      (form.vehicleType === id
+                        ? 'border-slate-950 bg-slate-50'
+                        : 'border-slate-200 hover:border-slate-400')
+                    }
                   >
-                    <div className="flex items-start gap-3">
-                      <span className="text-3xl">{vehicle.icon}</span>
-                      <div>
-                        <h3 className="font-semibold text-gray-900">{vehicle.label}</h3>
-                        <p className="text-sm text-gray-500 mt-1">{vehicle.description}</p>
-                      </div>
-                    </div>
+                    <div className="font-semibold">{label}</div>
+                    <p className="mt-1 text-sm leading-6 text-slate-500">{description}</p>
                   </button>
                 ))}
               </div>
 
-              {/* Vehicle Details */}
-              {formData.vehicleType && (
-                <div className="border-t border-gray-100 pt-6">
-                  <h3 className="font-semibold text-gray-900 mb-4">Vehicle Details</h3>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="mt-6 grid gap-4 sm:grid-cols-2">
+                <label className="text-sm font-medium text-slate-700">
+                  Make
+                  <input value={form.vehicleMake} onChange={(e) => setForm({ ...form, vehicleMake: e.target.value })} placeholder="e.g. Toyota" className="mt-2 h-11 w-full border border-slate-300 px-3" />
+                </label>
+                <label className="text-sm font-medium text-slate-700">
+                  Model
+                  <input value={form.vehicleModel} onChange={(e) => setForm({ ...form, vehicleModel: e.target.value })} placeholder="e.g. Corolla" className="mt-2 h-11 w-full border border-slate-300 px-3" />
+                </label>
+                <label className="text-sm font-medium text-slate-700">
+                  Year
+                  <input type="number" min="1980" max={new Date().getFullYear() + 1} value={form.vehicleYear} onChange={(e) => setForm({ ...form, vehicleYear: e.target.value })} className="mt-2 h-11 w-full border border-slate-300 px-3" />
+                </label>
+                <label className="text-sm font-medium text-slate-700">
+                  Colour
+                  <input value={form.vehicleColor} onChange={(e) => setForm({ ...form, vehicleColor: e.target.value })} placeholder="e.g. White" className="mt-2 h-11 w-full border border-slate-300 px-3" />
+                </label>
+                <label className="text-sm font-medium text-slate-700">
+                  Plate number
+                  <input value={form.vehiclePlate} onChange={(e) => setForm({ ...form, vehiclePlate: e.target.value.toUpperCase() })} placeholder="e.g. ABC 1234" className="mt-2 h-11 w-full border border-slate-300 px-3 uppercase" />
+                </label>
+                <label className="text-sm font-medium text-slate-700">
+                  Cargo capacity in kg (optional)
+                  <input type="number" min="0" value={form.capacity} onChange={(e) => setForm({ ...form, capacity: e.target.value })} placeholder="For cargo vehicles" className="mt-2 h-11 w-full border border-slate-300 px-3" />
+                </label>
+              </div>
+
+              <div className="mt-7 flex justify-end">
+                <button type="button" disabled={!stepOneReady} onClick={() => setStep(2)} className="bg-slate-950 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-40">
+                  Continue
+                </button>
+              </div>
+            </div>
+          )}
+
+          {step === 2 && (
+            <div>
+              <h2 className="text-xl font-semibold">Driver information</h2>
+              <p className="mt-1 text-sm text-slate-500">These details are used during trust and safety review.</p>
+
+              <div className="mt-5 grid gap-4 sm:grid-cols-2">
+                <label className="text-sm font-medium text-slate-700">
+                  NRC number
+                  <input value={form.nrcNumber} onChange={(e) => setForm({ ...form, nrcNumber: e.target.value })} placeholder="e.g. 123456/10/1" className="mt-2 h-11 w-full border border-slate-300 px-3" />
+                </label>
+                <label className="text-sm font-medium text-slate-700">
+                  Driver’s licence number
+                  <input value={form.licenseNumber} onChange={(e) => setForm({ ...form, licenseNumber: e.target.value })} className="mt-2 h-11 w-full border border-slate-300 px-3" />
+                </label>
+                <label className="text-sm font-medium text-slate-700 sm:col-span-2">
+                  Driving experience
+                  <select value={form.experience} onChange={(e) => setForm({ ...form, experience: e.target.value })} className="mt-2 h-11 w-full border border-slate-300 bg-white px-3">
+                    <option value="">Select experience</option>
+                    <option value="Less than 1 year">Less than 1 year</option>
+                    <option value="1-2 years">1–2 years</option>
+                    <option value="3-5 years">3–5 years</option>
+                    <option value="5-10 years">5–10 years</option>
+                    <option value="10+ years">10+ years</option>
+                  </select>
+                </label>
+                <label className="text-sm font-medium text-slate-700 sm:col-span-2">
+                  About your driving work (optional)
+                  <textarea value={form.bio} onChange={(e) => setForm({ ...form, bio: e.target.value })} rows={4} maxLength={3000} placeholder="Experience, types of transport work and relevant professional background." className="mt-2 w-full border border-slate-300 p-3" />
+                </label>
+              </div>
+
+              <div className="mt-7 flex justify-between">
+                <button type="button" onClick={() => setStep(1)} className="border border-slate-300 px-5 py-2.5 text-sm font-semibold text-slate-700">Back</button>
+                <button type="button" disabled={!stepTwoReady} onClick={() => setStep(3)} className="bg-slate-950 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-40">Continue</button>
+              </div>
+            </div>
+          )}
+
+          {step === 3 && (
+            <div>
+              <h2 className="text-xl font-semibold">Service areas</h2>
+              <p className="mt-1 text-sm text-slate-500">Choose the cities where you are genuinely available to accept transport work.</p>
+
+              <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3">
+                {ZAMBIAN_CITIES.map((city) => (
+                  <label key={city} className={'flex cursor-pointer items-center gap-2 border p-3 text-sm ' + (form.serviceAreas.includes(city) ? 'border-slate-950 bg-slate-50' : 'border-slate-200')}>
+                    <input type="checkbox" checked={form.serviceAreas.includes(city)} onChange={() => toggleArea(city)} />
+                    <span>{city}</span>
+                  </label>
+                ))}
+              </div>
+
+              <div className="mt-7 flex justify-between">
+                <button type="button" onClick={() => setStep(2)} className="border border-slate-300 px-5 py-2.5 text-sm font-semibold text-slate-700">Back</button>
+                <button type="button" disabled={!form.serviceAreas.length} onClick={() => setStep(4)} className="bg-slate-950 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-40">Continue</button>
+              </div>
+            </div>
+          )}
+
+          {step === 4 && (
+            <div>
+              <h2 className="text-xl font-semibold">Private verification documents</h2>
+              <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-500">
+                All five documents are required for driver approval. Files are stored privately and can be opened only by your account and authorised DENUEL administrators.
+              </p>
+
+              <div className="mt-5 divide-y divide-slate-100 border border-slate-200">
+                {REQUIRED_DOCUMENTS.map(([type, label, description]) => (
+                  <div key={type} className="grid gap-4 p-4 sm:grid-cols-[minmax(0,1fr)_260px] sm:items-center">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Make *</label>
-                      <input
-                        type="text"
-                        name="vehicleMake"
-                        value={formData.vehicleMake}
-                        onChange={handleInputChange}
-                        placeholder="e.g., Toyota"
-                        className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500"
-                      />
+                      <div className="text-sm font-semibold">{label}</div>
+                      <p className="mt-1 text-sm text-slate-500">{description}</p>
                     </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Model *</label>
+                    <label className="block text-sm font-medium text-slate-700">
                       <input
-                        type="text"
-                        name="vehicleModel"
-                        value={formData.vehicleModel}
-                        onChange={handleInputChange}
-                        placeholder="e.g., Land Cruiser"
-                        className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500"
+                        type="file"
+                        accept="application/pdf,image/jpeg,image/png,image/webp"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0] || null;
+                          if (file && file.size > 4 * 1024 * 1024) {
+                            setError(label + ' must be 4MB or smaller.');
+                            e.currentTarget.value = '';
+                            return;
+                          }
+                          setDocuments((current) => ({ ...current, [type]: file }));
+                        }}
+                        className="block w-full border border-slate-300 p-2 text-xs"
                       />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Year *</label>
-                      <input
-                        type="number"
-                        name="vehicleYear"
-                        value={formData.vehicleYear}
-                        onChange={handleInputChange}
-                        placeholder="e.g., 2020"
-                        min="1990"
-                        max={new Date().getFullYear() + 1}
-                        className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Color *</label>
-                      <input
-                        type="text"
-                        name="vehicleColor"
-                        value={formData.vehicleColor}
-                        onChange={handleInputChange}
-                        placeholder="e.g., White"
-                        className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Plate Number *</label>
-                      <input
-                        type="text"
-                        name="vehiclePlate"
-                        value={formData.vehiclePlate}
-                        onChange={handleInputChange}
-                        placeholder="e.g., ABZ 1234"
-                        className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Capacity (kg) - Optional</label>
-                      <input
-                        type="number"
-                        name="capacity"
-                        value={formData.capacity}
-                        onChange={handleInputChange}
-                        placeholder="e.g., 500"
-                        className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500"
-                      />
-                    </div>
+                      <span className="mt-1 block text-xs text-slate-400">
+                        {documents[type]?.name || 'PDF, JPG, PNG or WEBP · max 4MB'}
+                      </span>
+                    </label>
                   </div>
+                ))}
+              </div>
+
+              {uploadProgress && (
+                <div className="mt-4 border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800">
+                  {uploadProgress}
                 </div>
               )}
 
-              <div className="mt-8 flex justify-end">
-                <button
-                  onClick={() => setStep(2)}
-                  disabled={!formData.vehicleType || !formData.vehicleMake || !formData.vehicleModel || !formData.vehiclePlate}
-                  className="bg-blue-600 text-white px-8 py-3 rounded-lg font-semibold hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Continue
+              <div className="mt-7 flex flex-col-reverse justify-between gap-3 sm:flex-row">
+                <button type="button" disabled={loading} onClick={() => setStep(3)} className="border border-slate-300 px-5 py-2.5 text-sm font-semibold text-slate-700 disabled:opacity-40">Back</button>
+                <button type="button" disabled={loading || !allDocumentsSelected} onClick={submitApplication} className="bg-blue-600 px-5 py-3 text-sm font-semibold text-white disabled:opacity-40">
+                  {loading ? 'Submitting application…' : 'Submit driver application'}
                 </button>
               </div>
             </div>
           )}
+        </section>
 
-          {/* Step 2: Personal Details */}
-          {step === 2 && (
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8">
-              <h2 className="text-2xl font-bold text-gray-900 mb-2">👤 Your Personal Details</h2>
-              <p className="text-gray-600 mb-6">Tell us about yourself</p>
-
-              <div className="space-y-6">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Full Name *</label>
-                    <input
-                      type="text"
-                      name="fullName"
-                      value={formData.fullName}
-                      onChange={handleInputChange}
-                      className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500"
-                      placeholder="Your full name"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">NRC Number *</label>
-                    <input
-                      type="text"
-                      name="nrcNumber"
-                      value={formData.nrcNumber}
-                      onChange={handleInputChange}
-                      className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500"
-                      placeholder="123456/10/1"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Email *</label>
-                    <input
-                      type="email"
-                      name="email"
-                      value={formData.email}
-                      onChange={handleInputChange}
-                      className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500"
-                      placeholder="your@email.com"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Phone Number *</label>
-                    <input
-                      type="tel"
-                      name="phone"
-                      value={formData.phone}
-                      onChange={handleInputChange}
-                      className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500"
-                      placeholder="+260 97X XXX XXX"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Driver's License Number *</label>
-                    <input
-                      type="text"
-                      name="licenseNumber"
-                      value={formData.licenseNumber}
-                      onChange={handleInputChange}
-                      className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500"
-                      placeholder="DL123456"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Driving Experience *</label>
-                    <select
-                      name="experience"
-                      value={formData.experience}
-                      onChange={handleInputChange}
-                      className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500"
-                    >
-                      <option value="">Select experience</option>
-                      <option value="Less than 1 year">Less than 1 year</option>
-                      <option value="1-2 years">1-2 years</option>
-                      <option value="3-5 years">3-5 years</option>
-                      <option value="5-10 years">5-10 years</option>
-                      <option value="10+ years">10+ years</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">About You</label>
-                  <textarea
-                    name="bio"
-                    value={formData.bio}
-                    onChange={handleInputChange}
-                    rows={4}
-                    className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500"
-                    placeholder="Tell clients about your driving experience, why you're reliable, etc..."
-                  />
-                </div>
-              </div>
-
-              <div className="mt-8 flex justify-between">
-                <button
-                  onClick={() => setStep(1)}
-                  className="text-gray-600 px-6 py-3 rounded-lg font-medium hover:bg-gray-100 transition-colors"
-                >
-                  Back
-                </button>
-                <button
-                  onClick={() => setStep(3)}
-                  disabled={!formData.fullName || !formData.licenseNumber || !formData.experience}
-                  className="bg-blue-600 text-white px-8 py-3 rounded-lg font-semibold hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Continue
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Step 3: Service Areas */}
-          {step === 3 && (
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8">
-              <h2 className="text-2xl font-bold text-gray-900 mb-2">📍 Service Areas</h2>
-              <p className="text-gray-600 mb-6">Select the cities where you're available to provide transport services</p>
-
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                {ZAMBIAN_CITIES.map((city) => (
-                  <label
-                    key={city}
-                    className={`flex items-center gap-2 p-4 rounded-xl border-2 cursor-pointer transition-all ${
-                      formData.serviceAreas.includes(city)
-                        ? 'border-green-500 bg-green-50'
-                        : 'border-gray-200 hover:border-gray-300'
-                    }`}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={formData.serviceAreas.includes(city)}
-                      onChange={() => handleAreaToggle(city)}
-                      className="rounded text-green-600"
-                    />
-                    <span className="font-medium">📍 {city}</span>
-                  </label>
-                ))}
-              </div>
-
-              <div className="mt-8 flex justify-between">
-                <button
-                  onClick={() => setStep(2)}
-                  className="text-gray-600 px-6 py-3 rounded-lg font-medium hover:bg-gray-100 transition-colors"
-                >
-                  Back
-                </button>
-                <button
-                  onClick={() => setStep(4)}
-                  disabled={formData.serviceAreas.length === 0}
-                  className="bg-blue-600 text-white px-8 py-3 rounded-lg font-semibold hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Continue
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Step 4: Documents */}
-          {step === 4 && (
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8">
-              <h2 className="text-2xl font-bold text-gray-900 mb-2">📄 Upload Documents</h2>
-              <p className="text-gray-600 mb-6">Please upload the required documents for verification</p>
-
-              <div className="space-y-4">
-                {[
-                  { index: 0, label: 'NRC Copy (Front & Back)', required: true },
-                  { index: 1, label: "Driver's License", required: true },
-                  { index: 2, label: 'Vehicle Registration (Blue Book)', required: true },
-                  { index: 3, label: 'Vehicle Insurance', required: true },
-                  { index: 4, label: 'Police Clearance Certificate', required: true },
-                ].map((doc) => (
-                  <div key={doc.index} className="p-4 border border-gray-200 rounded-xl">
-                    <div className="flex items-center justify-between mb-3">
-                      <div>
-                        <h4 className="font-semibold text-gray-900">
-                          {doc.label} {doc.required && <span className="text-red-500">*</span>}
-                        </h4>
-                      </div>
-                      {documents[doc.index].file && (
-                        <span className="text-green-600 text-sm flex items-center gap-1">
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                          </svg>
-                          Uploaded
-                        </span>
-                      )}
-                    </div>
-                    <input
-                      type="file"
-                      accept="image/*,.pdf"
-                      onChange={(e) => handleFileChange(doc.index, e.target.files?.[0] || null)}
-                      className="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
-                    />
-                  </div>
-                ))}
-
-                {/* Terms */}
-                <div className="bg-gray-50 p-4 rounded-xl mt-6">
-                  <label className="flex items-start gap-3 cursor-pointer">
-                    <input type="checkbox" className="mt-1 rounded text-blue-600" required />
-                    <span className="text-sm text-gray-600">
-                      I confirm that all information provided is accurate and I agree to the{' '}
-                      <Link href="/terms" className="text-blue-600 hover:underline">Terms of Service</Link>
-                      {' '}and{' '}
-                      <Link href="/privacy" className="text-blue-600 hover:underline">Privacy Policy</Link>.
-                      I understand that providing false information may result in permanent removal from the platform.
-                    </span>
-                  </label>
-                </div>
-              </div>
-
-              <div className="mt-8 flex justify-between">
-                <button
-                  onClick={() => setStep(3)}
-                  className="text-gray-600 px-6 py-3 rounded-lg font-medium hover:bg-gray-100 transition-colors"
-                >
-                  Back
-                </button>
-                <button
-                  onClick={handleSubmit}
-                  disabled={loading || documents.slice(0, 5).some(d => !d.file)}
-                  className="bg-green-600 text-white px-8 py-3 rounded-lg font-semibold hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-                >
-                  {loading ? (
-                    <>
-                      <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
-                      Submitting...
-                    </>
-                  ) : (
-                    <>
-                      Submit Application
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                      </svg>
-                    </>
-                  )}
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Help Section */}
-          <div className="mt-8 bg-blue-50 rounded-xl p-6">
-            <h3 className="font-semibold text-blue-900 mb-2">Need Help?</h3>
-            <p className="text-blue-700 text-sm mb-3">
-              Having trouble with your application? Our support team is here to help.
-            </p>
-            <div className="flex flex-wrap gap-3">
-              <a href="tel:+260971234567" className="text-blue-600 hover:underline text-sm flex items-center gap-1">
-                📞 +260 97 123 4567
-              </a>
-              <a href="mailto:drivers@denuelrental.com" className="text-blue-600 hover:underline text-sm flex items-center gap-1">
-                ✉️ drivers@denuelrental.com
-              </a>
-            </div>
-          </div>
-        </div>
-      </div>
-    </main>
+        <section className="mt-6 border border-amber-200 bg-amber-50 p-5">
+          <h2 className="font-semibold">Approval is not automatic</h2>
+          <p className="mt-2 text-sm leading-6 text-slate-600">
+            Your driver account remains offline until an administrator reviews the required private documents and approves the application.
+          </p>
+        </section>
+      </main>
+    </div>
   );
 }

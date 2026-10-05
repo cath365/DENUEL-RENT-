@@ -1,17 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { requireAuth } from '@/lib/auth';
+import { requireAuth, requireCsrf } from '@/lib/auth';
 
 // POST - Verify a service document
+export const dynamic = 'force-dynamic';
+
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const user = await requireAuth(req);
-    if (!user || user.role !== 'ADMIN') {
-      return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
-    }
+    const user = await requireAuth(req, ['ADMIN']);
+    requireCsrf(req);
 
     const { id } = await params;
 
@@ -28,6 +28,7 @@ export async function POST(
       document,
     });
   } catch (error) {
+    if (error instanceof Response) return error;
     console.error('Error verifying document:', error);
     return NextResponse.json({ message: 'Failed to verify document' }, { status: 500 });
   }

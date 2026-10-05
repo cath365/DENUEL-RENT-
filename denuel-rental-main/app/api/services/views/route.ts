@@ -76,12 +76,24 @@ export async function GET(req: NextRequest) {
       take: 10,
     });
 
+    const safeViews = views.map((view) => ({
+      id: view.id,
+      source: view.source,
+      searchQuery: view.searchQuery,
+      createdAt: view.createdAt,
+    }));
+
     return NextResponse.json({
-      views,
+      views: safeViews,
       stats: {
         totalViews,
         uniqueViewers: uniqueViewers.length,
-        viewsByDay,
+        viewsByDay: Array.isArray(viewsByDay)
+          ? (viewsByDay as any[]).map((row) => ({
+              ...row,
+              count: Number(row.count || 0),
+            }))
+          : [],
         searchQueries: searchQueries.map(q => ({
           query: q.searchQuery,
           count: q._count.searchQuery,
@@ -117,9 +129,6 @@ export async function POST(req: NextRequest) {
       const user = await requireAuth(req);
       if (user) {
         viewerData.viewerId = user.id;
-        viewerData.viewerName = user.name;
-        viewerData.viewerEmail = user.email;
-        viewerData.viewerPhone = user.phone;
       }
     } catch (e) {
       // Anonymous view

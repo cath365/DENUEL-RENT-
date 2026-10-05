@@ -59,9 +59,16 @@ export async function GET(req: NextRequest) {
       customerEmail: booking.customer.email,
     }));
 
+    const safeDocuments = provider.documents.map(({ fileUrl, ...document }) => ({
+      ...document,
+      fileAccessUrl: '/api/services/documents/' + document.id + '/file',
+        storagePrivate: Boolean(fileUrl?.includes('.private.blob.vercel-storage.com')),
+    }));
+
     return NextResponse.json({
       provider: {
         ...provider,
+        documents: safeDocuments,
         bookings: bookingsWithCustomer,
       },
     });

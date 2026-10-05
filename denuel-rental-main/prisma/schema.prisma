@@ -3,8 +3,8 @@ generator client {
 }
 
 datasource db {
-  provider = "mysql"
-  url      = env("DATABASE_URL")
+  provider = "postgresql"
+  url      = env("PRISMA_DATABASE_URL")
 }
 
 enum UserRole {
@@ -42,6 +42,7 @@ enum PowerBackup {
 enum VehicleType {
   MOTORBIKE
   CAR
+  SUV
   VAN
   TRUCK_SMALL
   TRUCK_MEDIUM
@@ -458,24 +459,52 @@ model RefreshToken {
 }
 
 model DriverProfile {
-  id               String    @id @default(cuid())
-  user             User      @relation(fields: [userId], references: [id])
-  userId           String    @unique
-  licenseNumber    String
-  vehicleType      VehicleType
-  vehiclePlate     String
+  id                String    @id @default(cuid())
+  user              User      @relation(fields: [userId], references: [id])
+  userId            String    @unique
+  licenseNumber     String
+  nrcNumber         String?
+  vehicleType       VehicleType
+  vehiclePlate      String
+  vehicleMake       String?
+  vehicleModel      String?
+  vehicleYear       Int?
+  vehicleColor      String?
   vehicleCapacityKg Int?
-  isApproved       Boolean   @default(false)
-  isOnline         Boolean   @default(false)
-  currentLat       Float?
-  currentLng       Float?
-  ratingAvg        Float     @default(0)
-  ratingCount      Int       @default(0)
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
+  experience        String?
+  bio               String?   @db.Text
+  serviceAreas      Json?
+  verificationStatus String    @default("PENDING")
+  rejectionReason   String?    @db.Text
+  isApproved        Boolean    @default(false)
+  isOnline          Boolean    @default(false)
+  currentLat        Float?
+  currentLng        Float?
+  ratingAvg         Float      @default(0)
+  ratingCount       Int        @default(0)
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
   TransportRequests TransportRequest[] @relation("driver_requests")
-  DriverEarnings   DriverEarning[]
-  Ratings          Rating[]
+  DriverEarnings    DriverEarning[]
+  Ratings           Rating[]
+  documents         DriverDocument[]
+}
+
+model DriverDocument {
+  id          String        @id @default(cuid())
+  driver      DriverProfile @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  driverId    String
+  type        String
+  name        String
+  fileUrl     String        @db.Text
+  fileSize    Int?
+  mimeType    String?
+  isVerified  Boolean       @default(false)
+  verifiedAt  DateTime?
+  uploadedAt  DateTime      @default(now())
+
+  @@unique([driverId, type])
+  @@index([driverId])
 }
 
 model TransportRequest {
@@ -483,8 +512,8 @@ model TransportRequest {
   bookingId             String?    
   tenant                User       @relation(fields: [tenantId], references: [id])
   tenantId              String
-  property              Property   @relation(fields: [propertyId], references: [id])
-  propertyId            String
+  property              Property?  @relation(fields: [propertyId], references: [id])
+  propertyId            String?
   pickupLat             Float
   pickupLng             Float
   pickupAddressText     String
@@ -1170,7 +1199,7 @@ model LeaseTemplate {
   landlord    User     @relation(fields: [landlordId], references: [id])
   landlordId  String
   name        String
-  content     String   @db.LongText
+  content     String   @db.Text
   variables   Json?    // Placeholders in the template
   isDefault   Boolean  @default(false)
   createdAt   DateTime @default(now())
@@ -1186,7 +1215,7 @@ model LeaseAgreement {
   tenant          User     @relation("TenantLeases", fields: [tenantId], references: [id])
   tenantId        String
   templateId      String?
-  content         String   @db.LongText
+  content         String   @db.Text
   monthlyRent     Float
   deposit         Float?
   startDate       DateTime
@@ -1371,7 +1400,7 @@ model Guide {
   slug        String   @unique
   title       String
   excerpt     String?  @db.Text
-  content     String   @db.LongText
+  content     String   @db.Text
   category    String   // BUYING, SELLING, RENTING, INVESTING, FIRST_TIME, MOVING
   coverImage  String?
   author      String?

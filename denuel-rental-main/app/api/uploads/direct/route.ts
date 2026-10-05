@@ -15,6 +15,15 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'No file provided' }, { status: 400 });
     }
 
+    if (file.size > 10 * 1024 * 1024) {
+      return NextResponse.json({ error: 'File must be 10MB or smaller' }, { status: 400 });
+    }
+
+    const allowedType = file.type.startsWith('image/') || file.type === 'application/pdf';
+    if (!allowedType) {
+      return NextResponse.json({ error: 'Only images and PDF files are supported' }, { status: 400 });
+    }
+
     // Check if Vercel Blob is configured
     if (!process.env.BLOB_READ_WRITE_TOKEN) {
       console.error('BLOB_READ_WRITE_TOKEN is not configured');

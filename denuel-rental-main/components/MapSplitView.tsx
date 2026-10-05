@@ -2,10 +2,11 @@
 import React, { useEffect, useRef, useState } from 'react';
 import mapboxgl from 'mapbox-gl';
 import { motion } from 'framer-motion';
+import Link from 'next/link';
 
 mapboxgl.accessToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || '';
 
-export default function MapSplitView({ properties }: { properties: any[] }) {
+export default function MapSplitView({ properties, listingType = 'RENT' }: { properties: any[]; listingType?: 'RENT' | 'SALE' }) {
   const mapRef = useRef<HTMLDivElement | null>(null);
   const mapInstance = useRef<any>(null);
   const [bboxChanged, setBboxChanged] = useState(false);
@@ -13,7 +14,7 @@ export default function MapSplitView({ properties }: { properties: any[] }) {
   const [mapLoaded, setMapLoaded] = useState(false);
 
   useEffect(() => {
-    if (!mapRef.current || mapInstance.current) return;
+    if (!mapRef.current || mapInstance.current || !mapboxgl.accessToken) return;
     mapInstance.current = new mapboxgl.Map({
       container: mapRef.current,
       style: 'mapbox://styles/mapbox/streets-v11',
@@ -46,9 +47,16 @@ export default function MapSplitView({ properties }: { properties: any[] }) {
         const props = f.properties && JSON.parse(f.properties.payload || '{}');
         // fly to and open a popup
         mapInstance.current.flyTo({ center: [props.longitude, props.latitude], zoom: 14 });
+        const popup = document.createElement('div');
+        const title = document.createElement('strong');
+        title.textContent = String(props.title || 'Property');
+        const price = document.createElement('div');
+        price.textContent = `K${Number(props.price || 0).toLocaleString()}`;
+        popup.append(title, price);
+
         new mapboxgl.Popup()
           .setLngLat([props.longitude, props.latitude])
-          .setHTML(`<strong>${props.title}</strong><div>K${props.price}</div>`)
+          .setDOMContent(popup)
           .addTo(mapInstance.current);
       }
     });
@@ -113,9 +121,10 @@ export default function MapSplitView({ properties }: { properties: any[] }) {
     const minLng = bounds.getWest();
     const maxLng = bounds.getEast();
 
-    const res = await fetch(`/api/search?listingType=RENT&minLat=${minLat}&maxLat=${maxLat}&minLng=${minLng}&maxLng=${maxLng}&page=1&pageSize=100`);
+    const res = await fetch(`/api/search?listingType=${listingType}&minLat=${minLat}&maxLat=${maxLat}&minLng=${minLng}&maxLng=${maxLng}&page=1&pageSize=100`);
+    if (!res.ok) return;
     const json = await res.json();
-    setVisibleItems(json.items || []);
+    setVisibleItems(Array.isArray(json.items) ? json.items : []);
     // update source
     const source = mapInstance.current.getSource('properties');
     if (source) {
@@ -125,8 +134,17 @@ export default function MapSplitView({ properties }: { properties: any[] }) {
     setBboxChanged(false);
   }
 
+  if (!mapboxgl.accessToken) {
+    return (
+      <div className="border border-slate-200 bg-slate-50 p-8 text-center">
+        <h3 className="font-semibold text-slate-950">Map view is unavailable</h3>
+        <p className="mt-2 text-sm text-slate-600">Use the property list while map access is being configured.</p>
+      </div>
+    );
+  }
+
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
       <div className="lg:col-span-2 relative">
         <div className="h-[600px] rounded shadow overflow-hidden" ref={mapRef} />
         {bboxChanged && (
@@ -138,13 +156,19 @@ export default function MapSplitView({ properties }: { properties: any[] }) {
       <div className="lg:col-span-1">
         <div className="space-y-4">
           {/* listing list will be placed here in usage */}
-          {visibleItems.map((p) => (
-            <motion.div key={p.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} whileHover={{ scale: 1.02 }} className="bg-white dark:bg-gray-800 rounded p-3 shadow">
-              <div className="font-semibold">{p.title}</div>
-              <div className="text-sm text-muted">{[p.area, p.city].filter(Boolean).join(', ') || p.city}</div>
-              <div className="text-sm">K{p.price?.toLocaleString()}</div>
+          {visibleItems.length ? visibleItems.map((p) => (
+            <motion.div key={p.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} whileHover={{ scale: 1.01 }}>
+              <Link href={'/property/' + p.id} className="block border border-slate-200 bg-white p-4 transition hover:border-slate-400">
+                <div className="font-semibold text-slate-950">{p.title}</div>
+                <div className="mt-1 text-sm text-slate-500">{[p.area, p.city].filter(Boolean).join(', ') || p.city || 'Zambia'}</div>
+                <div className="mt-2 text-sm font-semibold text-slate-900">K{p.price?.toLocaleString()}</div>
+              </Link>
             </motion.div>
-          ))}
+          )) : (
+            <div className="border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+              No properties with map coordinates are available in this area.
+            </div>
+          )}
         </div>
       </div>
     </div>

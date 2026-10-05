@@ -4,28 +4,38 @@ import { requireAuth } from '../../../../lib/auth';
 
 export const dynamic = 'force-dynamic';
 
+function summarize(rows: Array<{ grossZmw: number; platformFeeZmw: number; netZmw: number }>) {
+  return rows.reduce(
+    (totals, row) => ({
+      gross: totals.gross + Number(row.grossZmw || 0),
+      platformFees: totals.platformFees + Number(row.platformFeeZmw || 0),
+      net: totals.net + Number(row.netZmw || 0),
+      trips: totals.trips + 1,
+    }),
+    { gross: 0, platformFees: 0, net: 0, trips: 0 },
+  );
+}
+
 export async function GET(req: Request) {
   try {
-    const user = await requireAuth(req);
-    
-    // Get driver profile
+    const user = await requireAuth(req, ['DRIVER']);
+
     const driver = await prisma.driverProfile.findUnique({
-      where: { userId: user.id }
+      where: { userId: user.id },
+      select: { id: true },
     });
-    
+
     if (!driver) {
       return NextResponse.json({ error: 'Driver profile not found' }, { status: 404 });
     }
 
-    // Get date ranges
     const now = new Date();
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const weekStart = new Date(todayStart);
     weekStart.setDate(weekStart.getDate() - weekStart.getDay());
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
 
-    // Fetch all earnings
-    const allEarnings = await prisma.driverEarning.findMany({
+    const rows = await prisma.driverEarning.findMany({
       where: { driverId: driver.id },
       orderBy: { createdAt: 'desc' },
       include: {
@@ -37,48 +47,41 @@ export async function GET(req: Request) {
             status: true,
             tenant: {
               select: {
-                name: true
-              }
-            }
-          }
-        }
-      }
+                name: true,
+              },
+            },
+          },
+        },
+      },
     });
 
-    // Calculate totals
-    const todayEarnings = allEarnings
-      .filter(e => new Date(e.createdAt) >= todayStart)
-      .reduce((sum, e) => sum + e.netZmw, 0);
-
-    const weekEarnings = allEarnings
-      .filter(e => new Date(e.createdAt) >= weekStart)
-      .reduce((sum, e) => sum + e.netZmw, 0);
-
-    const monthEarnings = allEarnings
-      .filter(e => new Date(e.createdAt) >= monthStart)
-      .reduce((sum, e) => sum + e.netZmw, 0);
-
-    const totalEarnings = allEarnings.reduce((sum, e) => sum + e.netZmw, 0);
+    const todayRows = rows.filter((row) => row.createdAt >= todayStart);
+    const weekRows = rows.filter((row) => row.createdAt >= weekStart);
+    const monthRows = rows.filter((row) => row.createdAt >= monthStart);
 
     return NextResponse.json({
-      today: todayEarnings,
-      week: weekEarnings,
-      month: monthEarnings,
-      total: totalEarnings,
-      list: allEarnings.slice(0, 50).map((earning) => ({
-        ...earning,
-        amount: earning.netZmw,
-        date: earning.createdAt.toISOString(),
+      summaries: {
+        today: summarize(todayRows),
+        week: summarize(weekRows),
+        month: summarize(monthRows),
+        all: summarize(rows),
+      },
+      earnings: rows.slice(0, 100).map((earning) => ({
+        id: earning.id,
         tripId: earning.transportRequestId,
+        grossZmw: earning.grossZmw,
+        platformFeeZmw: earning.platformFeeZmw,
+        netZmw: earning.netZmw,
+        date: earning.createdAt.toISOString(),
         pickup: earning.transportRequest.pickupAddressText,
         dropoff: earning.transportRequest.dropoffAddressText,
-        distance: earning.transportRequest.distanceKmEstimated || 0,
+        distanceKm: earning.transportRequest.distanceKmEstimated || 0,
         customerName: earning.transportRequest.tenant?.name || 'Customer',
-      })) // Last 50 earnings with stable UI-friendly aliases
+      })),
     });
-  } catch (e: any) {
-    if (e instanceof Response) return e;
-    console.error('Driver earnings error:', e);
-    return NextResponse.json({ error: e?.message || 'Failed to fetch earnings' }, { status: 500 });
+  } catch (error) {
+    if (error instanceof Response) return error;
+    console.error('Driver earnings error:', error);
+    return NextResponse.json({ error: 'Unable to load driver earnings' }, { status: 500 });
   }
 }

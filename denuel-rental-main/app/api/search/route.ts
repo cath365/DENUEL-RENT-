@@ -61,16 +61,16 @@ export async function GET(req: Request) {
       where.AND = where.AND || [];
       where.AND.push({
         OR: [
-          { title: { contains: parsed.q, mode: 'insensitive' } },
-          { description: { contains: parsed.q, mode: 'insensitive' } },
-          { city: { contains: parsed.q, mode: 'insensitive' } },
-          { area: { contains: parsed.q, mode: 'insensitive' } },
+          { title: { contains: parsed.q } },
+          { description: { contains: parsed.q } },
+          { city: { contains: parsed.q } },
+          { area: { contains: parsed.q } },
         ]
       });
     }
 
-    if (parsed.city) where.city = { contains: parsed.city, mode: 'insensitive' };
-    if (parsed.area) where.area = { contains: parsed.area, mode: 'insensitive' };
+    if (parsed.city) where.city = { contains: parsed.city };
+    if (parsed.area) where.area = { contains: parsed.area };
 
     if (parsed.priceMin || parsed.priceMax) {
       where.price = {};

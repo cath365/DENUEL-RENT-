@@ -1,109 +1,767 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import Header from '../../components/Header';
+import { csrfFetch } from '../../lib/csrf';
+
+type Application = {
+  id: string;
+  status: string;
+  appliedAt: string;
+  property: {
+    id: string;
+    title: string;
+    city: string;
+    area?: string | null;
+    price: number;
+    status: string;
+    images?: Array<{ url: string }>;
+  };
+};
+
+type Lease = {
+  id: string;
+  status: string;
+  content: string;
+  monthlyRent: number;
+  deposit?: number | null;
+  startDate: string;
+  endDate: string;
+  landlordSigned: boolean;
+  landlordSignedAt?: string | null;
+  tenantSigned: boolean;
+  tenantSignedAt?: string | null;
+  property: {
+    id: string;
+    title: string;
+    addressText?: string | null;
+    city: string;
+    area?: string | null;
+  };
+  landlord: {
+    id: string;
+    name?: string | null;
+    email: string;
+    phone?: string | null;
+  };
+};
+
+type RentPayment = {
+  id: string;
+  status: string;
+  amount: number;
+  lateFee?: number | null;
+  dueDate: string;
+  paidDate?: string | null;
+  lease: {
+    id: string;
+    property: {
+      id: string;
+      title: string;
+    };
+  };
+};
+
+type TransportRequest = {
+  id: string;
+  status: string;
+  pickupAddressText: string;
+  dropoffAddressText: string;
+  lockedPriceZmw?: number | null;
+  priceEstimateZmw: number;
+  createdAt: string;
+};
+
+type Overview = {
+  profile: {
+    id: string;
+    name?: string | null;
+    email: string;
+  };
+  stats: {
+    applications: number;
+    pendingApplications: number;
+    activeLeases: number;
+    pendingPayments: number;
+    overduePayments: number;
+    amountDue: number;
+    savedProperties: number;
+    savedSearches: number;
+    unreadNotifications: number;
+    activeTransport: number;
+  };
+  applications: Application[];
+  leases: Lease[];
+  payments: RentPayment[];
+  transportRequests: TransportRequest[];
+};
+
+function money(value?: number | null) {
+  return 'K' + Number(value || 0).toLocaleString();
+}
+
+function humanize(value?: string | null) {
+  if (!value) return 'Not specified';
+  return value
+    .replaceAll('_', ' ')
+    .toLowerCase()
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function statusClass(status: string) {
+  if (['APPROVED', 'ACTIVE', 'PAID', 'COMPLETED'].includes(status)) {
+    return 'border-emerald-200 bg-emerald-50 text-emerald-800';
+  }
+  if (['REJECTED', 'CANCELED'].includes(status)) {
+    return 'border-red-200 bg-red-50 text-red-800';
+  }
+  if (
+    ['IN_PROGRESS', 'DRIVER_ASSIGNED', 'DRIVER_ARRIVING', 'PENDING_SIGNATURES'].includes(status)
+  ) {
+    return 'border-blue-200 bg-blue-50 text-blue-800';
+  }
+  if (status === 'TERMINATED') {
+    return 'border-red-200 bg-red-50 text-red-800';
+  }
+  if (status === 'EXPIRED') {
+    return 'border-slate-300 bg-slate-100 text-slate-700';
+  }
+  return 'border-amber-200 bg-amber-50 text-amber-800';
+}
+
+async function readResponse(res: Response) {
+  const text = await res.text();
+  let data: any = {};
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    data = {};
+  }
+  return { text, data };
+}
 
 export default function RenterHub() {
-  const [applications, setApplications] = useState<any[]>([]);
-  const [leases, setLeases] = useState<any[]>([]);
-  const [payments, setPayments] = useState<any[]>([]);
+  const [overview, setOverview] = useState<Overview | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [selectedLease, setSelectedLease] = useState<Lease | null>(null);
+  const [leaseProcessing, setLeaseProcessing] = useState(false);
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+
+  async function loadOverview(initial = false) {
+    if (initial) setLoading(true);
+    else setRefreshing(true);
+    setError('');
+
+    try {
+      const res = await fetch('/api/renter/overview', {
+        credentials: 'same-origin',
+        cache: 'no-store',
+      });
+      const { text, data } = await readResponse(res);
+
+      if (res.status === 401) {
+        window.location.href =
+          '/auth/login?redirect=' + encodeURIComponent('/renter-hub');
+        return;
+      }
+
+      if (!res.ok) {
+        throw new Error(
+          data?.error || text || 'Unable to load your renter workspace.'
+        );
+      }
+
+      setOverview(data);
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : 'Unable to load your renter workspace.'
+      );
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }
 
   useEffect(() => {
-    Promise.all([
-      fetch('/api/applications'),
-      fetch('/api/landlord/leases'),
-      fetch('/api/landlord/rent-payments?role=tenant'),
-    ])
-      .then(async ([a, l, p]) => {
-        if (a.ok) {
-          const data = await a.json();
-          setApplications(Array.isArray(data) ? data : []);
-        }
-        if (l.ok) {
-          const data = await l.json();
-          setLeases(Array.isArray(data) ? data.filter((x: any) => x.tenant) : []);
-        }
-        if (p.ok) {
-          const data = await p.json();
-          setPayments(Array.isArray(data.payments) ? data.payments : []);
-        }
-      })
-      .catch((err) => {
-        console.error('Renter hub error', err);
-        setError('Some renter data could not be loaded.');
-      })
-      .finally(() => setLoading(false));
+    loadOverview(true);
   }, []);
 
-  const pendingPayments = payments.filter((p: any) => p.status === 'PENDING');
-  const activeLeases = leases.filter((l: any) => l.status === 'ACTIVE');
+  const activeLeases = useMemo(
+    () => overview?.leases.filter((lease) => lease.status === 'ACTIVE') || [],
+    [overview]
+  );
+
+  const pendingPayments = useMemo(
+    () =>
+      overview?.payments.filter(
+        (payment) =>
+          payment.status === 'PENDING' || payment.status === 'PARTIAL'
+      ) || [],
+    [overview]
+  );
+
+  const now = Date.now();
+
+  async function signTenantLease() {
+    if (!selectedLease) return;
+
+    if (
+      !window.confirm(
+        'Sign this lease as the tenant? If the landlord has already signed, this will activate the lease and generate its rent schedule.'
+      )
+    ) {
+      return;
+    }
+
+    setLeaseProcessing(true);
+    setError('');
+    setNotice('');
+
+    try {
+      const res = await csrfFetch('/api/landlord/leases', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          leaseId: selectedLease.id,
+          action: 'sign',
+        }),
+      });
+      const { text, data } = await readResponse(res);
+
+      if (res.status === 401) {
+        window.location.href =
+          '/auth/login?redirect=' + encodeURIComponent('/renter-hub');
+        return;
+      }
+
+      if (!res.ok) {
+        const validation = Array.isArray(data?.error)
+          ? data.error
+              .map((item: any) => item.message)
+              .filter(Boolean)
+              .join(' ')
+          : data?.error;
+        throw new Error(validation || text || 'Unable to sign lease.');
+      }
+
+      setNotice(
+        data?.lease?.status === 'ACTIVE'
+          ? 'Lease signed and activated because both parties have now signed.'
+          : 'Tenant signature recorded.'
+      );
+      setSelectedLease(null);
+      await loadOverview(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to sign lease.');
+    } finally {
+      setLeaseProcessing(false);
+    }
+  }
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-screen bg-slate-50 text-slate-950">
       <Header />
-      <section className="bg-slate-950 py-12 text-white">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6">
-          <p className="text-sm font-bold uppercase tracking-[.2em] text-blue-300">My home</p>
-          <h1 className="mt-2 text-4xl font-black">Renter Hub</h1>
-          <p className="mt-3 max-w-2xl text-slate-300">Keep your property search, applications, lease information, payments and support in one place.</p>
-        </div>
-      </section>
 
-      <main className="mx-auto max-w-7xl px-4 py-10 sm:px-6">
-        {error && <div className="mb-6 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">{error}</div>}
+      <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
+        <section className="flex flex-col justify-between gap-5 border-b border-slate-200 pb-6 lg:flex-row lg:items-end">
+          <div>
+            <p className="text-sm font-semibold text-blue-700">Renter workspace</p>
+            <h1 className="mt-2 text-3xl font-bold tracking-[-0.035em]">
+              {overview?.profile?.name
+                ? overview.profile.name + ' · Renter Hub'
+                : 'Renter Hub'}
+            </h1>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
+              Track property applications, leases, rent payments, saved activity and transport requests using records already stored in DENUEL.
+            </p>
+          </div>
 
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <div className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-slate-200"><div className="text-sm text-slate-500">Applications</div><div className="mt-2 text-3xl font-black">{loading ? '—' : applications.length}</div></div>
-          <div className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-slate-200"><div className="text-sm text-slate-500">Active leases</div><div className="mt-2 text-3xl font-black">{loading ? '—' : activeLeases.length}</div></div>
-          <div className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-slate-200"><div className="text-sm text-slate-500">Pending rent payments</div><div className="mt-2 text-3xl font-black">{loading ? '—' : pendingPayments.length}</div></div>
-          <Link href="/rent" className="rounded-3xl bg-blue-600 p-6 text-white shadow-sm"><div className="text-sm text-blue-100">Still looking?</div><div className="mt-2 text-xl font-black">Find another property →</div></Link>
-        </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => loadOverview(false)}
+              disabled={refreshing}
+              className="border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 disabled:opacity-50"
+            >
+              {refreshing ? 'Refreshing…' : 'Refresh'}
+            </button>
+            <Link
+              href="/rent"
+              className="bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white"
+            >
+              Browse rentals
+            </Link>
+          </div>
+        </section>
 
-        <section className="mt-10">
-          <h2 className="text-2xl font-black">Your rental tools</h2>
-          <div className="mt-5 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        {error && (
+          <section className="mt-6 border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+            {error}
+          </section>
+        )}
+
+        {notice && (
+          <section className="mt-6 border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
+            {notice}
+          </section>
+        )}
+
+        <section className="mt-7 grid grid-cols-2 border-l border-t border-slate-200 bg-white lg:grid-cols-4">
+          {[
+            ['Applications', overview?.stats.applications ?? 0, overview?.stats.pendingApplications ? overview.stats.pendingApplications + ' pending' : 'No pending applications'],
+            ['Active leases', overview?.stats.activeLeases ?? 0, 'Tenant-side lease records'],
+            ['Amount currently due', money(overview?.stats.amountDue), overview?.stats.overduePayments ? overview.stats.overduePayments + ' overdue' : 'No overdue payment'],
+            ['Active transport', overview?.stats.activeTransport ?? 0, 'Current transport requests'],
+          ].map(([label, value, note]) => (
+            <div key={String(label)} className="border-b border-r border-slate-200 p-5">
+              <div className="text-sm text-slate-500">{label}</div>
+              <div className="mt-2 text-2xl font-bold">
+                {loading ? '—' : value}
+              </div>
+              <div className="mt-1 text-xs text-slate-400">{note}</div>
+            </div>
+          ))}
+        </section>
+
+        <section className="mt-6 border border-slate-200 bg-white">
+          <div className="border-b border-slate-200 px-5 py-4">
+            <h2 className="font-semibold">Quick access</h2>
+          </div>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-4">
             {[
-              ['Saved properties', 'Return to homes you have shortlisted.', '/favorites', '♡'],
-              ['Saved searches', 'Manage searches and property alerts.', '/saved-search', '⌕'],
-              ['Rent payment', 'Pay rent and review payment information.', '/rent-payment', 'K'],
-              ['Applications', 'Track the applications you have submitted.', '#applications', '✓'],
-              ['My inquiries', 'Continue conversations about properties.', '/inquiries', '✉'],
-              ['Notifications', 'See property, payment and account updates.', '/notifications', '•'],
-              ['Budget calculator', 'Check what monthly rent fits your budget.', '/business-tools/budget-calculator', '='],
-              ['Renter guide', 'Understand inspections, deposits and renting safely.', '/renters-guide', '?'],
-              ['Safety centre', 'Learn how to reduce scam and payment risk.', '/safety-tips', '!'],
-            ].map(([title, desc, href, icon]) => (
-              <Link href={href} key={title} className="group rounded-3xl border border-slate-200 bg-white p-6 hover:border-blue-300 hover:shadow-lg">
-                <div className="grid h-10 w-10 place-items-center rounded-xl bg-slate-100 font-black text-slate-700 group-hover:bg-blue-50 group-hover:text-blue-700">{icon}</div>
-                <h3 className="mt-5 font-black text-slate-950">{title}</h3>
-                <p className="mt-2 text-sm leading-6 text-slate-600">{desc}</p>
+              ['Saved properties', '/favorites', overview?.stats.savedProperties ?? 0],
+              ['Saved searches', '/saved-search', overview?.stats.savedSearches ?? 0],
+              ['Notifications', '/notifications', overview?.stats.unreadNotifications ?? 0],
+              ['Transport requests', '/transport/requests', overview?.stats.activeTransport ?? 0],
+              ['Property inquiries', '/inquiries', null],
+              ['Rent payment centre', '/rent-payment', overview?.stats.pendingPayments ?? 0],
+              ['Budget calculator', '/business-tools/budget-calculator', null],
+              ['Renter safety guide', '/safety-tips', null],
+            ].map(([label, href, count]) => (
+              <Link
+                key={String(href)}
+                href={String(href)}
+                className="border-b border-r border-slate-200 p-4 transition hover:bg-slate-50"
+              >
+                <div className="text-sm font-semibold text-slate-800">{label}</div>
+                {count !== null && (
+                  <div className="mt-2 text-xl font-bold text-slate-950">
+                    {loading ? '—' : Number(count).toLocaleString()}
+                  </div>
+                )}
+                <div className="mt-3 text-xs font-semibold text-blue-700">Open →</div>
               </Link>
             ))}
           </div>
         </section>
 
-        <section id="applications" className="mt-12 grid gap-6 lg:grid-cols-2">
-          <div className="rounded-3xl border border-slate-200 bg-white p-6">
-            <div className="flex items-center justify-between"><h2 className="text-xl font-black">Applications</h2><Link href="/rent" className="text-sm font-bold text-blue-600">Find properties</Link></div>
-            <div className="mt-5 space-y-3">
-              {loading ? <p className="text-sm text-slate-500">Loading applications…</p> : applications.length === 0 ? <p className="rounded-2xl bg-slate-50 p-5 text-sm text-slate-600">No applications yet.</p> : applications.slice(0, 6).map((app: any) => <div key={app.id} className="rounded-2xl border border-slate-100 p-4"><div className="flex items-start justify-between gap-3"><div><div className="font-bold">{app.property?.title || 'Property application'}</div><div className="mt-1 text-xs text-slate-500">{app.appliedAt ? `Applied ${new Date(app.appliedAt).toLocaleDateString('en-ZM')}` : 'Application submitted'}</div></div><span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold">{app.status}</span></div></div>)}
-            </div>
+        <div className="mt-7 grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(360px,0.8fr)]">
+          <div className="space-y-6">
+            <section id="applications" className="border border-slate-200 bg-white">
+              <div className="flex items-center justify-between gap-4 border-b border-slate-200 px-5 py-4">
+                <div>
+                  <h2 className="font-semibold">Property applications</h2>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Applications you submitted through DENUEL.
+                  </p>
+                </div>
+                <Link href="/rent" className="text-sm font-semibold text-blue-700">
+                  Find rentals
+                </Link>
+              </div>
+
+              {loading ? (
+                <div className="space-y-3 p-5">
+                  {Array.from({ length: 3 }).map((_, index) => (
+                    <div key={index} className="h-20 animate-pulse bg-slate-100" />
+                  ))}
+                </div>
+              ) : overview?.applications.length ? (
+                <div className="divide-y divide-slate-100">
+                  {overview.applications.slice(0, 8).map((application) => (
+                    <Link
+                      key={application.id}
+                      href={'/property/' + application.property.id}
+                      className="grid gap-3 px-5 py-4 transition hover:bg-slate-50 sm:grid-cols-[minmax(0,1fr)_150px] sm:items-center"
+                    >
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-semibold">
+                          {application.property.title}
+                        </div>
+                        <div className="mt-1 text-xs text-slate-500">
+                          {[application.property.area, application.property.city]
+                            .filter(Boolean)
+                            .join(', ')}
+                          {' · '}Applied{' '}
+                          {new Date(application.appliedAt).toLocaleDateString('en-ZM')}
+                        </div>
+                      </div>
+                      <span
+                        className={
+                          'w-fit border px-2.5 py-1 text-xs font-semibold sm:justify-self-end ' +
+                          statusClass(application.status)
+                        }
+                      >
+                        {humanize(application.status)}
+                      </span>
+                    </Link>
+                  ))}
+                </div>
+              ) : (
+                <div className="p-8">
+                  <h3 className="font-semibold">No applications yet</h3>
+                  <p className="mt-2 text-sm text-slate-500">
+                    Approved rental listings now include a real application action.
+                  </p>
+                </div>
+              )}
+            </section>
+
+            <section className="border border-slate-200 bg-white">
+              <div className="border-b border-slate-200 px-5 py-4">
+                <h2 className="font-semibold">Lease records</h2>
+                <p className="mt-1 text-xs text-slate-500">
+                  Lease agreements where your account is the tenant.
+                </p>
+              </div>
+
+              {loading ? (
+                <div className="p-5 text-sm text-slate-500">Loading leases…</div>
+              ) : overview?.leases.length ? (
+                <div className="divide-y divide-slate-100">
+                  {overview.leases.slice(0, 6).map((lease) => (
+                    <article key={lease.id} className="p-5">
+                      <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
+                        <div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <h3 className="font-semibold">{lease.property.title}</h3>
+                            <span
+                              className={
+                                'border px-2 py-0.5 text-xs font-semibold ' +
+                                statusClass(lease.status)
+                              }
+                            >
+                              {humanize(lease.status)}
+                            </span>
+                          </div>
+                          <div className="mt-2 text-sm text-slate-500">
+                            {[lease.property.area, lease.property.city]
+                              .filter(Boolean)
+                              .join(', ')}
+                          </div>
+                          <div className="mt-2 text-xs text-slate-400">
+                            {new Date(lease.startDate).toLocaleDateString('en-ZM')} –{' '}
+                            {new Date(lease.endDate).toLocaleDateString('en-ZM')}
+                          </div>
+                        </div>
+                        <div className="sm:text-right">
+                          <div className="text-xs text-slate-400">Monthly rent</div>
+                          <div className="mt-1 text-lg font-bold">
+                            {money(lease.monthlyRent)}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="mt-4 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">
+                        <span>Landlord: {lease.landlord.name || lease.landlord.email}</span>
+                        <span>Tenant signed: {lease.tenantSigned ? 'Yes' : 'No'}</span>
+                        <span>Landlord signed: {lease.landlordSigned ? 'Yes' : 'No'}</span>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedLease(lease);
+                          setError('');
+                          setNotice('');
+                        }}
+                        className={
+                          'mt-4 border px-4 py-2.5 text-sm font-semibold ' +
+                          (lease.status === 'PENDING_SIGNATURES' && !lease.tenantSigned
+                            ? 'border-slate-950 bg-slate-950 text-white'
+                            : 'border-slate-300 bg-white text-slate-700')
+                        }
+                      >
+                        {lease.status === 'PENDING_SIGNATURES' && !lease.tenantSigned
+                          ? 'Review & sign lease'
+                          : 'Review lease'}
+                      </button>
+                    </article>
+                  ))}
+                </div>
+              ) : (
+                <div className="p-8 text-sm text-slate-500">
+                  No tenant lease is recorded for this account yet.
+                </div>
+              )}
+            </section>
           </div>
 
-          <div className="rounded-3xl border border-slate-200 bg-white p-6">
-            <div className="flex items-center justify-between"><h2 className="text-xl font-black">Lease & payments</h2><Link href="/rent-payment" className="text-sm font-bold text-blue-600">Payment centre</Link></div>
-            <div className="mt-5 space-y-3">
-              {loading ? <p className="text-sm text-slate-500">Loading lease information…</p> : activeLeases.length === 0 && pendingPayments.length === 0 ? <p className="rounded-2xl bg-slate-50 p-5 text-sm text-slate-600">No active lease or pending rent payment is recorded yet.</p> : <>
-                {activeLeases.slice(0, 3).map((lease: any) => <div key={lease.id} className="rounded-2xl bg-emerald-50 p-4"><div className="text-xs font-bold uppercase tracking-wider text-emerald-700">Active lease</div><div className="mt-1 font-bold text-slate-950">{lease.property?.title || 'Property'}</div><div className="mt-1 text-sm text-slate-600">K{Number(lease.monthlyRent || 0).toLocaleString()} / month</div></div>)}
-                {pendingPayments.slice(0, 3).map((payment: any) => <div key={payment.id} className="rounded-2xl border border-amber-100 bg-amber-50 p-4"><div className="flex justify-between gap-3"><div><div className="text-xs font-bold uppercase tracking-wider text-amber-700">Rent due</div><div className="mt-1 text-sm text-slate-600">{new Date(payment.dueDate).toLocaleDateString('en-ZM')}</div></div><div className="text-lg font-black">K{Number(payment.amount || 0).toLocaleString()}</div></div></div>)}
-              </>}
+          <aside className="space-y-6">
+            <section className="border border-slate-200 bg-white">
+              <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+                <div>
+                  <h2 className="font-semibold">Rent due</h2>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Pending and partial rent-payment records.
+                  </p>
+                </div>
+                <Link href="/rent-payment" className="text-sm font-semibold text-blue-700">
+                  Payment centre
+                </Link>
+              </div>
+
+              {loading ? (
+                <div className="p-5 text-sm text-slate-500">Loading payments…</div>
+              ) : pendingPayments.length ? (
+                <div className="divide-y divide-slate-100">
+                  {pendingPayments.slice(0, 8).map((payment) => {
+                    const overdue = new Date(payment.dueDate).getTime() < now;
+                    return (
+                      <div key={payment.id} className="p-4">
+                        <div className="flex items-start justify-between gap-4">
+                          <div>
+                            <div className="text-sm font-semibold">
+                              {payment.lease.property.title}
+                            </div>
+                            <div className="mt-1 text-xs text-slate-500">
+                              Due {new Date(payment.dueDate).toLocaleDateString('en-ZM')}
+                            </div>
+                            {overdue && (
+                              <div className="mt-2 text-xs font-semibold text-red-700">
+                                Overdue
+                              </div>
+                            )}
+                          </div>
+                          <div className="text-right">
+                            <div className="font-bold">
+                              {money(Number(payment.amount || 0) + Number(payment.lateFee || 0))}
+                            </div>
+                            <div className="mt-1 text-xs text-slate-400">
+                              {humanize(payment.status)}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="p-6 text-sm text-slate-500">
+                  No pending rent payment is recorded.
+                </div>
+              )}
+            </section>
+
+            <section className="border border-slate-200 bg-white">
+              <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+                <div>
+                  <h2 className="font-semibold">Recent transport</h2>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Latest requests created by your account.
+                  </p>
+                </div>
+                <Link
+                  href="/transport/requests"
+                  className="text-sm font-semibold text-blue-700"
+                >
+                  View all
+                </Link>
+              </div>
+
+              {loading ? (
+                <div className="p-5 text-sm text-slate-500">Loading transport…</div>
+              ) : overview?.transportRequests.length ? (
+                <div className="divide-y divide-slate-100">
+                  {overview.transportRequests.slice(0, 5).map((request) => (
+                    <Link
+                      href="/transport/requests"
+                      key={request.id}
+                      className="block p-4 transition hover:bg-slate-50"
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <span
+                          className={
+                            'border px-2 py-0.5 text-xs font-semibold ' +
+                            statusClass(request.status)
+                          }
+                        >
+                          {humanize(request.status)}
+                        </span>
+                        <span className="text-sm font-semibold">
+                          {money(request.lockedPriceZmw || request.priceEstimateZmw)}
+                        </span>
+                      </div>
+                      <div className="mt-3 truncate text-sm font-medium">
+                        {request.pickupAddressText}
+                      </div>
+                      <div className="mt-1 truncate text-xs text-slate-500">
+                        to {request.dropoffAddressText}
+                      </div>
+                    </Link>
+                  ))}
+                </div>
+              ) : (
+                <div className="p-6">
+                  <p className="text-sm text-slate-500">
+                    No transport request is recorded yet.
+                  </p>
+                  <Link
+                    href="/transport"
+                    className="mt-3 inline-flex text-sm font-semibold text-blue-700"
+                  >
+                    Request transport →
+                  </Link>
+                </div>
+              )}
+            </section>
+
+            {activeLeases.length === 0 && (
+              <section className="border border-blue-200 bg-blue-50 p-5">
+                <h2 className="font-semibold">Still looking for a home?</h2>
+                <p className="mt-2 text-sm leading-6 text-slate-600">
+                  Browse approved rental listings and apply directly from the property page.
+                </p>
+                <Link
+                  href="/rent"
+                  className="mt-4 inline-flex bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white"
+                >
+                  Browse rentals
+                </Link>
+              </section>
+            )}
+          </aside>
+        </div>
+      </main>
+
+      {selectedLease && (
+        <div className="fixed inset-0 z-[80] bg-black/50 p-0 sm:p-4">
+          <div className="ml-auto h-full w-full max-w-3xl overflow-y-auto bg-white shadow-2xl">
+            <div className="sticky top-0 z-10 flex items-start justify-between border-b border-slate-200 bg-white px-5 py-5 sm:px-7">
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 className="text-xl font-bold">
+                    {selectedLease.property.title}
+                  </h2>
+                  <span
+                    className={
+                      'border px-2 py-1 text-xs font-semibold ' +
+                      statusClass(selectedLease.status)
+                    }
+                  >
+                    {humanize(selectedLease.status)}
+                  </span>
+                </div>
+                <p className="mt-1 text-sm text-slate-500">
+                  Landlord: {selectedLease.landlord.name || selectedLease.landlord.email}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedLease(null)}
+                className="text-sm font-semibold text-slate-500"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="space-y-7 p-5 sm:p-7">
+              <section className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <div className="text-xs text-slate-400">Monthly rent</div>
+                  <div className="mt-1 font-semibold">
+                    {money(selectedLease.monthlyRent)}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs text-slate-400">Deposit</div>
+                  <div className="mt-1 font-semibold">
+                    {selectedLease.deposit != null
+                      ? money(selectedLease.deposit)
+                      : 'Not recorded'}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs text-slate-400">Starts</div>
+                  <div className="mt-1 font-semibold">
+                    {new Date(selectedLease.startDate).toLocaleDateString('en-ZM')}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs text-slate-400">Ends</div>
+                  <div className="mt-1 font-semibold">
+                    {new Date(selectedLease.endDate).toLocaleDateString('en-ZM')}
+                  </div>
+                </div>
+              </section>
+
+              <section className="border-t border-slate-200 pt-6">
+                <h3 className="font-semibold">Signature status</h3>
+                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                  <div className="border border-slate-200 p-4">
+                    <div className="text-xs text-slate-400">Landlord</div>
+                    <div className="mt-1 font-semibold">
+                      {selectedLease.landlordSigned ? 'Signed' : 'Not signed'}
+                    </div>
+                    {selectedLease.landlordSignedAt && (
+                      <div className="mt-1 text-xs text-slate-500">
+                        {new Date(selectedLease.landlordSignedAt).toLocaleString('en-ZM')}
+                      </div>
+                    )}
+                  </div>
+                  <div className="border border-slate-200 p-4">
+                    <div className="text-xs text-slate-400">Tenant</div>
+                    <div className="mt-1 font-semibold">
+                      {selectedLease.tenantSigned ? 'Signed' : 'Not signed'}
+                    </div>
+                    {selectedLease.tenantSignedAt && (
+                      <div className="mt-1 text-xs text-slate-500">
+                        {new Date(selectedLease.tenantSignedAt).toLocaleString('en-ZM')}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </section>
+
+              <section className="border-t border-slate-200 pt-6">
+                <h3 className="font-semibold">Lease content</h3>
+                {selectedLease.content ? (
+                  <div className="mt-3 max-h-96 overflow-y-auto whitespace-pre-wrap border border-slate-200 bg-slate-50 p-4 text-sm leading-6 text-slate-700">
+                    {selectedLease.content}
+                  </div>
+                ) : (
+                  <p className="mt-2 text-sm text-slate-500">
+                    No lease document content is stored for this agreement.
+                  </p>
+                )}
+              </section>
+
+              {selectedLease.status === 'PENDING_SIGNATURES' &&
+                !selectedLease.tenantSigned && (
+                  <section className="border-t border-slate-200 pt-6">
+                    <h3 className="font-semibold">Tenant signature</h3>
+                    <p className="mt-2 text-sm leading-6 text-slate-600">
+                      Review the stored lease content above before signing. Your signature is recorded with the current time. If the landlord has already signed, the lease will become active and the rent schedule will be created.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={signTenantLease}
+                      disabled={leaseProcessing}
+                      className="mt-4 bg-slate-950 px-5 py-3 text-sm font-semibold text-white disabled:opacity-50"
+                    >
+                      {leaseProcessing ? 'Signing…' : 'Sign lease as tenant'}
+                    </button>
+                  </section>
+                )}
             </div>
           </div>
-        </section>
-      </main>
+        </div>
+      )}
     </div>
   );
 }
