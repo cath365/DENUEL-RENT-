@@ -2,12 +2,12 @@ import { NextResponse } from 'next/server';
 import prisma from '../../../../../lib/prisma';
 import { requireAuth } from '../../../../../lib/auth';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(req: Request, { params }: { params: { id: string } }) {
   try {
     await requireAuth(req, ['ADMIN']);
-    export const dynamic = 'force-dynamic';
-
-const { id } = params;
+    const { id } = params;
     
     const user = await prisma.user.findUnique({
       where: { id },
